@@ -1,0 +1,15 @@
+Admin
+ |
+ | Generate Schedule Request
+ ↓
+Laravel Backend
+ |
+ | Send Constraints
+ ↓
+AI Engine
+ |
+ | Return Schedule
+ ↓
+Database
+ |
+ | Save Schedule
