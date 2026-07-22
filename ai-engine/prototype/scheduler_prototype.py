@@ -12,6 +12,16 @@ Run with:
 from ortools.sat.python import cp_model
 
 # ---------------------------------------------------------------------------
+# 0. TEST MODE — change this one line to switch scenarios
+# ---------------------------------------------------------------------------
+# "normal"      -> original dataset (should be OPTIMAL/FEASIBLE)
+# "force_cruz"  -> Reyes can no longer teach PROG2, so Cruz (part-time, MWF only)
+#                  MUST be used for it. Confirms his day restriction is respected.
+# "broken"      -> removes the computer lab entirely. Confirms the solver reports
+#                  INFEASIBLE cleanly instead of crashing or lying.
+TEST_MODE = "normal"
+
+# ---------------------------------------------------------------------------
 # 1. FAKE DATA (hardcoded, tiny, easy to verify by hand)
 # ---------------------------------------------------------------------------
 
@@ -28,11 +38,18 @@ ROOMS = [
     {"id": "LAB1", "type": "computer_lab", "capacity": 30},
 ]
 
+if TEST_MODE == "broken":
+    # Remove the only computer lab -> PROG1_LAB/PROG2_LAB have nowhere to go.
+    # We should see a clean "no room of type" message OR an INFEASIBLE status,
+    # never a crash with a confusing traceback.
+    ROOMS = [r for r in ROOMS if r["type"] != "computer_lab"]
+
 FACULTY = [
     {
         "id": "F1",
         "name": "Prof. Reyes",
-        "can_teach": ["PROG1", "PROG2"],
+        # force_cruz: strip PROG2 from Reyes so only Cruz (part-time, MWF) can teach it
+        "can_teach": ["PROG1"] if TEST_MODE == "force_cruz" else ["PROG1", "PROG2"],
         "available_days": ["Mon", "Tue", "Wed", "Thu", "Fri"],
     },
     {
@@ -99,12 +116,20 @@ for sess in SESSIONS:
     # Which rooms are eligible for this session
     eligible_rooms = [r["id"] for r in ROOMS if r["type"] == room_type]
     if not eligible_rooms:
-        raise ValueError(f"No room of type '{room_type}' exists for session {sess['session_id']}")
+        print(f"\nSolver status: INFEASIBLE (pre-check failed)\n")
+        print(f"Cannot schedule '{sess['session_id']}': no room of type "
+              f"'{room_type}' exists in ROOMS. This is the kind of message "
+              f"the real system's 'explain why it failed' feature (Section H) "
+              f"needs to surface to the Department Head.")
+        raise SystemExit(0)
 
     # Which faculty are eligible (must be able to teach the subject)
     eligible_faculty = [f["id"] for f in FACULTY if subj_id in f["can_teach"]]
     if not eligible_faculty:
-        raise ValueError(f"No faculty can teach '{subj_id}'")
+        print(f"\nSolver status: INFEASIBLE (pre-check failed)\n")
+        print(f"Cannot schedule '{sess['session_id']}': no faculty is qualified "
+              f"to teach '{subj_id}'.")
+        raise SystemExit(0)
 
     day_var = model.NewIntVar(0, len(DAYS) - 1, f"{sess['session_id']}_day")
     # start_hour must leave room for the full duration within HOURS
@@ -194,19 +219,32 @@ solver = cp_model.CpSolver()
 solver.parameters.max_time_in_seconds = 10.0
 status = solver.Solve(model)
 
+print(f"TEST_MODE = '{TEST_MODE}'")
 print(f"\nSolver status: {solver.StatusName(status)}\n")
 
 if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
     print(f"Schedule for section {SECTION['id']}:\n")
+    cruz_day_violation = False
     for sid, v in session_vars.items():
         day = DAYS[solver.Value(v["day"])]
         start = solver.Value(v["start"])
         duration = v["duration"]
         end = start + duration
         room = ROOMS[solver.Value(v["room"])]["id"]
-        faculty = FACULTY[solver.Value(v["faculty"])]["name"]
+        faculty_idx = solver.Value(v["faculty"])
+        faculty = FACULTY[faculty_idx]["name"]
         print(f"  {sid:12s} | {day} {start:02d}:00-{end:02d}:00 | Room: {room:6s} | Faculty: {faculty}")
+
+        if FACULTY[faculty_idx]["id"] == "F3" and day not in FACULTY[faculty_idx]["available_days"]:
+            cruz_day_violation = True
+
+    if TEST_MODE == "force_cruz":
+        print()
+        if cruz_day_violation:
+            print("CHECK FAILED: Prof. Cruz was scheduled outside his available days!")
+        else:
+            print("CHECK PASSED: Prof. Cruz (if used) stayed within Mon/Wed/Fri.")
 else:
     print("No feasible schedule found with the current data/constraints.")
-    print("This is expected sometimes with tiny datasets — try loosening a constraint")
-    print("(e.g. add another room, or widen faculty availability) and re-run.")
+    print("This is expected in 'broken' mode, or sometimes with tiny datasets —")
+    print("try loosening a constraint (e.g. add another room) and re-run.")
