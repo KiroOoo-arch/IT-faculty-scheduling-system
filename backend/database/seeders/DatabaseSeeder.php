@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Faculty;
 use App\Models\FacultyAvailability;
 use App\Models\Room;
+use App\Models\Section;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -16,6 +17,17 @@ class DatabaseSeeder extends Seeder
         // Rooms
         $r101 = Room::create(['name' => 'R101', 'type' => 'lecture', 'capacity' => 40]);
         $lab1 = Room::create(['name' => 'LAB1', 'type' => 'computer_lab', 'capacity' => 30]);
+
+        // Section
+        $section = Section::create([
+            'name' => 'BSIT 1A',
+            'year_level' => 1,
+            'academic_year' => '2026-2027',
+            'semester_name' => '1st Semester',
+            'preferred_days' => [1, 2, 3, 4, 5],
+            'preferred_start_time' => '07:00',
+            'preferred_end_time' => '15:00',
+        ]);
 
         // Subjects
         $prog1 = Subject::create([
@@ -32,6 +44,9 @@ class DatabaseSeeder extends Seeder
             'code' => 'MATH1', 'title' => 'College Algebra', 'year_level' => 1,
             'semester_name' => '1st Semester', 'lecture_hours' => 3, 'lab_hours' => 0,
         ]);
+
+        // Link the section to the subjects it takes
+        $section->subjects()->attach([$prog1->id, $prog2->id, $math1->id]);
 
         // Faculty (each with a User account)
         $reyesUser = User::create(['name' => 'Prof. Reyes', 'email' => 'reyes@example.com', 'password' => bcrypt('password')]);

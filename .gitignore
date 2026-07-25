@@ -28,3 +28,30 @@ Homestead.json
 .env.production
 .phpactor.json
 auth.json
+
+# =========================
+# Python / AI Engine
+# =========================
+
+# Virtual environment
+ai-engine/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest
+.pytest_cache/
+
+# VS Code
+.vscode/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Generated exports (optional)
+ai-engine/exports/*.xlsx
+ai-engine/exports/*.pdf
+ai-engine/exports/*.json
