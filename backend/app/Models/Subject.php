@@ -25,4 +25,9 @@ class Subject extends Model
     {
         return $this->belongsToMany(Faculty::class, 'faculty_subjects');
     }
+
+    public function sections(): BelongsToMany
+    {
+        return $this->belongsToMany(Section::class, 'section_subjects');
+    }
 }
