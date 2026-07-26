@@ -14,6 +14,14 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Admin user
+        $adminUser = User::create([
+            'name' => 'Department Head',
+            'email' => 'admin@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'admin',
+        ]);
+
         // Rooms
         $r101 = Room::create(['name' => 'R101', 'type' => 'lecture', 'capacity' => 40]);
         $lab1 = Room::create(['name' => 'LAB1', 'type' => 'computer_lab', 'capacity' => 30]);
@@ -49,21 +57,21 @@ class DatabaseSeeder extends Seeder
         $section->subjects()->attach([$prog1->id, $prog2->id, $math1->id]);
 
         // Faculty (each with a User account)
-        $reyesUser = User::create(['name' => 'Prof. Reyes', 'email' => 'reyes@example.com', 'password' => bcrypt('password')]);
+        $reyesUser = User::create(['name' => 'Prof. Reyes', 'email' => 'reyes@example.com', 'password' => bcrypt('password'), 'role' => 'faculty']);
         $reyes = Faculty::create(['user_id' => $reyesUser->id, 'faculty_type' => 'full_time']);
         $reyes->subjects()->attach([$prog1->id, $prog2->id]);
         FacultyAvailability::create(['faculty_id' => $reyes->id, 'day_of_week' => 1, 'start_time' => '07:00', 'end_time' => '15:00']);
         FacultyAvailability::create(['faculty_id' => $reyes->id, 'day_of_week' => 3, 'start_time' => '07:00', 'end_time' => '15:00']);
         FacultyAvailability::create(['faculty_id' => $reyes->id, 'day_of_week' => 5, 'start_time' => '07:00', 'end_time' => '15:00']);
 
-        $santosUser = User::create(['name' => 'Prof. Santos', 'email' => 'santos@example.com', 'password' => bcrypt('password')]);
+        $santosUser = User::create(['name' => 'Prof. Santos', 'email' => 'santos@example.com', 'password' => bcrypt('password'), 'role' => 'faculty']);
         $santos = Faculty::create(['user_id' => $santosUser->id, 'faculty_type' => 'full_time']);
         $santos->subjects()->attach([$math1->id]);
         foreach ([2, 4] as $day) {
             FacultyAvailability::create(['faculty_id' => $santos->id, 'day_of_week' => $day, 'start_time' => '07:00', 'end_time' => '15:00']);
         }
 
-        $cruzUser = User::create(['name' => 'Prof. Cruz', 'email' => 'cruz@example.com', 'password' => bcrypt('password')]);
+        $cruzUser = User::create(['name' => 'Prof. Cruz', 'email' => 'cruz@example.com', 'password' => bcrypt('password'), 'role' => 'faculty']);
         $cruz = Faculty::create(['user_id' => $cruzUser->id, 'faculty_type' => 'part_time']);
         $cruz->subjects()->attach([$prog2->id]);
         foreach ([1, 3, 5] as $day) {
