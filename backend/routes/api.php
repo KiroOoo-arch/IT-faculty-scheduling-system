@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FacultyController;
+use App\Http\Controllers\MyScheduleController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\SectionController;
@@ -13,6 +14,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::get('/my-schedule', [MyScheduleController::class, 'index']);
 
     // Read access — any authenticated user (admin or faculty)
     Route::apiResource('faculties', FacultyController::class)->only(['index', 'show']);
