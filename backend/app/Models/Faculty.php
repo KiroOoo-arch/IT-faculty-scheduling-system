@@ -34,4 +34,9 @@ class Faculty extends Model
     {
         return $this->hasMany(FacultyAvailability::class);
     }
+
+    public function scheduleSessions(): HasMany
+    {
+        return $this->hasMany(ScheduleSession::class);
+    }
 }

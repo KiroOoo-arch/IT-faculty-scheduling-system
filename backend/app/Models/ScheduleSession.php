@@ -14,4 +14,5 @@ class ScheduleSession extends Model
     public function subject() { return $this->belongsTo(Subject::class); }
     public function faculty() { return $this->belongsTo(Faculty::class); }
     public function room() { return $this->belongsTo(Room::class); }
+    public function schedule() { return $this->belongsTo(Schedule::class); }
 }
