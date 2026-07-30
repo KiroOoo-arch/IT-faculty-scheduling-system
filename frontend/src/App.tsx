@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 import FacultyDashboard from './pages/FacultyDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import RoomsPage from './pages/admin/RoomsPage'
 
 function Dashboard() {
   const { user } = useAuth()
@@ -26,6 +27,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/rooms"
+        element={
+          <ProtectedRoute>
+            <RoomsPage />
           </ProtectedRoute>
         }
       />

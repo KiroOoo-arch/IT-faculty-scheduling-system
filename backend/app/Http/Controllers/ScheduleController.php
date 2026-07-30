@@ -26,20 +26,26 @@ class ScheduleController extends Controller
 
         $result = $response->json();
 
-        if ($result['status'] !== 'OPTIMAL') {
+        // Accept both OPTIMAL and PARTIAL as save-worthy outcomes.
+        // Anything else (e.g. INFEASIBLE, ERROR) means nothing could be scheduled.
+        if (!in_array($result['status'], ['OPTIMAL', 'PARTIAL'])) {
             return response()->json([
                 'status' => $result['status'],
                 'message' => $result['message'] ?? 'No feasible schedule found.',
             ], 422);
         }
 
-        // Persist the result
+        // Split sessions into scheduled vs. unscheduled
+        $scheduled = array_filter($result['sessions'], fn ($s) => $s['is_scheduled'] === true);
+        $unscheduled = array_filter($result['sessions'], fn ($s) => $s['is_scheduled'] === false);
+
+        // Persist only the successfully scheduled sessions
         $schedule = Schedule::create([
             'section_id' => $section->id,
             'status' => 'draft',
         ]);
 
-        foreach ($result['sessions'] as $session) {
+        foreach ($scheduled as $session) {
             ScheduleSession::create([
                 'schedule_id' => $schedule->id,
                 'subject_id' => $session['subject_id'],
@@ -54,8 +60,9 @@ class ScheduleController extends Controller
 
         return response()->json([
             'schedule_id' => $schedule->id,
-            'status' => 'OPTIMAL',
+            'status' => $result['status'],
             'sessions' => $schedule->sessions()->with(['subject', 'faculty', 'room'])->get(),
+            'unscheduled' => array_values($unscheduled),
         ]);
     }
 }

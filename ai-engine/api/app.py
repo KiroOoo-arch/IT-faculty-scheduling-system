@@ -105,11 +105,31 @@ def generate_schedule_for_section(section_id: int):
                         (f["id"],))
             available_days = [r["day_of_week"] for r in cur.fetchall()]
 
+            cur.execute("SELECT max_teaching_load FROM faculties WHERE id = %s", (f["id"],))
+            max_load_row = cur.fetchone()
+            max_teaching_load = max_load_row["max_teaching_load"] if max_load_row else 24
+
+            # Hours already committed to this faculty member from OTHER sections'
+            # approved/published schedules (excludes this section, excludes drafts).
+            cur.execute("""
+                SELECT COALESCE(SUM(
+                    EXTRACT(EPOCH FROM (ss.end_time - ss.start_time)) / 3600
+                ), 0) AS total_hours
+                FROM schedule_sessions ss
+                JOIN schedules sch ON sch.id = ss.schedule_id
+                WHERE ss.faculty_id = %s
+                  AND sch.section_id != %s
+                  AND sch.status IN ('approved', 'published')
+            """, (f["id"], section_id))
+            existing_load_hours = float(cur.fetchone()["total_hours"])
+
             faculty.append({
                 "id": f["id"],
                 "name": f["name"],
                 "can_teach_subject_ids": can_teach,
                 "available_days": available_days,
+                "max_teaching_load": max_teaching_load,
+                "existing_load_hours": existing_load_hours,
             })
 
         if not faculty:
@@ -122,12 +142,34 @@ def generate_schedule_for_section(section_id: int):
         if not rooms:
             raise HTTPException(status_code=400, detail="No available rooms found.")
 
+        # --- Existing committed sessions from OTHER sections' approved/published
+        #     schedules, for cross-schedule double-booking prevention ---
+        cur.execute("""
+            SELECT ss.day_of_week,
+                   EXTRACT(HOUR FROM ss.start_time)::int AS start_hour,
+                   EXTRACT(HOUR FROM ss.end_time)::int AS end_hour,
+                   ss.faculty_id, ss.room_id
+            FROM schedule_sessions ss
+            JOIN schedules sch ON sch.id = ss.schedule_id
+            WHERE sch.section_id != %s
+              AND sch.status IN ('approved', 'published')
+        """, (section_id,))
+        existing_sessions = [dict(row) for row in cur.fetchall()]
+
         cur.close()
         conn.close()
 
         # --- Run the solver ---
-        result = generate_schedule(section, subjects, faculty, rooms)
+        result = generate_schedule(section, subjects, faculty, rooms, existing_sessions)
         return result
 
     except psycopg2.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
+        )
