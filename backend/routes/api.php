@@ -9,6 +9,7 @@ use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ScheduleApprovalController;
 use App\Http\Controllers\ScheduleSessionController;
 use App\Http\Controllers\MyScheduleController;
+use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public routes ---
@@ -28,7 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/schedules', [ScheduleApprovalController::class, 'index']);
     Route::get('/schedules/{schedule}', [ScheduleApprovalController::class, 'show']);
 
-    // Write access + schedule generation/approval/editing — admin only
+    // Write access + schedule generation/approval/editing/reports — admin only
     Route::middleware('admin')->group(function () {
         Route::apiResource('faculties', FacultyController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('subjects', SubjectController::class)->only(['store', 'update', 'destroy']);
@@ -40,5 +41,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/schedules/{schedule}/publish', [ScheduleApprovalController::class, 'publish']);
         Route::patch('/schedules/{schedule}/reject', [ScheduleApprovalController::class, 'reject']);
         Route::put('/schedules/sessions/{session}', [ScheduleSessionController::class, 'update']);
+
+        Route::get('/reports/faculty-workload', [ReportController::class, 'facultyWorkload']);
+        Route::get('/reports/room-utilization', [ReportController::class, 'roomUtilization']);
+        Route::get('/reports/conflicts', [ReportController::class, 'conflicts']);
     });
 });
