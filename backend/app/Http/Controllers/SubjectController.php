@@ -10,14 +10,52 @@ class SubjectController extends Controller
     public function index()
     {
         $subjects = Subject::with('faculties')->get();
-
         return response()->json($subjects);
     }
 
     public function show(Subject $subject)
     {
         $subject->load('faculties');
-
         return response()->json($subject);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'code'          => 'required|string|unique:subjects',
+            'title'         => 'required|string',
+            'year_level'    => 'required|integer',
+            'semester_name' => 'required|string',
+            'lecture_hours' => 'required|integer|min:0',
+            'lab_hours'     => 'required|integer|min:0',
+            'lab_room_type' => 'nullable|string',
+            'is_active'     => 'boolean',
+        ]);
+
+        $subject = Subject::create($validated);
+        return response()->json($subject, 201);
+    }
+
+    public function update(Request $request, Subject $subject)
+    {
+        $validated = $request->validate([
+            'code'          => 'required|string|unique:subjects,code,' . $subject->id,
+            'title'         => 'required|string',
+            'year_level'    => 'required|integer',
+            'semester_name' => 'required|string',
+            'lecture_hours' => 'required|integer|min:0',
+            'lab_hours'     => 'required|integer|min:0',
+            'lab_room_type' => 'nullable|string',
+            'is_active'     => 'boolean',
+        ]);
+
+        $subject->update($validated);
+        return response()->json($subject);
+    }
+
+    public function destroy(Subject $subject)
+    {
+        $subject->delete();
+        return response()->json(['message' => 'Subject deleted successfully']);
     }
 }

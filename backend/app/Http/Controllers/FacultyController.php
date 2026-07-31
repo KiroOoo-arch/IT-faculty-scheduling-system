@@ -7,17 +7,33 @@ use Illuminate\Http\Request;
 
 class FacultyController extends Controller
 {
-    public function index()
+    public function store(Request $request)
     {
-        $faculties = Faculty::with(['user', 'subjects', 'availabilities'])->get();
+        $validated = $request->validate([
+            'user_id'           => 'required|exists:users,id',
+            'faculty_type'      => 'required|string|in:full_time,part_time',
+            'max_teaching_load' => 'required|integer|min:1',
+        ]);
 
-        return response()->json($faculties);
+        $faculty = Faculty::create($validated);
+        return response()->json($faculty, 201);
     }
 
-    public function show(Faculty $faculty)
+    public function update(Request $request, Faculty $faculty)
     {
-        $faculty->load(['user', 'subjects', 'availabilities']);
+        $validated = $request->validate([
+            'user_id'           => 'required|exists:users,id',
+            'faculty_type'      => 'required|string|in:full_time,part_time',
+            'max_teaching_load' => 'required|integer|min:1',
+        ]);
 
+        $faculty->update($validated);
         return response()->json($faculty);
+    }
+
+    public function destroy(Faculty $faculty)
+    {
+        $faculty->delete();
+        return response()->json(['message' => 'Faculty deleted successfully']);
     }
 }
