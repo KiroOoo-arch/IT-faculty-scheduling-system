@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Faculty;
 use Illuminate\Http\Request;
 
 class MyScheduleController extends Controller
@@ -10,24 +11,31 @@ class MyScheduleController extends Controller
     {
         $user = $request->user();
 
-        $faculty = $user->faculty; // requires a User -> Faculty relationship
+        $faculty = Faculty::where('user_id', $user->id)->first();
 
         if (!$faculty) {
-            return response()->json(['message' => 'No faculty record linked to this user.'], 404);
+            return response()->json(['sessions' => []]);
         }
 
-        $sessions = $faculty->scheduleSessions()
-            ->with(['subject', 'room', 'schedule'])
+        $sessions = \App\Models\ScheduleSession::where('faculty_id', $faculty->id)
+            ->with(['subject', 'room'])
             ->orderBy('day_of_week')
             ->orderBy('start_time')
             ->get();
 
-        return response()->json([
-            'faculty' => [
-                'name' => $user->name,
-                'faculty_type' => $faculty->faculty_type,
-            ],
-            'sessions' => $sessions,
-        ]);
+        // Flatten schedule data for the frontend
+        $flattened = $sessions->map(function ($session) {
+            return [
+                'id' => $session->id,
+                'subject' => $session->subject,
+                'room' => $session->room,
+                'session_type' => $session->session_type,
+                'day_of_week' => $session->day_of_week,
+                'start_time' => $session->start_time,
+                'end_time' => $session->end_time,
+            ];
+        });
+
+        return response()->json(['sessions' => $flattened]);
     }
 }
