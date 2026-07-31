@@ -4,6 +4,10 @@ import LoginPage from './pages/LoginPage'
 import FacultyDashboard from './pages/FacultyDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import RoomsPage from './pages/admin/RoomsPage'
+import UsersPage from './pages/admin/UsersPage'
+import FacultyPage from './pages/admin/FacultyPage'
+import SubjectsPage from './pages/admin/SubjectsPage'
+import SectionsPage from './pages/admin/SectionsPage'
 
 function Dashboard() {
   const { user } = useAuth()
@@ -22,22 +26,12 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/rooms"
-        element={
-          <ProtectedRoute>
-            <RoomsPage />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/admin/rooms" element={<ProtectedRoute><RoomsPage /></ProtectedRoute>} />
+      <Route path="/admin/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
+      <Route path="/admin/faculty" element={<ProtectedRoute><FacultyPage /></ProtectedRoute>} />
+      <Route path="/admin/subjects" element={<ProtectedRoute><SubjectsPage /></ProtectedRoute>} />
+      <Route path="/admin/sections" element={<ProtectedRoute><SectionsPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
     </Routes>
   )

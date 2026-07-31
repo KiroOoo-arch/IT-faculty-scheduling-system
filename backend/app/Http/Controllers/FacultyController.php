@@ -7,6 +7,18 @@ use Illuminate\Http\Request;
 
 class FacultyController extends Controller
 {
+    public function index()
+    {
+        $faculties = Faculty::with(['user', 'subjects'])->get();
+        return response()->json($faculties);
+    }
+
+    public function show(Faculty $faculty)
+    {
+        $faculty->load(['user', 'subjects']);
+        return response()->json($faculty);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -35,5 +47,22 @@ class FacultyController extends Controller
     {
         $faculty->delete();
         return response()->json(['message' => 'Faculty deleted successfully']);
+    }
+
+    public function attachSubjects(Request $request, Faculty $faculty)
+    {
+        $request->validate([
+            'subject_ids' => 'required|array',
+            'subject_ids.*' => 'exists:subjects,id',
+        ]);
+
+        $faculty->subjects()->syncWithoutDetaching($request->subject_ids);
+        return response()->json(['message' => 'Subjects assigned successfully']);
+    }
+
+    public function detachSubject(Faculty $faculty, $subjectId)
+    {
+        $faculty->subjects()->detach($subjectId);
+        return response()->json(['message' => 'Subject removed']);
     }
 }
