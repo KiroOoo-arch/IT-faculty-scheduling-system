@@ -12,13 +12,17 @@ class ScheduleApprovalController extends Controller
      * List all schedules with their sessions, for review.
      * GET /api/schedules
      */
-    public function index()
+    public function index(Request $request)
     {
-        $schedules = Schedule::with(['section', 'sessions.subject', 'sessions.faculty.user', 'sessions.room'])
-            ->orderByDesc('created_at')
-            ->get();
+        $query = Schedule::with(['section', 'sessions.subject', 'sessions.faculty.user', 'sessions.room'])
+            ->orderByDesc('created_at');
 
-        return response()->json($schedules);
+        // 👇 NEW: Hide archived by default unless ?show_archived=true
+        if ($request->query('show_archived') !== 'true') {
+            $query->where('status', '!=', 'archived');
+        }
+
+        return response()->json($query->get());
     }
 
     /**
@@ -69,13 +73,19 @@ class ScheduleApprovalController extends Controller
             ], 422);
         }
 
+        // FIX: Archive old published schedules for this section
+        Schedule::where('section_id', $schedule->section_id)
+            ->where('id', '!=', $schedule->id)
+            ->where('status', 'published')
+            ->update(['status' => 'archived']);
+
         $schedule->update(['status' => 'published']);
 
         return response()->json($schedule->load(['section', 'sessions']));
     }
 
     /**
-     * Reject a draft schedule (e.g. the AI's result wasn't good enough). Admin only.
+     * Reject a draft schedule. Admin only.
      * PATCH /api/schedules/{schedule}/reject
      */
     public function reject(Request $request, Schedule $schedule)
@@ -93,9 +103,6 @@ class ScheduleApprovalController extends Controller
         return response()->json($schedule);
     }
 
-    /**
-     * Small helper: only allow admins (Department Head) to approve/publish/reject.
-     */
     private function authorizeAdmin(Request $request): void
     {
         if ($request->user()->role !== 'admin') {

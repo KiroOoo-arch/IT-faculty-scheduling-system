@@ -13,7 +13,6 @@ import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
-
 from scheduler import generate_schedule
 
 load_dotenv()
@@ -39,7 +38,6 @@ def parse_hour(time_value):
         return 0
     if hasattr(time_value, 'hour'):
         return time_value.hour
-    # Handle string like "07:00:00" or "07:00"
     s = str(time_value).strip()
     parts = s.split(":")
     return int(parts[0])
@@ -75,7 +73,7 @@ def generate_schedule_for_section(section_id: int):
         conn = get_connection()
         cur = conn.cursor()
 
-               # --- Section ---
+        # --- Section ---
         cur.execute(
             "SELECT id, name, preferred_days, preferred_start_time, preferred_end_time, student_count "
             "FROM sections WHERE id = %s",
@@ -133,11 +131,14 @@ def generate_schedule_for_section(section_id: int):
             )
             can_teach = [r["subject_id"] for r in cur.fetchall()]
 
+            # FIX: Default to section's days when faculty has no availability set
             cur.execute(
                 "SELECT DISTINCT day_of_week FROM faculty_availabilities WHERE faculty_id = %s",
                 (f["id"],),
             )
             available_days = [r["day_of_week"] for r in cur.fetchall()]
+            if not available_days:
+                available_days = section["preferred_days"]
 
             cur.execute(
                 "SELECT max_teaching_load FROM faculties WHERE id = %s", (f["id"],)
@@ -145,7 +146,7 @@ def generate_schedule_for_section(section_id: int):
             max_load_row = cur.fetchone()
             max_teaching_load = max_load_row["max_teaching_load"] if max_load_row else 24
 
-            # Hours already committed from OTHER sections' approved/published schedules
+            # Hours already committed from OTHER sections
             cur.execute(
                 """
                 SELECT COALESCE(SUM(
@@ -213,13 +214,18 @@ def generate_schedule_for_section(section_id: int):
         return result
 
     except psycopg2.Error as e:
+        print(f"DATABASE ERROR: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     except HTTPException:
         raise
     except Exception as e:
         import traceback
-
+        tb = traceback.format_exc()
+        print("=" * 60)
+        print("PYTHON ERROR TRACEBACK:")
+        print(tb)
+        print("=" * 60)
         raise HTTPException(
             status_code=500,
-            detail=f"Unexpected error: {type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}",
+            detail=f"Unexpected error: {type(e).__name__}: {str(e)}\n\n{tb}",
         )
