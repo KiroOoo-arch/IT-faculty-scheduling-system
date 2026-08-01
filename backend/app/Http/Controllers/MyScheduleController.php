@@ -18,6 +18,9 @@ class MyScheduleController extends Controller
         }
 
         $sessions = \App\Models\ScheduleSession::where('faculty_id', $faculty->id)
+            ->whereHas('schedule', function ($q) {          // ← ADD THIS
+                $q->where('status', 'published');           // ← ONLY published schedules
+            })
             ->with(['subject', 'room'])
             ->orderBy('day_of_week')
             ->orderBy('start_time')

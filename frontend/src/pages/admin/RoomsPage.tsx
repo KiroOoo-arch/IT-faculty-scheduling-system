@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../../context/AuthContext'
+import { Link } from 'react-router-dom'
 
 type Room = {
   id: number
@@ -94,6 +95,13 @@ export default function RoomsPage() {
   return (
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="max-w-3xl mx-auto">
+        <Link
+          to="/dashboard"
+          className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 mb-4"
+        >
+          ← Back to Dashboard
+        </Link>
+
         <h1 className="text-2xl font-bold text-gray-800 mb-6">Manage Rooms</h1>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6 mb-6 space-y-4">
