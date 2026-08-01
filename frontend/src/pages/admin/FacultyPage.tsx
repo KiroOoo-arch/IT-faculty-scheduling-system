@@ -7,6 +7,13 @@ type Subject = {
   title: string
 }
 
+type Availability = {
+  id?: number
+  day_of_week: number
+  start_time: string | null
+  end_time: string | null
+}
+
 type Faculty = {
   id: number
   user_id: number
@@ -16,6 +23,11 @@ type Faculty = {
   subjects?: Subject[]
 }
 
+const ALL_DAYS = [
+  { val: 1, label: 'Mon' }, { val: 2, label: 'Tue' }, { val: 3, label: 'Wed' },
+  { val: 4, label: 'Thu' }, { val: 5, label: 'Fri' }, { val: 6, label: 'Sat' }, { val: 7, label: 'Sun' },
+]
+
 export default function FacultyPage() {
   const { token } = useAuth()
   const [faculties, setFaculties] = useState<Faculty[]>([])
@@ -23,7 +35,6 @@ export default function FacultyPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Combined form (creates User + Faculty)
   const [form, setForm] = useState({
     name: '', email: '', password: '',
     faculty_type: 'full_time', max_teaching_load: 24,
@@ -33,6 +44,11 @@ export default function FacultyPage() {
     user_id: 0, faculty_type: 'full_time', max_teaching_load: 24,
   })
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([])
+
+  // 👇 NEW: Availability state
+  const [availability, setAvailability] = useState<Availability[]>([])
+  const [availStartTime, setAvailStartTime] = useState('07:00')
+  const [availEndTime, setAvailEndTime] = useState('17:00')
 
   function headers() {
     return {
@@ -60,15 +76,38 @@ export default function FacultyPage() {
       const res = await fetch(`${API_BASE_URL}/subjects`, { headers: headers() })
       const data = await res.json()
       setAllSubjects(Array.isArray(data) ? data : [])
-    } catch {
-      // Silently fail — subjects are optional
-    }
+    } catch { /* ignore */ }
   }
 
   useEffect(() => {
     fetchFaculties()
     fetchSubjects()
   }, [])
+
+  async function fetchAvailability(facultyId: number) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/faculties/${facultyId}/availability`, { headers: headers() })
+      if (res.ok) {
+        const data = await res.json()
+        setAvailability(Array.isArray(data) ? data : [])
+      }
+    } catch { /* ignore */ }
+  }
+
+  function toggleAvailDay(day: number) {
+    setAvailability((prev) => {
+      const exists = prev.find((a) => a.day_of_week === day)
+      if (exists) {
+        return prev.filter((a) => a.day_of_week !== day)
+      } else {
+        return [...prev, { day_of_week: day, start_time: availStartTime + ':00', end_time: availEndTime + ':00' }]
+      }
+    })
+  }
+
+  function isDaySelected(day: number) {
+    return availability.some((a) => a.day_of_week === day)
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -92,7 +131,6 @@ export default function FacultyPage() {
     if (!editing) return
     setError('')
 
-    // 1. Update faculty type & load
     const res = await fetch(`${API_BASE_URL}/faculties/${editing}`, {
       method: 'PUT',
       headers: headers(),
@@ -104,19 +142,32 @@ export default function FacultyPage() {
       return
     }
 
-    // 2. Sync assigned subjects
     const subRes = await fetch(`${API_BASE_URL}/faculties/${editing}/subjects`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({ subject_ids: selectedSubjectIds }),
     })
+    if (!subRes.ok) {
+      const data = await subRes.json()
+      setError(data.message || 'Failed to update subjects')
+      return
+    }
+
+    // 👇 NEW: Save availability
+    const availRes = await fetch(`${API_BASE_URL}/faculties/${editing}/availability`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ availability }),
+    })
+    if (!availRes.ok) {
+      const data = await availRes.json()
+      setError(data.message || 'Failed to update availability')
+      return
+    }
 
     if (subRes.ok) {
       setEditing(null)
       fetchFaculties()
-    } else {
-      const data = await subRes.json()
-      setError(data.message || 'Failed to update subjects')
     }
   }
 
@@ -141,6 +192,7 @@ export default function FacultyPage() {
       max_teaching_load: f.max_teaching_load,
     })
     setSelectedSubjectIds(f.subjects?.map((s) => s.id) ?? [])
+    fetchAvailability(f.id)
   }
 
   function toggleSubject(subjectId: number) {
@@ -168,24 +220,22 @@ export default function FacultyPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Prof. Juan Dela Cruz" />
+                className="w-full border border-gray-300 rounded-md px-3 py-2" placeholder="Prof. Juan Dela Cruz" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email (for login)</label>
               <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="cruz@example.com" />
+                className="w-full border border-gray-300 rounded-md px-3 py-2" placeholder="cruz@example.com" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="w-full border border-gray-300 rounded-md px-3 py-2" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Faculty Type</label>
               <select value={form.faculty_type} onChange={(e) => setForm({ ...form, faculty_type: e.target.value })}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="w-full border border-gray-300 rounded-md px-3 py-2">
                 <option value="full_time">Full Time</option>
                 <option value="part_time">Part Time</option>
               </select>
@@ -194,7 +244,7 @@ export default function FacultyPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Max Teaching Load (hours)</label>
               <input type="number" value={form.max_teaching_load}
                 onChange={(e) => setForm({ ...form, max_teaching_load: parseInt(e.target.value) || 24 })} min={1}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="w-full border border-gray-300 rounded-md px-3 py-2" />
             </div>
             <div className="flex items-end">
               <button type="submit" className="bg-purple-600 text-white px-6 py-2 rounded-md hover:bg-purple-700 transition">
@@ -231,25 +281,57 @@ export default function FacultyPage() {
                 </div>
               </div>
 
-              {/* ===== NEW: Subject Assignment ===== */}
-              <div className="border-t border-yellow-200 pt-4">
+              {/* Subjects */}
+              <div className="border-t border-yellow-200 pt-4 mb-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Subjects (qualifications)</h3>
                 <p className="text-xs text-gray-500 mb-3">Check the subjects this faculty member is qualified to teach.</p>
-                {allSubjects.length === 0 && <p className="text-xs text-gray-400">No subjects available. Create subjects first.</p>}
+                {allSubjects.length === 0 && <p className="text-xs text-gray-400">No subjects available.</p>}
                 <div className="flex flex-wrap gap-3">
                   {allSubjects.map((subject) => (
                     <label key={subject.id} className="flex items-center gap-2 bg-white border border-gray-300 rounded-md px-3 py-2 cursor-pointer hover:bg-gray-50 transition">
-                      <input
-                        type="checkbox"
-                        checked={selectedSubjectIds.includes(subject.id)}
-                        onChange={() => toggleSubject(subject.id)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
+                      <input type="checkbox" checked={selectedSubjectIds.includes(subject.id)} onChange={() => toggleSubject(subject.id)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                       <span className="text-sm font-mono">{subject.code}</span>
                       <span className="text-sm text-gray-500">— {subject.title}</span>
                     </label>
                   ))}
                 </div>
+              </div>
+
+              {/* 👇 NEW: Availability */}
+              <div className="border-t border-yellow-200 pt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Availability (preferred days & times)</h3>
+                <p className="text-xs text-gray-500 mb-3">Select which days this faculty member is available and their preferred hours.</p>
+                
+                <div className="flex gap-4 mb-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Start Time</label>
+                    <input type="time" value={availStartTime} onChange={(e) => setAvailStartTime(e.target.value)}
+                      className="border border-gray-300 rounded-md px-2 py-1 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End Time</label>
+                    <input type="time" value={availEndTime} onChange={(e) => setAvailEndTime(e.target.value)}
+                      className="border border-gray-300 rounded-md px-2 py-1 text-sm" />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                  {ALL_DAYS.map((d) => (
+                    <button key={d.val} type="button" onClick={() => toggleAvailDay(d.val)}
+                      className={`px-3 py-1.5 rounded-md text-sm transition ${
+                        isDaySelected(d.val)
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                      }`}>
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  {availability.length > 0
+                    ? `Selected: ${availability.map((a) => ALL_DAYS[a.day_of_week - 1]?.label).join(', ')}`
+                    : 'No days selected — faculty will be available on all section days.'}
+                </p>
               </div>
             </form>
           </div>
@@ -280,11 +362,7 @@ export default function FacultyPage() {
                     <td className="p-3">{f.user?.email ?? '—'}</td>
                     <td className="p-3 capitalize">{f.faculty_type}</td>
                     <td className="p-3">{f.max_teaching_load}h</td>
-                    <td className="p-3">
-                      {f.subjects && f.subjects.length > 0
-                        ? f.subjects.map((s) => s.code).join(', ')
-                        : '—'}
-                    </td>
+                    <td className="p-3">{f.subjects?.map((s) => s.code).join(', ') ?? '—'}</td>
                     <td className="p-3">
                       <button onClick={() => startEdit(f)} className="text-blue-600 hover:underline text-sm mr-3">Edit</button>
                       <button onClick={() => handleDelete(f.id)} className="text-red-600 hover:underline text-sm">Delete</button>

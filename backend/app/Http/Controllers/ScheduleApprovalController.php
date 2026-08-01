@@ -17,7 +17,7 @@ class ScheduleApprovalController extends Controller
         $query = Schedule::with(['section', 'sessions.subject', 'sessions.faculty.user', 'sessions.room'])
             ->orderByDesc('created_at');
 
-        // 👇 NEW: Hide archived by default unless ?show_archived=true
+        // 👇 Hide archived by default unless ?show_archived=true
         if ($request->query('show_archived') !== 'true') {
             $query->where('status', '!=', 'archived');
         }
@@ -73,7 +73,7 @@ class ScheduleApprovalController extends Controller
             ], 422);
         }
 
-        // FIX: Archive old published schedules for this section
+        // Archive old published schedules for this section
         Schedule::where('section_id', $schedule->section_id)
             ->where('id', '!=', $schedule->id)
             ->where('status', 'published')
@@ -101,6 +101,26 @@ class ScheduleApprovalController extends Controller
         $schedule->update(['status' => 'rejected']);
 
         return response()->json($schedule);
+    }
+
+    /**
+     * Delete a schedule. Admin only. Only drafts and archived can be deleted.
+     * DELETE /api/schedules/{schedule}
+     */
+    public function destroy(Request $request, Schedule $schedule)
+    {
+        $this->authorizeAdmin($request);
+
+        if (!in_array($schedule->status, ['draft', 'archived'])) {
+            return response()->json([
+                'message' => "Only draft or archived schedules can be deleted.",
+            ], 422);
+        }
+
+        $schedule->sessions()->delete();
+        $schedule->delete();
+
+        return response()->json(['message' => 'Schedule deleted successfully']);
     }
 
     private function authorizeAdmin(Request $request): void

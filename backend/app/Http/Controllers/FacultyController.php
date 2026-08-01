@@ -65,4 +65,34 @@ class FacultyController extends Controller
         $faculty->subjects()->detach($subjectId);
         return response()->json(['message' => 'Subject removed']);
     }
+
+        public function updateAvailability(Request $request, Faculty $faculty)
+    {
+        $request->validate([
+            'availability' => 'required|array',
+            'availability.*.day_of_week' => 'required|integer|min:1|max:7',
+            'availability.*.start_time' => 'nullable|string',
+            'availability.*.end_time' => 'nullable|string',
+        ]);
+
+        // Delete old availability
+        $faculty->availabilities()->delete();
+
+        // Insert new
+        foreach ($request->availability as $avail) {
+            $faculty->availabilities()->create([
+                'day_of_week' => $avail['day_of_week'],
+                'start_time' => $avail['start_time'] ?? null,
+                'end_time' => $avail['end_time'] ?? null,
+            ]);
+        }
+
+        return response()->json(['message' => 'Availability updated successfully']);
+    }
+
+    public function getAvailability(Faculty $faculty)
+    {
+        return response()->json($faculty->availabilities);
+    }
+
 }

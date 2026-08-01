@@ -86,3 +86,28 @@
 ---
 
 ## Test Results: 18/18 Passing
+
+---
+
+## Features Added (Round 2)
+
+| Feature | Description |
+|---|---|
+| Faculty Availability UI | Set preferred days/times per faculty via edit form |
+| Schedule Session Editing | Admin can manually edit day/time/room/faculty per session |
+| Conflict Detection | Backend validates changes prevent double-booking |
+| Delete Schedules | Draft/archived schedules can be permanently deleted |
+
+## New Bug Fixes
+
+### Bug #7: ScheduleController.php Corrupted (Duplicate Class)
+- **Symptom**: Delete button caused `Call to undefined method destroy()`
+- **Root Cause**: `ScheduleController.php` accidentally had `class ScheduleApprovalController` instead of `class ScheduleController`
+- **Fix**: Restored correct class name in `ScheduleController.php`
+- **Files**: `ScheduleController.php`
+
+### Bug #8: Time Format on Session Edit
+- **Symptom**: `"The start time field must match the format H:i."` when editing a session
+- **Root Cause**: Browser `type="time"` sends `"09:00 am"` but Laravel expects `"09:00"`
+- **Fix**: Added `.split(' ')[0]` before sending the PUT request
+- **Files**: `AdminDashboard.tsx`
