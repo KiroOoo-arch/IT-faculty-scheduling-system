@@ -75,9 +75,9 @@ def generate_schedule_for_section(section_id: int):
         conn = get_connection()
         cur = conn.cursor()
 
-        # --- Section ---
+               # --- Section ---
         cur.execute(
-            "SELECT id, name, preferred_days, preferred_start_time, preferred_end_time "
+            "SELECT id, name, preferred_days, preferred_start_time, preferred_end_time, student_count "
             "FROM sections WHERE id = %s",
             (section_id,),
         )
@@ -91,6 +91,7 @@ def generate_schedule_for_section(section_id: int):
             "preferred_days": parse_preferred_days(section_row["preferred_days"]),
             "preferred_start_hour": parse_hour(section_row["preferred_start_time"]),
             "preferred_end_hour": parse_hour(section_row["preferred_end_time"]),
+            "student_count": section_row.get("student_count", 30),
         }
 
         # --- Subjects assigned to this section ---
