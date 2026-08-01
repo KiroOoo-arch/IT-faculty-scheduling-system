@@ -71,6 +71,10 @@ export default function AdminDashboard() {
   const [editError, setEditError] = useState('')
   const [editSaving, setEditSaving] = useState(false)
 
+  // 👇 Delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null)
+
   function headers() {
     return {
       Authorization: `Bearer ${token}`,
@@ -177,20 +181,28 @@ export default function AdminDashboard() {
     }
   }
 
-  // 👇 NEW: Delete a schedule
-  async function handleDeleteSchedule(scheduleId: number) {
-    if (!confirm('Delete this schedule? This cannot be undone.')) return
+  // 👇 Show confirmation modal instead of browser confirm()
+  function handleDeleteSchedule(scheduleId: number) {
+    setDeleteTargetId(scheduleId)
+    setShowDeleteConfirm(true)
+  }
+
+  async function confirmDelete() {
+    if (!deleteTargetId) return
     try {
-      const response = await fetch(`${API_BASE_URL}/schedules/${scheduleId}`, {
+      const response = await fetch(`${API_BASE_URL}/schedules/${deleteTargetId}`, {
         method: 'DELETE', headers: headers(),
       })
       if (!response.ok) {
         const data = await response.json()
         throw new Error(data.message || 'Delete failed')
       }
+      setShowDeleteConfirm(false)
+      setDeleteTargetId(null)
       fetchSchedules()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Delete failed')
+      setShowDeleteConfirm(false)
     }
   }
 
@@ -322,7 +334,6 @@ export default function AdminDashboard() {
                       {schedule.status === 'published' && (
                         <span className="text-green-600 text-sm font-medium">✅ Faculty can see this</span>
                       )}
-                      {/* 👇 NEW: Delete button for draft/archived */}
                       {(schedule.status === 'draft' || schedule.status === 'archived') && (
                         <button onClick={() => handleDeleteSchedule(schedule.id)}
                           className="text-red-600 hover:underline text-sm">🗑 Delete</button>
@@ -426,6 +437,28 @@ export default function AdminDashboard() {
                 <button onClick={saveEditSession} disabled={editSaving}
                   className="bg-blue-600 text-white px-4 py-2 text-sm rounded-md hover:bg-blue-700 transition disabled:opacity-50">
                   {editSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 👇 Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm mx-4">
+              <h3 className="text-lg font-semibold mb-2">Delete Schedule?</h3>
+              <p className="text-gray-600 text-sm mb-6">
+                This will permanently delete this schedule and all its sessions. This cannot be undone.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={confirmDelete}
+                  className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition">
+                  Yes, Delete
                 </button>
               </div>
             </div>
