@@ -56,7 +56,11 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
         room_type = sess["room_type"]
         subject_id = sess["subject_id"]
 
-        eligible_rooms = [r["id"] for r in rooms if r["type"] == room_type]
+        eligible_rooms = [
+        r["id"] for r in rooms
+        if r["type"] == room_type
+        and r["capacity"] >= section.get("student_count", 30)  # ← NEW CONSTRAINT
+        ]
         eligible_faculty = [f["id"] for f in faculty if subject_id in f["can_teach_subject_ids"]]
         max_start = END_HOUR - duration
 
