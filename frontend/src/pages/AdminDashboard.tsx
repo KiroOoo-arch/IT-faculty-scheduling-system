@@ -9,10 +9,18 @@ type Faculty = {
   subjects?: { code: string; title: string }[]
 }
 
+type Section = {
+  id: number
+  name: string
+  year_level: number
+  semester_name: string
+  subjects?: { code: string }[]
+}
+
 type Schedule = {
   id: number
   section_id: number
-  status: 'draft' | 'approved' | 'published'
+  status: 'draft' | 'approved' | 'published' | 'archived'
   generated_at: string
   sessions?: { id: number; subject?: { code: string }; day_of_week: number; start_time: string; end_time: string }[]
 }
@@ -20,16 +28,17 @@ type Schedule = {
 export default function AdminDashboard() {
   const { user, token, logout } = useAuth()
   const [faculties, setFaculties] = useState<Faculty[]>([])
+  const [sections, setSections] = useState<Section[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [generating, setGenerating] = useState(false)
   const [generateResult, setGenerateResult] = useState('')
+  const [selectedSectionId, setSelectedSectionId] = useState<number | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
 
-  // Schedule management state
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(false)
 
-  // Shared headers
   function headers() {
     return {
       Authorization: `Bearer ${token}`,
@@ -39,49 +48,69 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    async function fetchFaculties() {
+    async function fetchData() {
       try {
-        const response = await fetch(`${API_BASE_URL}/faculties`, { headers: headers() })
-        if (!response.ok) throw new Error('Failed to load faculty list')
-        const data = await response.json()
-        setFaculties(Array.isArray(data) ? data : [])
+        const [facRes, secRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/faculties`, { headers: headers() }),
+          fetch(`${API_BASE_URL}/sections`, { headers: headers() }),
+        ])
+        if (facRes.ok) {
+          const data = await facRes.json()
+          setFaculties(Array.isArray(data) ? data : [])
+        }
+        if (secRes.ok) {
+          const data = await secRes.json()
+          setSections(Array.isArray(data) ? data : [])
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong')
       } finally {
         setLoading(false)
       }
     }
-    fetchFaculties()
+    fetchData()
     fetchSchedules()
   }, [token])
+
+  useEffect(() => {
+    if (sections.length > 0 && selectedSectionId === null) {
+      setSelectedSectionId(sections[0].id)
+    }
+  }, [sections])
+
+  // 👇 NEW: Re-fetch when showArchived toggles
+  useEffect(() => {
+    fetchSchedules()
+  }, [showArchived])
 
   async function fetchSchedules() {
     setSchedulesLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/schedules`, { headers: headers() })
+      const response = await fetch(`${API_BASE_URL}/schedules?show_archived=${showArchived}`, { headers: headers() })
       if (response.ok) {
         const data = await response.json()
         setSchedules(Array.isArray(data) ? data : [])
       }
     } catch {
-      // Schedules endpoint might not exist yet — that's okay
+      // ignore
     } finally {
       setSchedulesLoading(false)
     }
   }
 
-  async function handleGenerate(sectionId: number) {
+  async function handleGenerate() {
+    if (!selectedSectionId) return
     setGenerating(true)
     setGenerateResult('')
     try {
-      const response = await fetch(`${API_BASE_URL}/schedules/generate/${sectionId}`, {
+      const response = await fetch(`${API_BASE_URL}/schedules/generate/${selectedSectionId}`, {
         method: 'POST',
         headers: headers(),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Generation failed')
       setGenerateResult(`✅ Status: ${data.status} — ${data.sessions?.length ?? 0} sessions created.`)
-      fetchSchedules() // Refresh schedule list
+      fetchSchedules()
     } catch (err) {
       setGenerateResult(err instanceof Error ? `❌ Error: ${err.message}` : 'Something went wrong')
     } finally {
@@ -97,7 +126,7 @@ export default function AdminDashboard() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Approval failed')
-      fetchSchedules() // Refresh
+      fetchSchedules()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Approval failed')
     }
@@ -111,7 +140,7 @@ export default function AdminDashboard() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Publish failed')
-      fetchSchedules() // Refresh
+      fetchSchedules()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Publish failed')
     }
@@ -122,6 +151,8 @@ export default function AdminDashboard() {
   function formatTime(t: string) {
     return t?.substring(0, 5) ?? ''
   }
+
+  const selectedSection = sections.find((s) => s.id === selectedSectionId)
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
@@ -137,7 +168,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Navigation Links */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
           <a href="/admin/users" className="bg-green-600 text-white px-4 py-3 rounded-md hover:bg-green-700 transition text-center font-medium">👤 Users</a>
           <a href="/admin/faculty" className="bg-purple-600 text-white px-4 py-3 rounded-md hover:bg-purple-700 transition text-center font-medium">🎓 Faculty</a>
           <a href="/admin/subjects" className="bg-orange-600 text-white px-4 py-3 rounded-md hover:bg-orange-700 transition text-center font-medium">📚 Subjects</a>
@@ -149,13 +180,33 @@ export default function AdminDashboard() {
         {/* Generate Schedule */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-3">Generate Schedule</h2>
-          <p className="text-gray-500 text-sm mb-3">Section: BSIT 1A (id: 1)</p>
+          <div className="flex items-center gap-3 mb-3">
+            <label className="text-sm font-medium text-gray-700">Section:</label>
+            <select
+              value={selectedSectionId ?? ''}
+              onChange={(e) => setSelectedSectionId(parseInt(e.target.value))}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {sections.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} (Year {s.year_level} — {s.semester_name})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedSection && (
+            <p className="text-gray-400 text-xs mb-3">
+              Subjects: {selectedSection.subjects?.map((s) => s.code).join(', ') || 'None assigned'}
+            </p>
+          )}
+
           <button
-            onClick={() => handleGenerate(1)}
-            disabled={generating}
+            onClick={handleGenerate}
+            disabled={generating || !selectedSectionId}
             className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-50"
           >
-            {generating ? 'Generating...' : 'Generate Schedule'}
+            {generating ? 'Generating...' : `Generate Schedule for ${selectedSection?.name || '...'}`}
           </button>
           {generateResult && (
             <p className={`mt-3 text-sm ${generateResult.startsWith('❌') ? 'text-red-600' : 'text-green-600'}`}>
@@ -164,14 +215,22 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        {/* ===== NEW: Schedule Review & Approval ===== */}
+        {/* Schedule Review & Approval — with toggle */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Schedule Review & Approval</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Schedule Review & Approval</h2>
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 transition"
+            >
+              {showArchived ? '🙈 Hide Archived' : '📂 Show Archived'}
+            </button>
+          </div>
 
           {schedulesLoading && <p className="text-gray-500">Loading schedules...</p>}
 
           {!schedulesLoading && schedules.length === 0 && (
-            <p className="text-gray-400 text-sm">No schedules found. Click "Generate Schedule" above to create one.</p>
+            <p className="text-gray-400 text-sm">No schedules found. Generate one above.</p>
           )}
 
           {!schedulesLoading && schedules.length > 0 && (
@@ -185,6 +244,7 @@ export default function AdminDashboard() {
                       <span className={`ml-3 px-2 py-0.5 rounded text-xs font-medium ${
                         schedule.status === 'published' ? 'bg-green-100 text-green-700' :
                         schedule.status === 'approved' ? 'bg-blue-100 text-blue-700' :
+                        schedule.status === 'archived' ? 'bg-gray-100 text-gray-500' :
                         'bg-yellow-100 text-yellow-700'
                       }`}>
                         {schedule.status}
@@ -192,18 +252,14 @@ export default function AdminDashboard() {
                     </div>
                     <div className="flex gap-2">
                       {schedule.status === 'draft' && (
-                        <button
-                          onClick={() => handleApprove(schedule.id)}
-                          className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition"
-                        >
+                        <button onClick={() => handleApprove(schedule.id)}
+                          className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition">
                           Approve
                         </button>
                       )}
                       {schedule.status === 'approved' && (
-                        <button
-                          onClick={() => handlePublish(schedule.id)}
-                          className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700 transition"
-                        >
+                        <button onClick={() => handlePublish(schedule.id)}
+                          className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700 transition">
                           Publish
                         </button>
                       )}
@@ -213,7 +269,6 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* Sessions table */}
                   {schedule.sessions && schedule.sessions.length > 0 && (
                     <table className="w-full text-sm">
                       <thead>

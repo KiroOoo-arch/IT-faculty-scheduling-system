@@ -21,6 +21,18 @@ class SectionController extends Controller
 
     public function store(Request $request)
     {
+        // FIX: Clean AM/PM from time before validation
+        if ($request->has('preferred_start_time')) {
+            $request->merge([
+                'preferred_start_time' => explode(' ', $request->preferred_start_time)[0]
+            ]);
+        }
+        if ($request->has('preferred_end_time')) {
+            $request->merge([
+                'preferred_end_time' => explode(' ', $request->preferred_end_time)[0]
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string',
             'year_level' => 'required|integer|min:1|max:4',
@@ -52,6 +64,18 @@ class SectionController extends Controller
 
     public function update(Request $request, Section $section)
     {
+        // FIX: Clean AM/PM from time before validation
+        if ($request->has('preferred_start_time')) {
+            $request->merge([
+                'preferred_start_time' => explode(' ', $request->preferred_start_time)[0]
+            ]);
+        }
+        if ($request->has('preferred_end_time')) {
+            $request->merge([
+                'preferred_end_time' => explode(' ', $request->preferred_end_time)[0]
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => 'sometimes|string',
             'year_level' => 'sometimes|integer|min:1|max:4',
