@@ -111,3 +111,56 @@
 - **Root Cause**: Browser `type="time"` sends `"09:00 am"` but Laravel expects `"09:00"`
 - **Fix**: Added `.split(' ')[0]` before sending the PUT request
 - **Files**: `AdminDashboard.tsx`
+
+
+graph TB
+    subgraph Frontend["Frontend (React + TypeScript + Vite)"]
+        AD[Admin Dashboard]
+        FP[Faculty Portal]
+        CP[CRUD Pages]
+        RP[Reports Page]
+    end
+
+    subgraph Backend["Backend (Laravel 13 + Sanctum)"]
+        API[REST API]
+        AUTH[Authentication & RBAC]
+        VALID[Validation & Conflict Detection]
+        DB[(PostgreSQL)]
+    end
+
+    subgraph AI["AI Engine (Python FastAPI)"]
+        SOLVER[OR-Tools CP-SAT Solver]
+        CONSTRAINTS[8 Scheduling Constraints]
+    end
+
+    Frontend -->|HTTP/JSON| Backend
+    Backend -->|HTTP POST| AI
+    AI -->|OPTIMAL/PARTIAL/INFEASIBLE| Backend
+    Backend -->|JSON Response| Frontend
+
+erDiagram
+    USERS ||--o{ FACULTY : has
+    FACULTY ||--o{ FACULTY_SUBJECTS : qualified
+    FACULTY ||--o{ FACULTY_AVAILABILITIES : available
+    FACULTY ||--o{ SCHEDULE_SESSIONS : teaches
+    SUBJECTS ||--o{ FACULTY_SUBJECTS : taught-by
+    SUBJECTS ||--o{ SECTION_SUBJECTS : assigned-to
+    SUBJECTS ||--o{ SCHEDULE_SESSIONS : scheduled-as
+    SECTIONS ||--o{ SECTION_SUBJECTS : includes
+    SECTIONS ||--o{ SCHEDULES : generates
+    ROOMS ||--o{ SCHEDULE_SESSIONS : hosts
+    SCHEDULES ||--o{ SCHEDULE_SESSIONS : contains
+
+flowchart LR
+    A[Create Subject] --> B[Assign to Section]
+    B --> C[Assign to Faculty]
+    C --> D[Set Availability]
+    D --> E[Generate Schedule]
+    E --> F{AI Result}
+    F -->|OPTIMAL| G[Review]
+    F -->|PARTIAL| G
+    F -->|INFEASIBLE| H[Adjust] --> E
+    G --> I{Need Edit?}
+    I -->|Yes| J[Edit Session] --> G
+    I -->|No| K[Approve] --> L[Publish]
+    L --> M[Faculty Views]
