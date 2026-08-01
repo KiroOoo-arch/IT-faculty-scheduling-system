@@ -49,6 +49,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/create-faculty', [\App\Http\Controllers\UserController::class, 'createFaculty'])->middleware('admin');
         Route::post('/faculties/{faculty}/subjects', [FacultyController::class, 'attachSubjects']);
         Route::delete('/faculties/{faculty}/subjects/{subjectId}', [FacultyController::class, 'detachSubject']);
+        Route::post('/faculties/{faculty}/availability', [FacultyController::class, 'updateAvailability']);
+        Route::get('/faculties/{faculty}/availability', [FacultyController::class, 'getAvailability']);
+        Route::delete('/schedules/{schedule}', [ScheduleApprovalController::class, 'destroy']);
+        Route::get('/login', function () {
+        response()->json(['message' => 'Unauthenticated.'], 401);
+        })->name('login');
 
 
 

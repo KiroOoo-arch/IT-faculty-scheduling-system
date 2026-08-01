@@ -13,7 +13,7 @@ class ScheduleController extends Controller
 {
     public function generate(Section $section)
     {
-        // 👇 NEW: Archive old drafts so they don't pile up
+        // Archive old drafts
         Schedule::where('section_id', $section->id)
             ->where('status', 'draft')
             ->update(['status' => 'archived']);

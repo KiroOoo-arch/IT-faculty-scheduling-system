@@ -28,18 +28,22 @@ class Faculty extends Model
         return $this->belongsToMany(Subject::class, 'faculty_subjects');
     }
 
-    // 👇 ADD THIS: relationship to sessions
     public function sessions()
     {
         return $this->hasMany(ScheduleSession::class);
     }
 
-    // 👇 ADD THIS: auto-delete sessions + pivot records when faculty is deleted
+    // 👇 ADD THIS: relationship to availabilities
+    public function availabilities()
+    {
+        return $this->hasMany(FacultyAvailability::class);
+    }
+
     protected static function booted()
     {
         static::deleting(function ($faculty) {
-            $faculty->sessions()->delete();          // Delete their schedule sessions
-            $faculty->subjects()->detach();           // Clean up pivot table
+            $faculty->sessions()->delete();
+            $faculty->subjects()->detach();
         });
     }
 }

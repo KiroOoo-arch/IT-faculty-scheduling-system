@@ -17,17 +17,40 @@ type Section = {
   subjects?: { code: string }[]
 }
 
+type Room = {
+  id: number
+  name: string
+  type: string
+}
+
+type Session = {
+  id: number
+  subject?: { code: string }
+  faculty?: { id: number; user?: { name: string } }
+  room?: { id: number; name: string }
+  session_type?: string
+  day_of_week: number
+  start_time: string
+  end_time: string
+}
+
 type Schedule = {
   id: number
   section_id: number
   status: 'draft' | 'approved' | 'published' | 'archived'
   generated_at: string
-  sessions?: { id: number; subject?: { code: string }; day_of_week: number; start_time: string; end_time: string }[]
+  sessions?: Session[]
 }
+
+const ALL_DAYS = [
+  { val: 1, label: 'Monday' }, { val: 2, label: 'Tuesday' }, { val: 3, label: 'Wednesday' },
+  { val: 4, label: 'Thursday' }, { val: 5, label: 'Friday' },
+]
 
 export default function AdminDashboard() {
   const { user, token, logout } = useAuth()
   const [faculties, setFaculties] = useState<Faculty[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
   const [sections, setSections] = useState<Section[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -38,6 +61,15 @@ export default function AdminDashboard() {
 
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(false)
+
+  const [editingSession, setEditingSession] = useState<Session | null>(null)
+  const [editDay, setEditDay] = useState(1)
+  const [editStart, setEditStart] = useState('')
+  const [editEnd, setEditEnd] = useState('')
+  const [editRoomId, setEditRoomId] = useState<number | null>(null)
+  const [editFacultyId, setEditFacultyId] = useState<number | null>(null)
+  const [editError, setEditError] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
 
   function headers() {
     return {
@@ -50,9 +82,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [facRes, secRes] = await Promise.all([
+        const [facRes, secRes, roomRes] = await Promise.all([
           fetch(`${API_BASE_URL}/faculties`, { headers: headers() }),
           fetch(`${API_BASE_URL}/sections`, { headers: headers() }),
+          fetch(`${API_BASE_URL}/rooms`, { headers: headers() }),
         ])
         if (facRes.ok) {
           const data = await facRes.json()
@@ -61,6 +94,10 @@ export default function AdminDashboard() {
         if (secRes.ok) {
           const data = await secRes.json()
           setSections(Array.isArray(data) ? data : [])
+        }
+        if (roomRes.ok) {
+          const data = await roomRes.json()
+          setRooms(Array.isArray(data) ? data : [])
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -78,7 +115,6 @@ export default function AdminDashboard() {
     }
   }, [sections])
 
-  // 👇 NEW: Re-fetch when showArchived toggles
   useEffect(() => {
     fetchSchedules()
   }, [showArchived])
@@ -91,9 +127,7 @@ export default function AdminDashboard() {
         const data = await response.json()
         setSchedules(Array.isArray(data) ? data : [])
       }
-    } catch {
-      // ignore
-    } finally {
+    } catch { /* ignore */ } finally {
       setSchedulesLoading(false)
     }
   }
@@ -104,8 +138,7 @@ export default function AdminDashboard() {
     setGenerateResult('')
     try {
       const response = await fetch(`${API_BASE_URL}/schedules/generate/${selectedSectionId}`, {
-        method: 'POST',
-        headers: headers(),
+        method: 'POST', headers: headers(),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Generation failed')
@@ -121,8 +154,7 @@ export default function AdminDashboard() {
   async function handleApprove(scheduleId: number) {
     try {
       const response = await fetch(`${API_BASE_URL}/schedules/${scheduleId}/approve`, {
-        method: 'PATCH',
-        headers: headers(),
+        method: 'PATCH', headers: headers(),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Approval failed')
@@ -135,8 +167,7 @@ export default function AdminDashboard() {
   async function handlePublish(scheduleId: number) {
     try {
       const response = await fetch(`${API_BASE_URL}/schedules/${scheduleId}/publish`, {
-        method: 'PATCH',
-        headers: headers(),
+        method: 'PATCH', headers: headers(),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Publish failed')
@@ -146,11 +177,63 @@ export default function AdminDashboard() {
     }
   }
 
-  const dayNames = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-
-  function formatTime(t: string) {
-    return t?.substring(0, 5) ?? ''
+  // 👇 NEW: Delete a schedule
+  async function handleDeleteSchedule(scheduleId: number) {
+    if (!confirm('Delete this schedule? This cannot be undone.')) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/schedules/${scheduleId}`, {
+        method: 'DELETE', headers: headers(),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.message || 'Delete failed')
+      }
+      fetchSchedules()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed')
+    }
   }
+
+  function startEditSession(session: Session) {
+    setEditingSession(session)
+    setEditDay(session.day_of_week)
+    setEditStart(session.start_time.substring(0, 5))
+    setEditEnd(session.end_time.substring(0, 5))
+    setEditRoomId(session.room?.id ?? null)
+    setEditFacultyId(session.faculty?.id ?? null)
+    setEditError('')
+  }
+
+  async function saveEditSession() {
+    if (!editingSession) return
+    setEditSaving(true)
+    setEditError('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/schedules/sessions/${editingSession.id}`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify({
+          day_of_week: editDay,
+          start_time: editStart.split(' ')[0],
+          end_time: editEnd.split(' ')[0],
+          room_id: editRoomId,
+          faculty_id: editFacultyId,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || (data.conflicts ? data.conflicts.join(', ') : 'Edit failed'))
+      }
+      setEditingSession(null)
+      fetchSchedules()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  function formatTime(t: string) { return t?.substring(0, 5) ?? '' }
 
   const selectedSection = sections.find((s) => s.id === selectedSectionId)
 
@@ -162,9 +245,7 @@ export default function AdminDashboard() {
             <h1 className="text-2xl font-bold text-gray-800">Welcome, {user?.name}</h1>
             <p className="text-gray-500">Admin Dashboard</p>
           </div>
-          <button onClick={logout} className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition">
-            Log out
-          </button>
+          <button onClick={logout} className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition">Log out</button>
         </div>
 
         {/* Navigation Links */}
@@ -182,56 +263,37 @@ export default function AdminDashboard() {
           <h2 className="text-lg font-semibold text-gray-800 mb-3">Generate Schedule</h2>
           <div className="flex items-center gap-3 mb-3">
             <label className="text-sm font-medium text-gray-700">Section:</label>
-            <select
-              value={selectedSectionId ?? ''}
-              onChange={(e) => setSelectedSectionId(parseInt(e.target.value))}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
+            <select value={selectedSectionId ?? ''} onChange={(e) => setSelectedSectionId(parseInt(e.target.value))}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm">
               {sections.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} (Year {s.year_level} — {s.semester_name})
-                </option>
+                <option key={s.id} value={s.id}>{s.name} (Year {s.year_level} — {s.semester_name})</option>
               ))}
             </select>
           </div>
-
           {selectedSection && (
-            <p className="text-gray-400 text-xs mb-3">
-              Subjects: {selectedSection.subjects?.map((s) => s.code).join(', ') || 'None assigned'}
-            </p>
+            <p className="text-gray-400 text-xs mb-3">Subjects: {selectedSection.subjects?.map((s) => s.code).join(', ') || 'None assigned'}</p>
           )}
-
-          <button
-            onClick={handleGenerate}
-            disabled={generating || !selectedSectionId}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-50"
-          >
+          <button onClick={handleGenerate} disabled={generating || !selectedSectionId}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-50">
             {generating ? 'Generating...' : `Generate Schedule for ${selectedSection?.name || '...'}`}
           </button>
           {generateResult && (
-            <p className={`mt-3 text-sm ${generateResult.startsWith('❌') ? 'text-red-600' : 'text-green-600'}`}>
-              {generateResult}
-            </p>
+            <p className={`mt-3 text-sm ${generateResult.startsWith('❌') ? 'text-red-600' : 'text-green-600'}`}>{generateResult}</p>
           )}
         </div>
 
-        {/* Schedule Review & Approval — with toggle */}
+        {/* Schedule Review & Approval */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-gray-800">Schedule Review & Approval</h2>
-            <button
-              onClick={() => setShowArchived(!showArchived)}
-              className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 transition"
-            >
+            <button onClick={() => setShowArchived(!showArchived)}
+              className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 transition">
               {showArchived ? '🙈 Hide Archived' : '📂 Show Archived'}
             </button>
           </div>
 
           {schedulesLoading && <p className="text-gray-500">Loading schedules...</p>}
-
-          {!schedulesLoading && schedules.length === 0 && (
-            <p className="text-gray-400 text-sm">No schedules found. Generate one above.</p>
-          )}
+          {!schedulesLoading && schedules.length === 0 && <p className="text-gray-400 text-sm">No schedules found.</p>}
 
           {!schedulesLoading && schedules.length > 0 && (
             <div className="space-y-4">
@@ -246,25 +308,24 @@ export default function AdminDashboard() {
                         schedule.status === 'approved' ? 'bg-blue-100 text-blue-700' :
                         schedule.status === 'archived' ? 'bg-gray-100 text-gray-500' :
                         'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {schedule.status}
-                      </span>
+                      }`}>{schedule.status}</span>
                     </div>
                     <div className="flex gap-2">
                       {schedule.status === 'draft' && (
                         <button onClick={() => handleApprove(schedule.id)}
-                          className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition">
-                          Approve
-                        </button>
+                          className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition">Approve</button>
                       )}
                       {schedule.status === 'approved' && (
                         <button onClick={() => handlePublish(schedule.id)}
-                          className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700 transition">
-                          Publish
-                        </button>
+                          className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700 transition">Publish</button>
                       )}
                       {schedule.status === 'published' && (
                         <span className="text-green-600 text-sm font-medium">✅ Faculty can see this</span>
+                      )}
+                      {/* 👇 NEW: Delete button for draft/archived */}
+                      {(schedule.status === 'draft' || schedule.status === 'archived') && (
+                        <button onClick={() => handleDeleteSchedule(schedule.id)}
+                          className="text-red-600 hover:underline text-sm">🗑 Delete</button>
                       )}
                     </div>
                   </div>
@@ -274,16 +335,31 @@ export default function AdminDashboard() {
                       <thead>
                         <tr className="text-gray-500 border-b">
                           <th className="py-1 pr-2 text-left">Subject</th>
+                          <th className="py-1 px-2 text-left">Type</th>
                           <th className="py-1 px-2 text-left">Day</th>
                           <th className="py-1 px-2 text-left">Time</th>
+                          <th className="py-1 px-2 text-left">Room</th>
+                          <th className="py-1 px-2 text-left">Faculty</th>
+                          {(schedule.status === 'draft' || schedule.status === 'approved') && (
+                            <th className="py-1 pl-2 text-left">Actions</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
                         {schedule.sessions.map((session) => (
                           <tr key={session.id} className="border-b border-gray-100">
                             <td className="py-1 pr-2">{session.subject?.code ?? '—'}</td>
-                            <td className="py-1 px-2">{dayNames[session.day_of_week] ?? '—'}</td>
+                            <td className="py-1 px-2">{session.session_type ?? '—'}</td>
+                            <td className="py-1 px-2">{ALL_DAYS[session.day_of_week - 1]?.label ?? '—'}</td>
                             <td className="py-1 px-2">{formatTime(session.start_time)}–{formatTime(session.end_time)}</td>
+                            <td className="py-1 px-2">{session.room?.name ?? '—'}</td>
+                            <td className="py-1 px-2">{session.faculty?.user?.name ?? '—'}</td>
+                            {(schedule.status === 'draft' || schedule.status === 'approved') && (
+                              <td className="py-1 pl-2">
+                                <button onClick={() => startEditSession(session)}
+                                  className="text-blue-600 hover:underline text-xs">Edit</button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -294,6 +370,67 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
+
+        {/* Session Edit Modal */}
+        {editingSession && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg mx-4">
+              <h3 className="text-lg font-semibold mb-4">Edit Session: {editingSession.subject?.code ?? '—'}</h3>
+              {editError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md p-3 mb-4">❌ {editError}</div>
+              )}
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Day</label>
+                  <select value={editDay} onChange={(e) => setEditDay(parseInt(e.target.value))}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    {ALL_DAYS.map((d) => (
+                      <option key={d.val} value={d.val}>{d.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Room</label>
+                  <select value={editRoomId ?? ''} onChange={(e) => setEditRoomId(e.target.value ? parseInt(e.target.value) : null)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    <option value="">—</option>
+                    {rooms.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.type})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Start Time</label>
+                  <input type="time" value={editStart} onChange={(e) => setEditStart(e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">End Time</label>
+                  <input type="time" value={editEnd} onChange={(e) => setEditEnd(e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Faculty</label>
+                  <select value={editFacultyId ?? ''} onChange={(e) => setEditFacultyId(e.target.value ? parseInt(e.target.value) : null)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    <option value="">—</option>
+                    {faculties.map((f) => (
+                      <option key={f.id} value={f.id}>{f.user?.name ?? `Faculty #${f.id}`}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setEditingSession(null)}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition">Cancel</button>
+                <button onClick={saveEditSession} disabled={editSaving}
+                  className="bg-blue-600 text-white px-4 py-2 text-sm rounded-md hover:bg-blue-700 transition disabled:opacity-50">
+                  {editSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Faculty Table */}
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
