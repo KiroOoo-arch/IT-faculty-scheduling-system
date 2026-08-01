@@ -10,11 +10,12 @@ erDiagram
     FACULTY ||--o{ SCHEDULE_SESSIONS : teaches
     SUBJECTS ||--o{ FACULTY_SUBJECTS : taught-by
     SUBJECTS ||--o{ SECTION_SUBJECTS : assigned-to
-    SUBJECTS ||--o{ SCHEDULE_SESSIONS : scheduled-as
+    SUBJECTS ||--o{ SCHEDULE_SESSIONS : included-in
     SECTIONS ||--o{ SECTION_SUBJECTS : includes
     SECTIONS ||--o{ SCHEDULES : generates
     ROOMS ||--o{ SCHEDULE_SESSIONS : hosts
     SCHEDULES ||--o{ SCHEDULE_SESSIONS : contains
+    SCHEDULES ||--o{ SCHEDULE_GENERATION_LOGS : logged
 
     USERS {
         int id PK
@@ -73,7 +74,7 @@ erDiagram
         int subject_id FK
         int faculty_id FK
         int room_id FK
-        string session_type
+        string session_type "lecture | laboratory"
         int day_of_week
         time start_time
         time end_time
@@ -87,3 +88,22 @@ erDiagram
         time end_time
     }
 
+    FACULTY_SUBJECTS {
+        int faculty_id FK
+        int subject_id FK
+    }
+
+    SECTION_SUBJECTS {
+        int section_id FK
+        int subject_id FK
+    }
+
+    SCHEDULE_GENERATION_LOGS {
+        int id PK
+        int section_id FK
+        int requested_by FK
+        string status "success | partial | failure"
+        string message
+        json unscheduled_sessions
+        timestamp created_at
+    }
