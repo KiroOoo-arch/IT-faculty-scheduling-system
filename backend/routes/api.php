@@ -36,7 +36,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('rooms', RoomController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('sections', SectionController::class)->only(['store', 'update', 'destroy']);
 
-        Route::post('/schedules/generate/{section}', [ScheduleController::class, 'generate']);
+        Route::post('/schedules/generate/{section}', [ScheduleController::class, 'generate'])->middleware('admin');
         Route::patch('/schedules/{schedule}/approve', [ScheduleApprovalController::class, 'approve']);
         Route::patch('/schedules/{schedule}/publish', [ScheduleApprovalController::class, 'publish']);
         Route::patch('/schedules/{schedule}/reject', [ScheduleApprovalController::class, 'reject']);

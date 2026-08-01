@@ -8,6 +8,7 @@ import UsersPage from './pages/admin/UsersPage'
 import FacultyPage from './pages/admin/FacultyPage'
 import SubjectsPage from './pages/admin/SubjectsPage'
 import SectionsPage from './pages/admin/SectionsPage'
+import ReportsPage from './pages/admin/ReportsPage'           // ← ADD THIS LINE
 
 function Dashboard() {
   const { user } = useAuth()
@@ -32,6 +33,7 @@ function AppRoutes() {
       <Route path="/admin/faculty" element={<ProtectedRoute><FacultyPage /></ProtectedRoute>} />
       <Route path="/admin/subjects" element={<ProtectedRoute><SubjectsPage /></ProtectedRoute>} />
       <Route path="/admin/sections" element={<ProtectedRoute><SectionsPage /></ProtectedRoute>} />
+      <Route path="/admin/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />   {/* ← ADD THIS LINE */}
       <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
     </Routes>
   )

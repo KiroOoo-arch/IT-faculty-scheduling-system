@@ -7,8 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 class ScheduleSession extends Model
 {
     protected $fillable = [
-        'schedule_id', 'subject_id', 'faculty_id', 'room_id',
-        'session_type', 'day_of_week', 'start_time', 'end_time',
+        'schedule_id',
+        'subject_id',
+        'faculty_id',
+        'room_id',
+        'session_type',
+        'day_of_week',
+        'start_time',
+        'end_time',
     ];
 
     public function subject() { return $this->belongsTo(Subject::class); }
