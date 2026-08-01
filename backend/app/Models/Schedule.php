@@ -35,4 +35,12 @@ class Schedule extends Model
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
+
+    // 👇 ADD THIS
+    protected static function booted()
+    {
+        static::deleting(function ($schedule) {
+            $schedule->sessions()->delete();
+        });
+    }
 }
