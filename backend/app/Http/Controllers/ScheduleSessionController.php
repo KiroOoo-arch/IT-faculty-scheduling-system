@@ -77,17 +77,24 @@ class ScheduleSessionController extends Controller
             $conflicts[] = "Room '{$room->name}' is type '{$room->type}', but this session needs '{$neededType}'.";
         }
 
-        // Faculty availability check
+        // Faculty availability check — only enforce if they HAVE declared availability
         $faculty = Faculty::with('availabilities')->find($proposed['faculty_id']);
-        if ($faculty) {
-            $available = $faculty->availabilities->contains(function ($a) use ($proposed) {
+        if ($faculty && $faculty->availabilities->isNotEmpty()) {
+            $pStart = substr($proposed['start_time'], 0, 5);
+            $pEnd   = substr($proposed['end_time'], 0, 5);
+
+            $available = $faculty->availabilities->contains(function ($a) use ($proposed, $pStart, $pEnd) {
+                $aStart = substr($a->start_time, 0, 5);
+                $aEnd   = substr($a->end_time, 0, 5);
+
                 return $a->day_of_week == $proposed['day_of_week']
-                    && $proposed['start_time'] >= $a->start_time
-                    && $proposed['end_time'] <= $a->end_time;
+                    && $pStart >= $aStart
+                    && $pEnd <= $aEnd;
             });
+
             if (!$available) {
                 $conflicts[] = "{$faculty->user->name} is not available on day {$proposed['day_of_week']} "
-                    . "from {$proposed['start_time']} to {$proposed['end_time']}.";
+                    . "from {$pStart} to {$pEnd}.";
             }
         }
 
