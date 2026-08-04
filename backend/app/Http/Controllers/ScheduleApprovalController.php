@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Schedule;
+use App\Models\ScheduleSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -73,10 +74,19 @@ class ScheduleApprovalController extends Controller
             ], 422);
         }
 
-        // Archive old published schedules for this section
+        // NEW: reject if it conflicts with other approved/published schedules
+        $conflicts = $this->findPublishConflicts($schedule);
+        if (!empty($conflicts)) {
+            return response()->json([
+                'message' => 'Cannot publish: this schedule conflicts with another approved/published schedule.',
+                'conflicts' => $conflicts,
+            ], 422);
+        }
+
+        // Archive old published/approved schedules for this section
         Schedule::where('section_id', $schedule->section_id)
             ->where('id', '!=', $schedule->id)
-            ->where('status', 'published')
+            ->whereIn('status', ['published', 'approved'])
             ->update(['status' => 'archived']);
 
         $schedule->update(['status' => 'published']);
@@ -121,6 +131,45 @@ class ScheduleApprovalController extends Controller
         $schedule->delete();
 
         return response()->json(['message' => 'Schedule deleted successfully']);
+    }
+
+    /**
+     * Check if this schedule's sessions collide with other approved/published
+     * schedules from DIFFERENT sections (same room or same faculty overlap).
+     */
+    private function findPublishConflicts(Schedule $schedule): array
+    {
+        $conflicts = [];
+
+        $others = ScheduleSession::with('schedule.section', 'room')
+            ->where('schedule_id', '!=', $schedule->id)
+            ->whereHas('schedule', function ($q) use ($schedule) {
+                $q->where('section_id', '!=', $schedule->section_id)
+                  ->whereIn('status', ['approved', 'published']);
+            })
+            ->get();
+
+        foreach ($schedule->sessions as $a) {
+            foreach ($others as $b) {
+                if ($a->day_of_week != $b->day_of_week) {
+                    continue;
+                }
+                if (!($a->start_time < $b->end_time && $b->start_time < $a->end_time)) {
+                    continue;
+                }
+
+                if ($a->room_id === $b->room_id) {
+                    $conflicts[] = "Room '{$b->room->name}' is booked day {$a->day_of_week} "
+                        . "{$a->start_time}–{$a->end_time} (schedule #{$b->schedule_id}, section {$b->schedule->section->name}).";
+                }
+                if ($a->faculty_id === $b->faculty_id) {
+                    $conflicts[] = "Faculty is already teaching day {$a->day_of_week} "
+                        . "{$a->start_time}–{$a->end_time} (schedule #{$b->schedule_id}).";
+                }
+            }
+        }
+
+        return array_unique($conflicts);
     }
 
     private function authorizeAdmin(Request $request): void
