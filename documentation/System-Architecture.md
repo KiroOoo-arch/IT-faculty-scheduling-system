@@ -1,0 +1,254 @@
+# System Architecture — IT Faculty Scheduling System
+
+## 1. Architecture Overview
+
+```mermaid
+graph TB
+    subgraph Frontend["Frontend — React + TypeScript + Vite (port 5173)"]
+        AD[Admin Dashboard<br/>Generate · Review · Approve · Publish · Edit]
+        FD[Faculty Dashboard<br/>My Schedule]
+        CP[CRUD Pages<br/>Users · Faculty · Subjects · Rooms · Sections]
+        RP[Reports Page]
+    end
+
+    subgraph Backend["Backend — Laravel 13 + Sanctum (port 8000)"]
+        API[REST API /api]
+        AUTH[Auth + RBAC<br/>login / logout / me]
+        SCH[ScheduleController<br/>generate]
+        SAP[ScheduleApprovalController<br/>approve · publish + Conflict Gate]
+        SES[ScheduleSessionController<br/>update + Conflict Detection]
+        MYS[MyScheduleController]
+        OBS[UserObserver<br/>auto-create Faculty]
+    end
+
+    subgraph AI["AI Engine — Python FastAPI (port 8001)"]
+        APP[app.py<br/>/generate-schedule/{section_id}]
+        SOLVER[OR-Tools CP-SAT Solver]
+    end
+
+    DB[(PostgreSQL)]
+
+    Frontend -->|HTTP/JSON + Bearer token| Backend
+    Backend -->|HTTP POST /generate-schedule/{id}| AI
+    AI -->|OPTIMAL / PARTIAL / INFEASIBLE| Backend
+    AI -.direct psycopg2 read.-> DB
+    Backend -.Eloquent ORM.-> DB
+    Backend -->|JSON| Frontend
+```
+
+## 2. Data Flow
+
+### 2.1 Schedule Generation Flow
+
+```mermaid
+sequenceDiagram
+    participant U as Admin (browser)
+    participant F as AdminDashboard (React)
+    participant L as Laravel (ScheduleController)
+    participant A as FastAPI (ai-engine/app.py)
+    participant DB as PostgreSQL
+
+    U->>F: Click "Generate Schedule"
+    F->>L: POST /api/schedules/generate/{section} (Bearer token)
+    L->>L: Archive old drafts for this section
+    L->>A: POST http://127.0.0.1:8001/generate-schedule/{id}
+    A->>DB: Query section, subjects, faculty + availabilities,<br/>available rooms, existing approved/published sessions
+    DB-->>A: data
+    A->>A: OR-Tools CP-SAT solver (8 constraints)
+    A-->>L: {status: OPTIMAL/PARTIAL/INFEASIBLE, sessions[]}
+    alt OPTIMAL or PARTIAL
+        L->>DB: Create Schedule (draft) + ScheduleSession rows
+        L->>DB: Write ScheduleGenerationLog
+        L-->>F: 200 {schedule_id, sessions, unscheduled}
+        F-->>U: "Status: OPTIMAL — N sessions created"
+    else INFEASIBLE / failure
+        L->>DB: Write ScheduleGenerationLog (failure)
+        L-->>F: 422 {message}
+        F-->>U: Error message
+    end
+```
+
+### 2.2 Approve → Publish → Faculty View Flow
+
+```mermaid
+sequenceDiagram
+    participant U as Admin
+    participant L as Laravel (ScheduleApprovalController)
+    participant DB as PostgreSQL
+
+    U->>L: PATCH /api/schedules/{id}/approve
+    L->>DB: status draft → approved
+    L-->>U: approved
+
+    U->>L: PATCH /api/schedules/{id}/publish
+    L->>L: findPublishConflicts(schedule)
+    alt conflicts found
+        L-->>U: 422 "Cannot publish: conflicts..."
+    else no conflicts
+        L->>DB: archive older published/approved (same section)
+        L->>DB: status → published
+        L-->>U: published
+    end
+
+    Note over U: Faculty logs in
+    F->>L: GET /api/my-schedule
+    L->>DB: sessions where schedule = published & faculty = me
+    L-->>F: sessions[]
+```
+
+## 3. Database Design (ER Diagram)
+
+```mermaid
+erDiagram
+    USERS ||--o{ FACULTY : has
+    USERS ||--o{ SCHEDULES : approves
+    FACULTY ||--o{ FACULTY_SUBJECTS : qualified
+    FACULTY ||--o{ FACULTY_AVAILABILITIES : available
+    FACULTY ||--o{ SCHEDULE_SESSIONS : teaches
+    SUBJECTS ||--o{ FACULTY_SUBJECTS : taught-by
+    SUBJECTS ||--o{ SECTION_SUBJECTS : assigned-to
+    SUBJECTS ||--o{ SCHEDULE_SESSIONS : included-in
+    SECTIONS ||--o{ SECTION_SUBJECTS : includes
+    SECTIONS ||--o{ SCHEDULES : generates
+    SECTIONS ||--o{ SCHEDULE_GENERATION_LOGS : logged
+    ROOMS ||--o{ SCHEDULE_SESSIONS : hosts
+    SCHEDULES ||--o{ SCHEDULE_SESSIONS : contains
+
+    USERS {
+        int id PK
+        string name
+        string email
+        string password
+        string role "admin | faculty"
+    }
+
+    FACULTY {
+        int id PK
+        int user_id FK
+        string employee_no
+        string faculty_type "full_time | part_time"
+        int max_teaching_load
+        boolean is_active
+    }
+
+    SUBJECTS {
+        int id PK
+        string code
+        string title
+        int year_level
+        string semester_name
+        int lecture_hours
+        int lab_hours
+        string lab_room_type "computer_lab | null"
+        boolean is_active
+    }
+
+    SECTIONS {
+        int id PK
+        string name
+        int year_level
+        string semester_name
+        int student_count
+        json preferred_days
+        time preferred_start_time
+        time preferred_end_time
+    }
+
+    ROOMS {
+        int id PK
+        string name
+        string type "lecture | computer_lab"
+        int capacity
+        string status "available | under_maintenance | inactive"
+    }
+
+    SCHEDULES {
+        int id PK
+        int section_id FK
+        string status "draft | approved | published | archived"
+        int approved_by FK
+        timestamp approved_at
+        timestamp created_at
+    }
+
+    SCHEDULE_SESSIONS {
+        int id PK
+        int schedule_id FK
+        int subject_id FK
+        int faculty_id FK
+        int room_id FK
+        string session_type "lecture | laboratory"
+        int day_of_week "1-6"
+        time start_time
+        time end_time
+    }
+
+    FACULTY_AVAILABILITIES {
+        int id PK
+        int faculty_id FK
+        int day_of_week
+        time start_time
+        time end_time
+    }
+
+    FACULTY_SUBJECTS {
+        int faculty_id FK
+        int subject_id FK
+    }
+
+    SECTION_SUBJECTS {
+        int section_id FK
+        int subject_id FK
+    }
+
+    SCHEDULE_GENERATION_LOGS {
+        int id PK
+        int section_id FK
+        int requested_by FK
+        string status "optimal | partial | failure"
+        string message
+        json unscheduled_sessions
+        timestamp created_at
+    }
+```
+
+## 4. Project Structure
+
+```text
+it-faculty-scheduling-system/
+├── ai-engine/                      # Python FastAPI (port 8001)
+│   ├── api/app.py                  # OR-Tools CP-SAT solver + endpoints
+│   ├── seed_rooms.py
+│   ├── requirements.txt
+│   └── .env                        # (ignored)
+│
+├── backend/                        # Laravel 13 + Sanctum (port 8000)
+│   ├── app/
+│   │   ├── Http/Controllers/       # Auth, User, Faculty, Subject, Room,
+│   │   │                           #   Section, Schedule, ScheduleApproval,
+│   │   │                           #   ScheduleSession, MySchedule, Report
+│   │   ├── Models/                 # User, Faculty, Room, Subject, Section,
+│   │   │                           #   Schedule, ScheduleSession, ...
+│   │   ├── Observers/UserObserver.php
+│   │   └── Providers/AppServiceProvider.php
+│   ├── bootstrap/app.php
+│   ├── config/
+│   ├── database/migrations/        # 15 tables
+│   ├── routes/api.php
+│   └── .env                        # (ignored)
+│
+├── frontend/                       # React + TypeScript + Vite (port 5173)
+│   └── src/
+│       ├── App.tsx
+│       ├── context/AuthContext.tsx
+│       └── pages/                  # Login, AdminDashboard, FacultyDashboard,
+│                                   #   Users, Faculty, Subjects, Rooms,
+│                                   #   Sections, Reports
+│
+├── documentation/                  # API.md, Requirements.md, SRS.md, Modules.md,
+│                                   #   Constraints.md, Bug-Fix-Log.md, ...
+│
+├── .gitignore
+├── LICENSE
+└── README.md
+```
