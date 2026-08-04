@@ -22,14 +22,14 @@ graph TB
     end
 
     subgraph AI["AI Engine — Python FastAPI (port 8001)"]
-        APP[app.py<br/>/generate-schedule/{section_id}]
+        APP["app.py<br/>/generate-schedule/{section_id}"]
         SOLVER[OR-Tools CP-SAT Solver]
     end
 
     DB[(PostgreSQL)]
 
     Frontend -->|HTTP/JSON + Bearer token| Backend
-    Backend -->|HTTP POST /generate-schedule/{id}| AI
+    Backend -->|HTTP POST /generate-schedule/id| AI
     AI -->|OPTIMAL / PARTIAL / INFEASIBLE| Backend
     AI -.direct psycopg2 read.-> DB
     Backend -.Eloquent ORM.-> DB
