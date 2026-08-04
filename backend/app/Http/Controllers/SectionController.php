@@ -104,3 +104,16 @@ class SectionController extends Controller
         return response()->json(['message' => 'Section deleted successfully']);
     }
 }
+
+/**
+ * SectionController
+ *
+ * Handles section API actions:
+ * - index(): list all sections with their subjects
+ * - show(): get one section with its subjects
+ * - store(): create a new section and attach subjects
+ * - update(): edit an existing section and update subjects
+ * - destroy(): delete a section
+ *
+ * Also cleans AM/PM time input before validation and returns JSON responses.
+ */

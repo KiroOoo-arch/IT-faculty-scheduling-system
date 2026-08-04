@@ -42,3 +42,11 @@ class MyScheduleController extends Controller
         return response()->json(['sessions' => $flattened]);
     }
 }
+
+/**
+ * MyScheduleController
+ *
+ * Returns the current faculty user's published schedule:
+ * - index(): load published schedule sessions for the logged-in faculty
+ * - includes subject and room details
+ */
