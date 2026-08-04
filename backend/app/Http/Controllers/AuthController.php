@@ -46,3 +46,13 @@ class AuthController extends Controller
         return response()->json($request->user()->only(['id', 'name', 'email', 'role']));
     }
 }
+
+
+/**
+ * AuthController
+ *
+ * Handles authentication API actions:
+ * - login(): authenticate a user and generate an API token
+ * - logout(): invalidate the current API token
+ * - me(): retrieve information about the authenticated user
+ */

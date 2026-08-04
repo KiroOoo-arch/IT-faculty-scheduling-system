@@ -28,3 +28,14 @@ class ScheduleGenerationLog extends Model
         return $this->belongsTo(User::class, 'requested_by');
     }
 }
+
+/**
+ * ScheduleGenerationLog
+ *
+ * Tracks schedule generation attempts:
+ * - section_id: the section being scheduled
+ * - requested_by: the user who started generation
+ * - status: success/failure state
+ * - message: result or error details
+ * - unscheduled_sessions: list of sessions that could not be scheduled
+ */

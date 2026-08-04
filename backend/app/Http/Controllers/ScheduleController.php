@@ -94,3 +94,13 @@ class ScheduleController extends Controller
         ]);
     }
 }
+
+/**
+ * ScheduleController
+ *
+ * Generates a draft schedule for a section:
+ * - archives old draft schedules
+ * - calls the Python AI engine
+ * - saves scheduled sessions
+ * - logs success or failure and unscheduled sessions
+ */
