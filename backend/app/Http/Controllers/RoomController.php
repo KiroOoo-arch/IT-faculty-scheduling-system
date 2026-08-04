@@ -52,3 +52,15 @@ class RoomController extends Controller
         return response()->json(['message' => 'Room deleted successfully']);
     }
 }
+
+
+/**
+ * RoomController
+ *
+ * Handles room API actions:
+ * - index(): list all rooms
+ * - show(): get one room
+ * - store(): create a new room
+ * - update(): edit an existing room
+ * - destroy(): delete a room
+ */

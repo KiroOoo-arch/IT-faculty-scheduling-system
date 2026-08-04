@@ -59,3 +59,17 @@ class SubjectController extends Controller
         return response()->json(['message' => 'Subject deleted successfully']);
     }
 }
+
+
+/**
+ * SubjectController
+ *
+ * This controller manages subject API operations:
+ * - index(): list all subjects with their faculties
+ * - show(): get one subject with its faculties
+ * - store(): create a new subject
+ * - update(): edit an existing subject
+ * - destroy(): delete a subject
+ *
+ * All methods return JSON responses and validate input before saving.
+ */
