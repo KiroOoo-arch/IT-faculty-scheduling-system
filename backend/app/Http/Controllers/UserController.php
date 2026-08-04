@@ -85,3 +85,15 @@ class UserController extends Controller
         ], 201);
     }
 }
+
+/**
+ * UserController
+ *
+ * Handles user API actions:
+ * - index(): list all users
+ * - show(): get one user
+ * - store(): create a new user
+ * - update(): edit an existing user
+ * - destroy(): delete a user
+ * - createFaculty(): create a faculty user and faculty profile
+ */

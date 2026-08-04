@@ -142,3 +142,17 @@ class ScheduleSessionController extends Controller
         return $proposed['start_time'] < $other->end_time && $other->start_time < $proposed['end_time'];
     }
 }
+
+
+/**
+ * ScheduleSessionController
+ *
+ * Handles manual updates for schedule sessions:
+ * - update(): change session day/time/room/faculty for admins
+ *
+ * It validates input, checks schedule status, and prevents conflicts:
+ * - room type mismatch
+ * - faculty availability
+ * - overlapping sessions in the same schedule
+ * - faculty/room double-booking in other approved/published schedules
+ */

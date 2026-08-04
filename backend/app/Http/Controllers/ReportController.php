@@ -77,3 +77,13 @@ class ReportController extends Controller
         return response()->json($logs);
     }
 }
+
+
+/**
+ * ReportController
+ *
+ * Provides reporting endpoints:
+ * - facultyWorkload(): calculate published workload per faculty
+ * - roomUtilization(): calculate weekly booked hours per room
+ * - conflicts(): list schedule generation logs and unscheduled session reasons
+ */

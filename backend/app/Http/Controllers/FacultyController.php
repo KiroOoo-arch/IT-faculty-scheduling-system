@@ -96,3 +96,19 @@ class FacultyController extends Controller
     }
 
 }
+
+
+/**
+ * FacultyController
+ *
+ * Manages faculty API operations:
+ * - index(): list all faculties with user and subjects
+ * - show(): get one faculty with user and subjects
+ * - store(): create a faculty record
+ * - update(): update a faculty record
+ * - destroy(): delete a faculty record
+ * - attachSubjects(): assign subjects to a faculty
+ * - detachSubject(): remove a subject from a faculty
+ * - updateAvailability(): set faculty availability
+ * - getAvailability(): get faculty availability
+ */
