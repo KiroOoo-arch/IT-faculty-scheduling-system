@@ -79,3 +79,10 @@ class DatabaseSeeder extends Seeder
         }
     }
 }
+
+#* DatabaseSeeder
+ #* Seeds the database with initial data:
+ #* - creates admin and faculty users
+ #* - creates rooms, section, and subjects
+ #* - assigns subjects to the section
+ #* - links faculty to subjects and availability
