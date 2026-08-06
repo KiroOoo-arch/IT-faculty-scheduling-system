@@ -26,3 +26,12 @@ class UserObserver
         }
     }
 }
+
+
+/**
+ * UserObserver
+ *
+ * Reacts to User model events:
+ * - created(): if a new user is faculty, create a default Faculty record
+ * - deleted(): if a faculty user is deleted, remove the linked Faculty record
+ */

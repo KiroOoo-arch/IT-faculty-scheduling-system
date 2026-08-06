@@ -19,3 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions) {
         //
     })->create();
+
+
+/**
+ * bootstrap/app.php
+ *
+ * Configures the application bootstrapping:
+ * - sets the app base path
+ * - loads web, api, console routes
+ * - defines middleware aliases like 'admin'
+ */
