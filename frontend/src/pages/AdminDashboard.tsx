@@ -71,7 +71,6 @@ export default function AdminDashboard() {
   const [editError, setEditError] = useState('')
   const [editSaving, setEditSaving] = useState(false)
 
-  // 👇 Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null)
 
@@ -181,7 +180,21 @@ export default function AdminDashboard() {
     }
   }
 
-  // 👇 Show confirmation modal instead of browser confirm()
+  // 👇 NEW: Unpublish handler
+  async function handleUnpublish(scheduleId: number) {
+    if (!confirm('Unpublish this schedule? It will revert to draft for editing.')) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/schedules/${scheduleId}/unpublish`, {
+        method: 'PATCH', headers: headers(),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Unpublish failed')
+      fetchSchedules()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Unpublish failed')
+    }
+  }
+
   function handleDeleteSchedule(scheduleId: number) {
     setDeleteTargetId(scheduleId)
     setShowDeleteConfirm(true)
@@ -331,8 +344,12 @@ export default function AdminDashboard() {
                         <button onClick={() => handlePublish(schedule.id)}
                           className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700 transition">Publish</button>
                       )}
+                      {/* 👇 NEW: Published → Unpublish button */}
                       {schedule.status === 'published' && (
-                        <span className="text-green-600 text-sm font-medium">✅ Faculty can see this</span>
+                        <button onClick={() => handleUnpublish(schedule.id)}
+                          className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded text-sm transition">
+                          Unpublish
+                        </button>
                       )}
                       {(schedule.status === 'draft' || schedule.status === 'archived') && (
                         <button onClick={() => handleDeleteSchedule(schedule.id)}
@@ -443,7 +460,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 👇 Delete Confirmation Modal */}
+        {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm mx-4">

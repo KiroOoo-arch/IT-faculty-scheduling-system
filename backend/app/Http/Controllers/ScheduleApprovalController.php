@@ -5,8 +5,21 @@ namespace App\Http\Controllers;
 use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 
+/**
+ * ScheduleApprovalController
+ *
+ * Manages schedule review and approval flow:
+ * - index(): list schedules for review
+ * - show(): view a single schedule
+ * - approve(): approve a draft schedule
+ * - publish(): publish an approved schedule
+ * - unpublish(): revert published schedule to draft
+ * - reject(): reject a draft schedule
+ * - destroy(): delete draft or archived schedules
+ *
+ * Also checks for conflicts before publishing and restricts actions to admins.
+ */
 class ScheduleApprovalController extends Controller
 {
     /**
@@ -18,7 +31,6 @@ class ScheduleApprovalController extends Controller
         $query = Schedule::with(['section', 'sessions.subject', 'sessions.faculty.user', 'sessions.room'])
             ->orderByDesc('created_at');
 
-        // 👇 Hide archived by default unless ?show_archived=true
         if ($request->query('show_archived') !== 'true') {
             $query->where('status', '!=', 'archived');
         }
@@ -33,7 +45,6 @@ class ScheduleApprovalController extends Controller
     public function show(Schedule $schedule)
     {
         $schedule->load(['section', 'sessions.subject', 'sessions.faculty.user', 'sessions.room']);
-
         return response()->json($schedule);
     }
 
@@ -74,7 +85,6 @@ class ScheduleApprovalController extends Controller
             ], 422);
         }
 
-        // NEW: reject if it conflicts with other approved/published schedules
         $conflicts = $this->findPublishConflicts($schedule);
         if (!empty($conflicts)) {
             return response()->json([
@@ -83,7 +93,6 @@ class ScheduleApprovalController extends Controller
             ], 422);
         }
 
-        // Archive old published/approved schedules for this section
         Schedule::where('section_id', $schedule->section_id)
             ->where('id', '!=', $schedule->id)
             ->whereIn('status', ['published', 'approved'])
@@ -92,6 +101,33 @@ class ScheduleApprovalController extends Controller
         $schedule->update(['status' => 'published']);
 
         return response()->json($schedule->load(['section', 'sessions']));
+    }
+
+    /**
+     * Unpublish a schedule — revert to draft for editing.
+     * Only allowed for admin role.
+     * PATCH /api/schedules/{schedule}/unpublish
+     */
+    public function unpublish(Request $request, Schedule $schedule)
+    {
+        $this->authorizeAdmin($request);
+
+        if ($schedule->status !== 'published') {
+            return response()->json([
+                'message' => 'Only published schedules can be unpublished.'
+            ], 422);
+        }
+
+        $schedule->update([
+            'status' => 'draft',
+            'approved_by' => null,
+            'approved_at' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Schedule unpublished and reverted to draft.',
+            'schedule' => $schedule->load(['section', 'sessions']),
+        ]);
     }
 
     /**
@@ -135,7 +171,7 @@ class ScheduleApprovalController extends Controller
 
     /**
      * Check if this schedule's sessions collide with other approved/published
-     * schedules from DIFFERENT sections (same room or same faculty overlap).
+     * schedules from DIFFERENT sections.
      */
     private function findPublishConflicts(Schedule $schedule): array
     {
@@ -151,12 +187,8 @@ class ScheduleApprovalController extends Controller
 
         foreach ($schedule->sessions as $a) {
             foreach ($others as $b) {
-                if ($a->day_of_week != $b->day_of_week) {
-                    continue;
-                }
-                if (!($a->start_time < $b->end_time && $b->start_time < $a->end_time)) {
-                    continue;
-                }
+                if ($a->day_of_week != $b->day_of_week) continue;
+                if (!($a->start_time < $b->end_time && $b->start_time < $a->end_time)) continue;
 
                 if ($a->room_id === $b->room_id) {
                     $conflicts[] = "Room '{$b->room->name}' is booked day {$a->day_of_week} "
@@ -179,18 +211,3 @@ class ScheduleApprovalController extends Controller
         }
     }
 }
-
-
-/**
- * ScheduleApprovalController
- *
- * Manages schedule review and approval flow:
- * - index(): list schedules for review
- * - show(): view a single schedule
- * - approve(): approve a draft schedule
- * - publish(): publish an approved schedule
- * - reject(): reject a draft schedule
- * - destroy(): delete draft or archived schedules
- *
- * Also checks for conflicts before publishing and restricts actions to admins.
- */

@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Faculty;
 use App\Models\Room;
+use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use App\Models\ScheduleGenerationLog;
+use App\Models\Section;
 use Illuminate\Http\Request;
 
 class ReportController extends Controller
@@ -76,14 +78,56 @@ class ReportController extends Controller
 
         return response()->json($logs);
     }
+
+    /**
+     * Schedule Status Overview — count of schedules per status.
+     */
+    public function scheduleStatusOverview()
+    {
+        $statuses = Schedule::selectRaw('status, count(*) as count')
+            ->groupBy('status')
+            ->get();
+
+        $total = $statuses->sum('count');
+
+        return response()->json([
+            'statuses' => $statuses,
+            'total' => $total,
+        ]);
+    }
+
+    /**
+     * Section Summary — total sessions, hours, and faculty count per section.
+     */
+    public function sectionSummary()
+    {
+        $sections = Section::with('subjects')->get()->map(function ($section) {
+            $sessions = ScheduleSession::whereHas('schedule', function ($q) use ($section) {
+                $q->where('section_id', $section->id)
+                  ->where('status', 'published');
+            })->get();
+
+            $totalSessions = $sessions->count();
+
+            $totalHours = $sessions->sum(fn ($session) => (
+                (strtotime($session->end_time) - strtotime($session->start_time)) / 3600
+            ));
+
+            $facultyCount = $sessions->pluck('faculty_id')->unique()->count();
+
+            return [
+                'section_id' => $section->id,
+                'name' => $section->name,
+                'year_level' => $section->year_level,
+                'academic_year' => $section->academic_year,
+                'semester_name' => $section->semester_name,
+                'total_sessions' => $totalSessions,
+                'total_hours' => round($totalHours, 1),
+                'faculty_count' => $facultyCount,
+                'subjects_count' => $section->subjects->count(),
+            ];
+        });
+
+        return response()->json($sections);
+    }
 }
-
-
-/**
- * ReportController
- *
- * Provides reporting endpoints:
- * - facultyWorkload(): calculate published workload per faculty
- * - roomUtilization(): calculate weekly booked hours per room
- * - conflicts(): list schedule generation logs and unscheduled session reasons
- */

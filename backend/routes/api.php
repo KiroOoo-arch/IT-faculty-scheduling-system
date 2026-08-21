@@ -45,6 +45,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reports/faculty-workload', [ReportController::class, 'facultyWorkload']);
         Route::get('/reports/room-utilization', [ReportController::class, 'roomUtilization']);
         Route::get('/reports/conflicts', [ReportController::class, 'conflicts']);
+        Route::get('/reports/schedule-status', [ReportController::class, 'scheduleStatusOverview']);
+        Route::get('/reports/section-summary', [ReportController::class, 'sectionSummary']);
+
         Route::apiResource('users', \App\Http\Controllers\UserController::class)->middleware('admin');
         Route::post('/admin/create-faculty', [\App\Http\Controllers\UserController::class, 'createFaculty'])->middleware('admin');
         Route::post('/faculties/{faculty}/subjects', [FacultyController::class, 'attachSubjects']);
@@ -55,6 +58,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/login', function () {
         response()->json(['message' => 'Unauthenticated.'], 401);
         })->name('login');
+        // Unpublish a schedule
+        Route::patch('/schedules/{schedule}/unpublish', [ScheduleApprovalController::class, 'unpublish']);
 
 
 
