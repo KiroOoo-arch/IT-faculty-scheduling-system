@@ -77,8 +77,8 @@ diagrams/         System Diagrams
 | [Panuan, Casian James E.] | Lead Programmer |
 | [Panuan/Lasola James kenneth] | Backend Developer |
 | [Ugsang, Shiena] | Frontend Developer |
-| [Jumaoas, Grace ann] | Documentation |
-| [Bactol, Ejay] | QA Tester |
+| [Bactol, Ejay] | Documentation |
+| [Jumaoas, Grace ann] | QA Tester |
 
 ## License
 This project is developed as a capstone project for academic purposes.
