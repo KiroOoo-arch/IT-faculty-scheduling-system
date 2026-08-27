@@ -211,3 +211,18 @@ class ScheduleApprovalController extends Controller
         }
     }
 }
+
+
+/**
+ * ScheduleApprovalController
+ *
+ * Manages schedule review and approval flow:
+ * - index(): list schedules for review
+ * - show(): view a single schedule
+ * - approve(): approve a draft schedule
+ * - publish(): publish an approved schedule
+ * - reject(): reject a draft schedule
+ * - destroy(): delete draft or archived schedules
+ *
+ * Also checks for conflicts before publishing and restricts actions to admins.
+ */
