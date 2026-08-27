@@ -2,25 +2,96 @@
 
 ## Laravel API (`http://127.0.0.1:8000/api`)
 
+### Authentication
+
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| GET | `/api/faculties` | ✅ Implemented | List all faculty, with nested `user`, `subjects`, `availabilities` |
-| GET | `/api/faculties/{id}` | ✅ Implemented | Get one faculty record, same nested data |
-| GET | `/api/subjects` | ✅ Implemented | List all subjects, with nested `faculties` who teach each one |
-| GET | `/api/subjects/{id}` | ✅ Implemented | Get one subject record, same nested data |
-| POST | `/api/login` | Planned, not implemented | — |
-| POST | `/api/faculties` | Planned, not implemented | — |
-| PUT | `/api/faculties/{id}` | Planned, not implemented | — |
-| DELETE | `/api/faculties/{id}` | Planned, not implemented | — |
-| POST | `/api/subjects` | Planned, not implemented | — |
-| PUT/DELETE | `/api/subjects/{id}` | Planned, not implemented | — |
+| POST | `/api/login` | ✅ Implemented | User login with email/password, returns token |
+| POST | `/api/logout` | ✅ Implemented | User logout, revokes token |
+| GET | `/api/me` | ✅ Implemented | Get current authenticated user |
+
+### Faculty Management
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/faculties` | ✅ Implemented | List all faculty with nested `user`, `subjects`, `availabilities` |
+| GET | `/api/faculties/{id}` | ✅ Implemented | Get one faculty record with nested data |
+| POST | `/api/faculties` | ✅ Implemented | Create new faculty record |
+| PUT | `/api/faculties/{id}` | ✅ Implemented | Update faculty record |
+| DELETE | `/api/faculties/{id}` | ✅ Implemented | Delete faculty with cascade cleanup |
+
+### Subject Management
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/subjects` | ✅ Implemented | List all subjects with nested `faculties` |
+| GET | `/api/subjects/{id}` | ✅ Implemented | Get one subject record |
+| POST | `/api/subjects` | ✅ Implemented | Create new subject |
+| PUT | `/api/subjects/{id}` | ✅ Implemented | Update subject |
+| DELETE | `/api/subjects/{id}` | ✅ Implemented | Delete subject |
+
+### Room Management
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/rooms` | ✅ Implemented | List all rooms |
+| GET | `/api/rooms/{id}` | ✅ Implemented | Get one room |
+| POST | `/api/rooms` | ✅ Implemented | Create new room |
+| PUT | `/api/rooms/{id}` | ✅ Implemented | Update room |
+| DELETE | `/api/rooms/{id}` | ✅ Implemented | Delete room with cascade cleanup |
+
+### Section Management
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/sections` | ✅ Implemented | List all sections with nested `subjects` |
+| GET | `/api/sections/{id}` | ✅ Implemented | Get one section |
+| POST | `/api/sections` | ✅ Implemented | Create new section |
+| PUT | `/api/sections/{id}` | ✅ Implemented | Update section with subject sync |
+| DELETE | `/api/sections/{id}` | ✅ Implemented | Delete section with cascade cleanup |
+
+### Schedule Management
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| POST | `/api/schedules/generate/{section}` | ✅ Implemented | Generate schedule for section via AI engine |
+| GET | `/api/schedules` | ✅ Implemented | List all schedules |
+| GET | `/api/schedules/{id}` | ✅ Implemented | Get one schedule with sessions |
+| PATCH | `/api/schedules/{id}/approve` | ✅ Implemented | Approve draft schedule |
+| PATCH | `/api/schedules/{id}/publish` | ✅ Implemented | Publish approved schedule (with conflict gate) |
+| PATCH | `/api/schedules/{id}/unpublish` | ✅ Implemented | Unpublish schedule (revert to draft) |
+| DELETE | `/api/schedules/{id}` | ✅ Implemented | Delete schedule |
+
+### Schedule Session Management
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| PATCH | `/api/schedule-sessions/{id}` | ✅ Implemented | Update session with conflict detection |
+
+### Faculty Portal
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/my-schedule` | ✅ Implemented | Get current user's published schedule |
+
+### Reports
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/reports/overview` | ✅ Implemented | Schedule status overview, faculty/room/section counts |
+| GET | `/api/reports/workload` | ✅ Implemented | Faculty workload distribution |
+| GET | `/api/reports/room-utilization` | ✅ Implemented | Room utilization rates |
+| GET | `/api/reports/sections` | ✅ Implemented | Section schedules and session counts |
+| GET | `/api/reports/generation-logs` | ✅ Implemented | Schedule generation history |
+
+---
 
 ## AI Engine API (`http://127.0.0.1:8001`, FastAPI)
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| GET | `/health` | ✅ Implemented | Confirms the service is running and can connect to Postgres. Returns `{"status": "ok", "database": "connected"}` |
-| POST | `/generate-schedule/{section_id}` | ✅ Implemented | Queries the given section's subjects, eligible faculty (with qualifications + availability), and available rooms directly from Postgres, then runs the CP-SAT solver. Returns a schedule (`status: OPTIMAL`/`FEASIBLE` + `sessions[]`) or an explanation of infeasibility (`status: INFEASIBLE` + `message`) |
+| GET | `/health` | ✅ Implemented | Health check + DB connectivity |
+| POST | `/generate-schedule/{section_id}` | ✅ Implemented | Generate schedule using CP-SAT solver |
 
 ### Example response — `POST /generate-schedule/1`
 
@@ -42,6 +113,26 @@
 }
 ```
 
+---
+
+## Integration Flow
+
+1. **Frontend** calls Laravel API with Bearer token
+2. **Laravel** handles authentication, business logic, and CRUD operations
+3. **Laravel** calls FastAPI AI engine for schedule generation
+4. **FastAPI** queries database directly and runs CP-SAT solver
+5. **FastAPI** returns result to Laravel
+6. **Laravel** persists schedule to database
+7. **Frontend** displays result
+
+---
+
 ## Notes
 
-Laravel and the AI Engine are currently **separate services that do not call each other** — both connect independently to the same PostgreSQL database. A user/frontend currently must call the AI Engine directly; Laravel does not yet proxy or trigger this call. This is a known integration gap, tracked in `Implementation_Status.md`.
+- All endpoints require authentication via Bearer token (except `/api/login`)
+- Role-based access control: Admin has full access, Faculty has limited access
+- Schedule generation uses Google OR-Tools CP-SAT solver
+- Conflict detection runs in real-time on manual session edits
+- Publish conflict gate prevents cross-section double-booking
+
+**Last Updated:** August 22, 2026

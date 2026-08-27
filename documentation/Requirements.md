@@ -20,6 +20,8 @@
 | FR-014 | Session editing with conflict detection | ✅ Implemented — ScheduleSessionController with validation |
 | FR-015 | Publish conflict gate (cross-section double-booking prevention) | ✅ Implemented — ScheduleApprovalController |
 
+| FR-016 | Unpublish schedule (revert to draft) | ✅ Implemented — ScheduleApprovalController with status change |
+
 ## Non-Functional Requirements
 
 | Requirement | Status |
@@ -37,9 +39,10 @@
 - Authentication & RBAC (Sanctum)
 - CRUD for Faculty, Subjects, Rooms, Sections, Users
 - AI Schedule Generation (OPTIMAL / PARTIAL / INFEASIBLE)
-- Schedule Approval Workflow
+- Schedule Approval Workflow (Draft → Approved → Published → Archived)
+- Unpublish Schedule (Published → Draft for editing)
 - Faculty Portal
-- Reports (Workload, Room Utilization)
+- Reports Dashboard (Overview, Faculty Load, Room Usage, Sections, Generation Logs)
 - Manual Edit Conflict Detection
 - Publish Conflict Gate
 - Cascade Delete Integrity
@@ -63,7 +66,8 @@
 | AI Schedule Generation | ✅ OPTIMAL / PARTIAL / INFEASIBLE |
 | Manual Edit Conflict Check | ✅ Real-time validation |
 | Schedule Approval Workflow | ✅ Draft → Approved → Published |
-| Reports | ✅ Faculty workload, room utilization |
+| Unpublish Schedule | ✅ Published → Draft reversion |
+| Reports Dashboard | ✅ Overview, Faculty Load, Room Usage, Sections, Generation Logs |
 | Faculty Portal | ✅ Published schedules display |
 
 ## Database Tables

@@ -96,6 +96,46 @@ sequenceDiagram
     L-->>F: sessions[]
 ```
 
+
+### 2.2.1 Unpublish Flow
+
+When an admin needs to make changes to a published schedule:
+
+1. Admin clicks "Unpublish" button on a published schedule
+2. Confirmation dialog appears: "Unpublish this schedule? It will revert to draft for editing."
+3. On confirmation, system calls PATCH /api/schedules/{id}/unpublish
+4. Schedule status changes from "published" to "draft"
+5. Schedule can now be edited and goes through the approval workflow again
+
+**API Endpoint:** PATCH /api/schedules/{schedule}/unpublish
+
+**Response:**
+- Success: { message: "Schedule unpublished and reverted to draft." }
+- Error: { message: "Only published schedules can be unpublished." }
+
+
+## 2.4 Reports Dashboard
+
+The Reports page provides analytics and summaries with the following tabs:
+
+| Tab | Description | Data Source |
+|-----|-------------|-------------|
+| **Overview** | Schedule Status Overview (Archived/Published counts), Faculty Members count, Rooms count, Sections count | /api/reports/overview |
+| **Faculty Load** | Faculty workload distribution, hours per faculty member | /api/reports/workload |
+| **Room Usage** | Room utilization rates, booking frequency per room | /api/reports/room-utilization |
+| **Sections** | Section schedules, session counts per section | /api/reports/sections |
+| **Generation Logs** | Schedule generation history, success/failure rates | /api/reports/generation-logs |
+
+### Schedule Status Overview
+- **Archived**: Count of schedules that have been archived (old versions)
+- **Published**: Count of currently active published schedules
+- **Total Schedules**: Sum of all schedules in the system
+
+### Resource Summary
+- **Faculty Members**: Total faculty count with active load indicator
+- **Rooms**: Total rooms with breakdown (lecture rooms, labs)
+- **Sections**: Total sections with total session count
+
 ## 3. Database Design (ER Diagram)
 
 ```mermaid
