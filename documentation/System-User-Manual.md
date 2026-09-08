@@ -214,16 +214,17 @@ The system checks for conflicts and shows an error if one is found.
 
 ---
 
-## 12. Faculty Portal
+## 12. Schedule Distribution (Print / Download)
 
-Faculty members see Your Schedule after login:
-- Subject (code and title)
-- Type (Lecture or Laboratory)
-- Day (Monday, Tuesday, etc.)
-- Time (start and end time)
-- Room (assigned room name)
+After a schedule is **Published**, the Admin can produce a hard copy for distribution:
 
-Faculty cannot generate, approve, publish, or edit schedules.
+1. Open the published schedule
+2. Click **Print / Download**
+3. A clean, print-friendly weekly grid opens (department header, section name, day columns × time rows)
+4. The browser print dialog opens — choose a printer, or choose **Save as PDF**
+5. The printed/PDF copies are distributed to faculty and posted for students
+
+> **Note:** Faculty do not log into the system. Faculty are records (name, availability, qualifications, workload, employment type, subject assignments) used by the scheduling engine. Schedules reach faculty as printed/PDF copies.
 
 ---
 

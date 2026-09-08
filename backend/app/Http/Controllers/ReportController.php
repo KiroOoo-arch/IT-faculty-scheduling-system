@@ -14,7 +14,7 @@ class ReportController extends Controller
 {
     public function facultyWorkload()
     {
-        $faculties = Faculty::with('user')->get()->map(function ($faculty) {
+        $faculties = Faculty::all()->map(function ($faculty) {
             $hours = ScheduleSession::where('faculty_id', $faculty->id)
                 ->whereHas('schedule', fn ($q) => $q->where('status', 'published'))
                 ->get()
@@ -24,7 +24,7 @@ class ReportController extends Controller
 
             return [
                 'faculty_id' => $faculty->id,
-                'name' => $faculty->user->name,
+                'name' => $faculty->name ?? ($faculty->user->name ?? 'Unknown Faculty'),
                 'faculty_type' => $faculty->faculty_type,
                 'assigned_hours' => round($hours, 1),
                 'max_teaching_load' => $faculty->max_teaching_load,

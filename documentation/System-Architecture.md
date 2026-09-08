@@ -5,8 +5,7 @@
 ```mermaid
 graph TB
     subgraph Frontend["Frontend — React + TypeScript + Vite (port 5173)"]
-        AD[Admin Dashboard<br/>Generate · Review · Approve · Publish · Edit]
-        FD[Faculty Dashboard<br/>My Schedule]
+        AD[Admin Dashboard<br/>Generate · Review · Approve · Publish · Edit · Print]
         CP[CRUD Pages<br/>Users · Faculty · Subjects · Rooms · Sections]
         RP[Reports Page]
     end
@@ -17,8 +16,7 @@ graph TB
         SCH[ScheduleController<br/>generate]
         SAP[ScheduleApprovalController<br/>approve · publish + Conflict Gate]
         SES[ScheduleSessionController<br/>update + Conflict Detection]
-        MYS[MyScheduleController]
-        OBS[UserObserver<br/>auto-create Faculty]
+        AUTHGATE[Admin-only gate<br/>EnsureUserIsAdmin middleware]
     end
 
     subgraph AI["AI Engine — Python FastAPI (port 8001)"]
@@ -68,7 +66,7 @@ sequenceDiagram
     end
 ```
 
-### 2.2 Approve → Publish → Faculty View Flow
+### 2.2 Approve → Publish → Print/Download Flow
 
 ```mermaid
 sequenceDiagram
@@ -90,14 +88,24 @@ sequenceDiagram
         L-->>U: published
     end
 
-    Note over U: Faculty logs in
-    F->>L: GET /api/my-schedule
-    L->>DB: sessions where schedule = published & faculty = me
-    L-->>F: sessions[]
+    Note over U: Admin opens the published schedule and clicks Print/Download
+    U->>U: Print-friendly weekly grid → browser print dialog → Save as PDF
+    Note over U: Hard copies distributed to faculty and students
 ```
 
 
-### 2.2.1 Unpublish Flow
+### 2.2.1 Print / Download Flow (Hard-Copy Distribution)
+
+After a schedule is published, the Admin produces the hard copy for distribution:
+
+1. Admin opens the published schedule and clicks **Print / Download**
+2. A print-friendly weekly grid view opens (department header, section name, day columns × time rows, subject/faculty/room per cell)
+3. The browser print dialog opens — the Admin prints directly or chooses **Save as PDF**
+4. Printed/PDF copies are distributed to faculty and posted for students
+
+**Design note:** Faculty do not log into the system. Faculty are records used by the scheduling engine; published schedules reach them as printed/PDF copies. This shrinks the security surface and matches the per-semester usage pattern of the department.
+
+### 2.2.2 Unpublish Flow
 
 When an admin needs to make changes to a published schedule:
 
@@ -159,12 +167,13 @@ erDiagram
         string name
         string email
         string password
-        string role "admin | faculty"
+        string role "admin — the only login account"
     }
 
     FACULTY {
         int id PK
-        int user_id FK
+        string name "faculty name stored directly"
+        int user_id FK "nullable — legacy link, not a login"
         string employee_no
         string faculty_type "full_time | part_time"
         int max_teaching_load
@@ -266,10 +275,9 @@ it-faculty-scheduling-system/
 │   ├── app/
 │   │   ├── Http/Controllers/       # Auth, User, Faculty, Subject, Room,
 │   │   │                           #   Section, Schedule, ScheduleApproval,
-│   │   │                           #   ScheduleSession, MySchedule, Report
+│   │   │                           #   ScheduleSession, Report
 │   │   ├── Models/                 # User, Faculty, Room, Subject, Section,
 │   │   │                           #   Schedule, ScheduleSession, ...
-│   │   ├── Observers/UserObserver.php
 │   │   └── Providers/AppServiceProvider.php
 │   ├── bootstrap/app.php
 │   ├── config/
@@ -281,7 +289,7 @@ it-faculty-scheduling-system/
 │   └── src/
 │       ├── App.tsx
 │       ├── context/AuthContext.tsx
-│       └── pages/                  # Login, AdminDashboard, FacultyDashboard,
+│       └── pages/                  # Login, AdminDashboard,
 │                                   #   Users, Faculty, Subjects, Rooms,
 │                                   #   Sections, Reports
 │

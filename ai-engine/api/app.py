@@ -112,12 +112,12 @@ def generate_schedule_for_section(section_id: int):
         subject_ids = [s["id"] for s in subjects]
         cur.execute(
             """
-            SELECT DISTINCT f.id, u.name
+            SELECT DISTINCT f.id, f.name
             FROM faculties f
-            JOIN users u ON u.id = f.user_id
             JOIN faculty_subjects fs ON fs.faculty_id = f.id
             WHERE fs.subject_id = ANY(%s)
               AND f.is_active = true
+              AND f.name IS NOT NULL
             """,
             (subject_ids,),
         )

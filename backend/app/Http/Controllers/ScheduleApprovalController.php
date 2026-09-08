@@ -28,7 +28,7 @@ class ScheduleApprovalController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Schedule::with(['section', 'sessions.subject', 'sessions.faculty.user', 'sessions.room'])
+        $query = Schedule::with(['section', 'sessions.subject', 'sessions.faculty', 'sessions.room'])
             ->orderByDesc('created_at');
 
         if ($request->query('show_archived') !== 'true') {
@@ -44,7 +44,7 @@ class ScheduleApprovalController extends Controller
      */
     public function show(Schedule $schedule)
     {
-        $schedule->load(['section', 'sessions.subject', 'sessions.faculty.user', 'sessions.room']);
+        $schedule->load(['section', 'sessions.subject', 'sessions.faculty', 'sessions.room']);
         return response()->json($schedule);
     }
 
