@@ -12,7 +12,7 @@ export default function UsersPage() {
   const { token } = useAuth()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'faculty' })
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'admin' })
   const [editing, setEditing] = useState<number | null>(null)
   const [error, setError] = useState('')
 
@@ -50,7 +50,7 @@ export default function UsersPage() {
     })
 
     if (res.ok) {
-      setForm({ name: '', email: '', password: '', role: 'faculty' })
+      setForm({ name: '', email: '', password: '', role: 'admin' })
       setEditing(null)
       fetchUsers()
     } else {
@@ -75,7 +75,7 @@ export default function UsersPage() {
 
   function handleCancel() {
     setEditing(null)
-    setForm({ name: '', email: '', password: '', role: 'faculty' })
+    setForm({ name: '', email: '', password: '', role: 'admin' })
   }
 
   return (
@@ -89,6 +89,9 @@ export default function UsersPage() {
         {/* Form */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">{editing ? 'Edit User' : 'Create User'}</h2>
+          <p className="text-gray-500 text-sm mb-3">
+            Admin accounts only — faculty are records managed under Faculty Management and do not log in.
+          </p>
           {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -127,8 +130,7 @@ export default function UsersPage() {
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="admin">Admin</option>
-                <option value="faculty">Faculty</option>
+                <option value="admin">Admin (Department Head)</option>
               </select>
             </div>
             <div className="flex gap-2 items-end">
