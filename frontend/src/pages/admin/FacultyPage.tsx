@@ -16,10 +16,9 @@ type Availability = {
 
 type Faculty = {
   id: number
-  user_id: number
+  name: string
   faculty_type: string
   max_teaching_load: number
-  user?: { id: number; name: string; email: string }
   subjects?: Subject[]
 }
 
@@ -36,16 +35,16 @@ export default function FacultyPage() {
   const [error, setError] = useState('')
 
   const [form, setForm] = useState({
-    name: '', email: '', password: '',
+    name: '',
     faculty_type: 'full_time', max_teaching_load: 24,
   })
   const [editing, setEditing] = useState<number | null>(null)
   const [editForm, setEditForm] = useState({
-    user_id: 0, faculty_type: 'full_time', max_teaching_load: 24,
+    name: '', faculty_type: 'full_time', max_teaching_load: 24,
   })
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([])
 
-  // 👇 NEW: Availability state
+  // Availability state
   const [availability, setAvailability] = useState<Availability[]>([])
   const [availStartTime, setAvailStartTime] = useState('07:00')
   const [availEndTime, setAvailEndTime] = useState('17:00')
@@ -112,13 +111,13 @@ export default function FacultyPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    const res = await fetch(`${API_BASE_URL}/admin/create-faculty`, {
+    const res = await fetch(`${API_BASE_URL}/faculties`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(form),
     })
     if (res.ok) {
-      setForm({ name: '', email: '', password: '', faculty_type: 'full_time', max_teaching_load: 24 })
+      setForm({ name: '', faculty_type: 'full_time', max_teaching_load: 24 })
       fetchFaculties()
     } else {
       const data = await res.json()
@@ -153,7 +152,7 @@ export default function FacultyPage() {
       return
     }
 
-    // 👇 NEW: Save availability
+    // Save availability
     const availRes = await fetch(`${API_BASE_URL}/faculties/${editing}/availability`, {
       method: 'POST',
       headers: headers(),
@@ -172,7 +171,7 @@ export default function FacultyPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this faculty member?')) return
+    if (!confirm('Delete this faculty member? Their qualifications, availability, and schedule sessions will also be removed.')) return
     const res = await fetch(`${API_BASE_URL}/faculties/${id}`, {
       method: 'DELETE',
       headers: headers(),
@@ -187,7 +186,7 @@ export default function FacultyPage() {
   function startEdit(f: Faculty) {
     setEditing(f.id)
     setEditForm({
-      user_id: f.user_id,
+      name: f.name,
       faculty_type: f.faculty_type,
       max_teaching_load: f.max_teaching_load,
     })
@@ -214,23 +213,15 @@ export default function FacultyPage() {
         {/* Create Form */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Create Faculty Member</h2>
-          <p className="text-gray-500 text-sm mb-3">Creates both the user account and faculty record in one step.</p>
+          <p className="text-gray-500 text-sm mb-3">
+            Faculty are records, not login accounts — only the Admin logs into the system.
+          </p>
           {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
           <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required
                 className="w-full border border-gray-300 rounded-md px-3 py-2" placeholder="Prof. Juan Dela Cruz" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email (for login)</label>
-              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required
-                className="w-full border border-gray-300 rounded-md px-3 py-2" placeholder="cruz@example.com" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required
-                className="w-full border border-gray-300 rounded-md px-3 py-2" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Faculty Type</label>
@@ -262,6 +253,11 @@ export default function FacultyPage() {
             <form onSubmit={handleUpdate}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required
+                    className="w-full border border-gray-300 rounded-md px-3 py-2" />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Faculty Type</label>
                   <select value={editForm.faculty_type} onChange={(e) => setEditForm({ ...editForm, faculty_type: e.target.value })}
                     className="w-full border border-gray-300 rounded-md px-3 py-2">
@@ -275,10 +271,11 @@ export default function FacultyPage() {
                     onChange={(e) => setEditForm({ ...editForm, max_teaching_load: parseInt(e.target.value) || 24 })} min={1}
                     className="w-full border border-gray-300 rounded-md px-3 py-2" />
                 </div>
-                <div className="flex gap-2 items-end">
-                  <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">Save</button>
-                  <button type="button" onClick={() => setEditing(null)} className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition">Cancel</button>
-                </div>
+              </div>
+
+              <div className="flex gap-2 mb-4">
+                <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">Save</button>
+                <button type="button" onClick={() => setEditing(null)} className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition">Cancel</button>
               </div>
 
               {/* Subjects */}
@@ -297,11 +294,11 @@ export default function FacultyPage() {
                 </div>
               </div>
 
-              {/* 👇 NEW: Availability */}
+              {/* Availability */}
               <div className="border-t border-yellow-200 pt-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Availability (preferred days & times)</h3>
                 <p className="text-xs text-gray-500 mb-3">Select which days this faculty member is available and their preferred hours.</p>
-                
+
                 <div className="flex gap-4 mb-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Start Time</label>
@@ -347,7 +344,6 @@ export default function FacultyPage() {
                 <tr>
                   <th className="p-3">ID</th>
                   <th className="p-3">Name</th>
-                  <th className="p-3">Email</th>
                   <th className="p-3">Type</th>
                   <th className="p-3">Max Load</th>
                   <th className="p-3">Subjects</th>
@@ -358,8 +354,7 @@ export default function FacultyPage() {
                 {faculties.map((f) => (
                   <tr key={f.id} className="border-t border-gray-200">
                     <td className="p-3">{f.id}</td>
-                    <td className="p-3">{f.user?.name ?? '—'}</td>
-                    <td className="p-3">{f.user?.email ?? '—'}</td>
+                    <td className="p-3">{f.name ?? '—'}</td>
                     <td className="p-3 capitalize">{f.faculty_type}</td>
                     <td className="p-3">{f.max_teaching_load}h</td>
                     <td className="p-3">{f.subjects?.map((s) => s.code).join(', ') ?? '—'}</td>

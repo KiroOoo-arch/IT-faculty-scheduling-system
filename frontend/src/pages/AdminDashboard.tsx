@@ -3,9 +3,9 @@ import { useAuth, API_BASE_URL } from '../context/AuthContext'
 
 type Faculty = {
   id: number
+  name: string
   faculty_type: string
   max_teaching_load: number
-  user?: { name: string; email: string }
   subjects?: { code: string; title: string }[]
 }
 
@@ -26,7 +26,7 @@ type Room = {
 type Session = {
   id: number
   subject?: { code: string }
-  faculty?: { id: number; user?: { name: string } }
+  faculty?: { id: number; name: string }
   room?: { id: number; name: string }
   session_type?: string
   day_of_week: number
@@ -39,6 +39,7 @@ type Schedule = {
   section_id: number
   status: 'draft' | 'approved' | 'published' | 'archived'
   generated_at: string
+  section?: { id: number; name: string; year_level: number; semester_name: string }
   sessions?: Session[]
 }
 
@@ -327,7 +328,11 @@ export default function AdminDashboard() {
                   <div className="flex justify-between items-center mb-3">
                     <div>
                       <span className="font-semibold">Schedule #{schedule.id}</span>
-                      <span className="text-gray-500 text-sm ml-2">Section #{schedule.section_id}</span>
+                      <span className="text-gray-500 text-sm ml-2">
+                        {schedule.section
+                          ? `${schedule.section.name} — Year ${schedule.section.year_level} (${schedule.section.semester_name})`
+                          : `Section #${schedule.section_id}`}
+                      </span>
                       <span className={`ml-3 px-2 py-0.5 rounded text-xs font-medium ${
                         schedule.status === 'published' ? 'bg-green-100 text-green-700' :
                         schedule.status === 'approved' ? 'bg-blue-100 text-blue-700' :
@@ -381,7 +386,7 @@ export default function AdminDashboard() {
                             <td className="py-1 px-2">{ALL_DAYS[session.day_of_week - 1]?.label ?? '—'}</td>
                             <td className="py-1 px-2">{formatTime(session.start_time)}–{formatTime(session.end_time)}</td>
                             <td className="py-1 px-2">{session.room?.name ?? '—'}</td>
-                            <td className="py-1 px-2">{session.faculty?.user?.name ?? '—'}</td>
+                            <td className="py-1 px-2">{session.faculty?.name ?? '—'}</td>
                             {(schedule.status === 'draft' || schedule.status === 'approved') && (
                               <td className="py-1 pl-2">
                                 <button onClick={() => startEditSession(session)}
@@ -443,7 +448,7 @@ export default function AdminDashboard() {
                     className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
                     <option value="">—</option>
                     {faculties.map((f) => (
-                      <option key={f.id} value={f.id}>{f.user?.name ?? `Faculty #${f.id}`}</option>
+                      <option key={f.id} value={f.id}>{f.name ?? `Faculty #${f.id}`}</option>
                     ))}
                   </select>
                 </div>
@@ -500,7 +505,7 @@ export default function AdminDashboard() {
               <tbody>
                 {faculties.map((f) => (
                   <tr key={f.id} className="border-t border-gray-200">
-                    <td className="p-3">{f.user?.name ?? `Faculty #${f.id}`}</td>
+                    <td className="p-3">{f.name ?? `Faculty #${f.id}`}</td>
                     <td className="p-3 capitalize">{f.faculty_type}</td>
                     <td className="p-3">{f.max_teaching_load}h</td>
                     <td className="p-3">{f.subjects?.map((s) => s.code).join(', ') ?? '—'}</td>
