@@ -55,7 +55,7 @@ class ScheduleSessionController extends Controller
 
         $session->update($proposed);
 
-        return response()->json($session->load(['subject', 'faculty.user', 'room']));
+        return response()->json($session->load(['subject', 'faculty', 'room']));
     }
 
     /**
@@ -93,7 +93,7 @@ class ScheduleSessionController extends Controller
             });
 
             if (!$available) {
-                $conflicts[] = "{$faculty->user->name} is not available on day {$proposed['day_of_week']} "
+                $conflicts[] = "{$faculty->name} is not available on day {$proposed['day_of_week']} "
                     . "from {$pStart} to {$pEnd}.";
             }
         }

@@ -8,6 +8,7 @@ class Faculty extends Model
 {
     protected $fillable = [
         'user_id',
+        'name',
         'employee_no',
         'faculty_type',
         'max_teaching_load',
@@ -18,9 +19,19 @@ class Faculty extends Model
         'is_active' => 'boolean',
     ];
 
+    /**
+     * Optional link to a login account. Faculty are records, not users —
+     * only the Admin/Department Head logs into the system.
+     */
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** Name of this faculty member (stored directly on the record). */
+    public function getDisplayNameAttribute(): string
+    {
+        return $this->name ?? $this->user?->name ?? 'Unknown Faculty';
     }
 
     public function subjects()

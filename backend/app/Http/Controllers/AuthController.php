@@ -24,6 +24,13 @@ class AuthController extends Controller
             ]);
         }
 
+        // Defense-in-depth: only Admin/Department Head accounts may log in.
+        if ($user->role !== 'admin') {
+            throw ValidationException::withMessages([
+                'email' => ['Only administrator accounts can access this system.'],
+            ]);
+        }
+
         $user->tokens()->delete();
 
         $token = $user->createToken('api-token')->plainTextToken;
@@ -52,7 +59,8 @@ class AuthController extends Controller
  * AuthController
  *
  * Handles authentication API actions:
- * - login(): authenticate a user and generate an API token
+ * - login(): authenticate an admin user and generate an API token
+ *            (non-admin roles are rejected — faculty are records, not users)
  * - logout(): invalidate the current API token
  * - me(): retrieve information about the authenticated user
  */

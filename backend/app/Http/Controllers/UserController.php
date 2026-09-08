@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\Faculty;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -25,7 +24,7 @@ class UserController extends Controller
             'name'     => 'required|string',
             'email'    => 'required|email|unique:users',
             'password' => 'required|string|min:6',
-            'role'     => 'required|string|in:admin,faculty',
+            'role'     => 'required|string|in:admin',
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
@@ -39,7 +38,7 @@ class UserController extends Controller
             'name'     => 'sometimes|string',
             'email'    => 'sometimes|email|unique:users,email,' . $user->id,
             'password' => 'sometimes|string|min:6',
-            'role'     => 'sometimes|string|in:admin,faculty',
+            'role'     => 'sometimes|string|in:admin',
         ]);
 
         if (isset($validated['password'])) {
@@ -50,50 +49,31 @@ class UserController extends Controller
         return response()->json($user);
     }
 
-    public function destroy(User $user)
+    public function destroy(Request $request, User $user)
     {
+        // Safety guard: never delete yourself, and never delete the last admin
+        // (otherwise the system would be permanently locked out).
+        if ($user->id === $request->user()->id) {
+            return response()->json(['message' => 'You cannot delete your own account.'], 422);
+        }
+
+        $adminCount = User::where('role', 'admin')->count();
+        if ($user->role === 'admin' && $adminCount <= 1) {
+            return response()->json(['message' => 'Cannot delete the last admin account.'], 422);
+        }
+
         $user->delete();
         return response()->json(['message' => 'User deleted successfully']);
-    }
-
-    public function createFaculty(Request $request)
-    {
-        $validated = $request->validate([
-            'name'              => 'required|string',
-            'email'             => 'required|email|unique:users',
-            'password'          => 'required|string|min:6',
-            'faculty_type'      => 'required|string|in:full_time,part_time',
-            'max_teaching_load' => 'required|integer|min:1',
-        ]);
-
-        $user = User::create([
-            'name'     => $validated['name'],
-            'email'    => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'role'     => 'faculty',
-        ]);
-
-        $faculty = Faculty::create([
-            'user_id'           => $user->id,
-            'faculty_type'      => $validated['faculty_type'],
-            'max_teaching_load' => $validated['max_teaching_load'],
-        ]);
-
-        return response()->json([
-            'user'    => $user,
-            'faculty' => $faculty,
-        ], 201);
     }
 }
 
 /**
  * UserController
  *
- * Handles user API actions:
+ * Handles admin account API actions (faculty are records, not users):
  * - index(): list all users
  * - show(): get one user
- * - store(): create a new user
+ * - store(): create a new admin user
  * - update(): edit an existing user
- * - destroy(): delete a user
- * - createFaculty(): create a faculty user and faculty profile
+ * - destroy(): delete a user (never the last admin or yourself)
  */

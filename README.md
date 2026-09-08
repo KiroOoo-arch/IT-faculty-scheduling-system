@@ -28,9 +28,8 @@ The system uses constraint-based scheduling techniques (Google OR-Tools CP-SAT) 
 
 | Role | Responsibilities |
 |---|---|
-| **Administrator** | Manage users, faculty, rooms, and laboratories; generate schedules |
-| **Department Head** | Review schedules, approve, publish, monitor conflicts |
-| **Faculty** | Submit availability, view assigned schedules |
+| **Administrator / Department Head** | The only login account. Manages users, faculty, rooms, and laboratories; generates, reviews, edits, approves, publishes, and prints schedules |
+| **Faculty** | *(No system access)* — faculty are records (name, availability, qualifications, workload, subject assignments) used by the scheduling engine; schedules are distributed as printed/PDF copies |
 
 ## Main Features
 - User Authentication (Sanctum + RBAC)
@@ -43,7 +42,8 @@ The system uses constraint-based scheduling techniques (Google OR-Tools CP-SAT) 
 - Schedule Approval Workflow (Draft → Approved → Published → Archived)
 - Session Editing with Conflict Detection
 - Publish Conflict Gate (prevents cross-section double-booking)
-- Faculty Portal (view published schedules)
+- Unpublish Schedule (revert published → draft for editing)
+- Print/Download published schedule for hard-copy distribution
 - Schedule Reports
 
 ## Project Structure

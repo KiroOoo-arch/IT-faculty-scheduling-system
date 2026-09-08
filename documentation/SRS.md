@@ -38,7 +38,7 @@ Three-tier architecture:
 |------|-------------|
 | Administrator | Full system access, schedule generation, CRUD operations |
 | Department Head | Schedule review, approval, publishing |
-| Faculty | View published schedules, submit availability |
+| Faculty | *(No system access — faculty are records used by the scheduler; schedules are distributed as printed/PDF copies)* |
 
 ### 2.3 Operating Environment
 - Modern web browser (Chrome, Firefox, Edge)
@@ -56,7 +56,7 @@ Three-tier architecture:
 |----|-------------|----------|--------|
 | FR-AUTH-001 | User login with email/password | High | ✅ Implemented |
 | FR-AUTH-002 | Token-based session management | High | ✅ Implemented |
-| FR-AUTH-003 | Role-based access control (Admin/Faculty) | High | ✅ Implemented |
+| FR-AUTH-003 | Admin-only access — login rejects non-admin roles; faculty are records, not users | High | ✅ Implemented |
 | FR-AUTH-004 | Secure logout with token revocation | Medium | ✅ Implemented |
 
 ### 3.2 Faculty Management
@@ -118,12 +118,13 @@ Three-tier architecture:
 | FR-WF-004 | Automatic archiving of old schedules | Medium | ✅ Implemented |
 | FR-WF-005 | Schedule versioning | Medium | ✅ Implemented |
 
-### 3.8 Faculty Portal
+### 3.8 Schedule Distribution (replaces Faculty Portal)
 | ID | Requirement | Priority | Status |
 |----|-------------|----------|--------|
-| FR-PORT-001 | View published schedules | High | ✅ Implemented |
-| FR-PORT-002 | Filter by faculty member | High | ✅ Implemented |
-| FR-PORT-003 | Display session details | High | ✅ Implemented |
+| FR-DIST-001 | Print/Download published schedule as hard copy | High | 🔜 Planned — UI handled separately |
+| FR-DIST-002 | Print-friendly weekly grid layout | High | 🔜 Planned — UI handled separately |
+
+> **Design decision:** The Faculty Portal was removed. Faculty do not have login accounts; the system is used per semester by the department, and published schedules are distributed as printed/PDF copies.
 
 ### 3.9 Reports
 | ID | Requirement | Priority | Status |

@@ -6,17 +6,19 @@
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| POST | `/api/login` | ✅ Implemented | User login with email/password, returns token |
+| POST | `/api/login` | ✅ Implemented | Admin login with email/password, returns token. Non-admin roles are rejected. |
 | POST | `/api/logout` | ✅ Implemented | User logout, revokes token |
-| GET | `/api/me` | ✅ Implemented | Get current authenticated user |
+| GET | `/api/me` | ✅ Implemented | Get current authenticated admin user |
+
+> **Note:** Only the Admin/Department Head can log in. Faculty are records, not login accounts.
 
 ### Faculty Management
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| GET | `/api/faculties` | ✅ Implemented | List all faculty with nested `user`, `subjects`, `availabilities` |
+| GET | `/api/faculties` | ✅ Implemented | List all faculty with nested `subjects`, `availabilities` |
 | GET | `/api/faculties/{id}` | ✅ Implemented | Get one faculty record with nested data |
-| POST | `/api/faculties` | ✅ Implemented | Create new faculty record |
+| POST | `/api/faculties` | ✅ Implemented | Create new faculty record (`name` required; no login account) |
 | PUT | `/api/faculties/{id}` | ✅ Implemented | Update faculty record |
 | DELETE | `/api/faculties/{id}` | ✅ Implemented | Delete faculty with cascade cleanup |
 
@@ -70,9 +72,7 @@
 
 ### Faculty Portal
 
-| Method | Endpoint | Status | Description |
-|---|---|---|---|
-| GET | `/api/my-schedule` | ✅ Implemented | Get current user's published schedule |
+> **Removed by design decision** — faculty do not log into the system. Published schedules are distributed as printed/PDF hard copies (see FR-017).
 
 ### Reports
 
@@ -130,9 +130,9 @@
 ## Notes
 
 - All endpoints require authentication via Bearer token (except `/api/login`)
-- Role-based access control: Admin has full access, Faculty has limited access
+- All endpoints are admin-only — faculty are records, not users; non-admin logins are rejected at the login endpoint
 - Schedule generation uses Google OR-Tools CP-SAT solver
 - Conflict detection runs in real-time on manual session edits
 - Publish conflict gate prevents cross-section double-booking
 
-**Last Updated:** August 22, 2026
+**Last Updated:** September 8, 2026

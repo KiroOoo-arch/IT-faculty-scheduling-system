@@ -9,20 +9,21 @@ class FacultyController extends Controller
 {
     public function index()
     {
-        $faculties = Faculty::with(['user', 'subjects'])->get();
+        $faculties = Faculty::with(['subjects'])->get();
         return response()->json($faculties);
     }
 
     public function show(Faculty $faculty)
     {
-        $faculty->load(['user', 'subjects']);
+        $faculty->load(['subjects']);
         return response()->json($faculty);
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'user_id'           => 'required|exists:users,id',
+            'name'              => 'required|string',
+            'user_id'           => 'nullable|exists:users,id',
             'faculty_type'      => 'required|string|in:full_time,part_time',
             'max_teaching_load' => 'required|integer|min:1',
         ]);
@@ -34,7 +35,8 @@ class FacultyController extends Controller
     public function update(Request $request, Faculty $faculty)
     {
         $validated = $request->validate([
-            'user_id'           => 'required|exists:users,id',
+            'name'              => 'required|string',
+            'user_id'           => 'nullable|exists:users,id',
             'faculty_type'      => 'required|string|in:full_time,part_time',
             'max_teaching_load' => 'required|integer|min:1',
         ]);
@@ -101,10 +103,11 @@ class FacultyController extends Controller
 /**
  * FacultyController
  *
- * Manages faculty API operations:
- * - index(): list all faculties with user and subjects
- * - show(): get one faculty with user and subjects
- * - store(): create a faculty record
+ * Manages faculty API operations. Faculty are records (not login accounts) —
+ * only the Admin/Department Head authenticates with the system.
+ * - index(): list all faculties with subjects
+ * - show(): get one faculty with subjects
+ * - store(): create a faculty record (name is stored directly on the record)
  * - update(): update a faculty record
  * - destroy(): delete a faculty record
  * - attachSubjects(): assign subjects to a faculty
