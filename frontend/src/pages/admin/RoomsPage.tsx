@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../../context/AuthContext'
 import { Link } from 'react-router-dom'
+import { ROOM_TYPES } from '../../constants/roomTypes'
 
 type Room = {
   id: number
@@ -119,8 +120,9 @@ export default function RoomsPage() {
               onChange={(e) => setForm({ ...form, type: e.target.value })}
               className="border border-gray-300 rounded-md px-3 py-2"
             >
-              <option value="lecture">Lecture</option>
-              <option value="computer_lab">Computer Lab</option>
+              {ROOM_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
             </select>
             <input
               type="number"
