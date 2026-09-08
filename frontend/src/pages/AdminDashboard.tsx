@@ -349,12 +349,18 @@ export default function AdminDashboard() {
                         <button onClick={() => handlePublish(schedule.id)}
                           className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700 transition">Publish</button>
                       )}
-                      {/* 👇 NEW: Published → Unpublish button */}
+                      {/* Published → Print/Download + Unpublish buttons */}
                       {schedule.status === 'published' && (
-                        <button onClick={() => handleUnpublish(schedule.id)}
-                          className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded text-sm transition">
-                          Unpublish
-                        </button>
+                        <>
+                          <a href={`/print-schedule?schedule=${schedule.id}`} target="_blank" rel="noreferrer"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-sm transition">
+                            🖨 Print / PDF
+                          </a>
+                          <button onClick={() => handleUnpublish(schedule.id)}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded text-sm transition">
+                            Unpublish
+                          </button>
+                        </>
                       )}
                       {(schedule.status === 'draft' || schedule.status === 'archived') && (
                         <button onClick={() => handleDeleteSchedule(schedule.id)}
