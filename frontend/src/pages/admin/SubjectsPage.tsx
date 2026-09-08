@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../../context/AuthContext'
+import { LAB_ROOM_TYPES } from '../../constants/roomTypes'
 
 type Subject = {
   id: number
@@ -55,6 +56,19 @@ export default function SubjectsPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+
+    // Validation: lab_hours and lab_room_type must be consistent.
+    // - Lab hours > 0 requires a lab room type (otherwise the lab sessions
+    //   would have no valid room type to match — unschedulable by definition)
+    // - Lab hours = 0 means no lab component, so the type must be None
+    if (form.lab_hours > 0 && !form.lab_room_type) {
+      setError('This subject has lab hours but no Lab Room Type. Choose the type of lab room its lab sessions require, or set Lab Hours to 0.')
+      return
+    }
+    if (form.lab_hours === 0 && form.lab_room_type) {
+      setError('This subject has no lab hours, so Lab Room Type must be "None". Set Lab Hours above 0 if the subject needs a lab.')
+      return
+    }
 
     const body = {
       code: form.code,
@@ -220,8 +234,9 @@ export default function SubjectsPage() {
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
               >
                 <option value="">None</option>
-                <option value="computer_lab">Computer Lab</option>
-                <option value="science_lab">Science Lab</option>
+                {LAB_ROOM_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
               </select>
             </div>
 
