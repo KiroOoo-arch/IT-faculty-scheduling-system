@@ -66,7 +66,7 @@ React (Frontend, port 5173) → Laravel (API/Auth, port 8000) → Python FastAPI
 | # | Constraint | Prevents | Status |
 |---|---|---|---|
 | 1 | Faculty qualification | Unqualified faculty assigned | ✅ |
-| 2 | Faculty availability | Scheduling outside declared hours | ✅ |
+| 2 | Faculty availability | Scheduling on unavailable days (day-level) | ✅ |
 | 3 | Room type matching | Labs in lecture halls | ✅ |
 | 4 | Room capacity | Overcrowded rooms | ✅ |
 | 5 | Faculty no double-booking | Same teacher, two places | ✅ |

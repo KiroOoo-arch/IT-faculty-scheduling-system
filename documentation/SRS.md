@@ -184,6 +184,6 @@ Three-tier architecture:
 
 ### 5.1 Hard Constraints (Enforced by Solver)
 1. Faculty qualification: Only qualified faculty assigned to subjects
-2. Faculty availability: No scheduling outside declared hours
+2. Faculty availability: No scheduling on unavailable days (day-level; the section's preferred start/end window defines the scheduling hours)
 3. Room type matching: Labs in labs, lectures in lecture rooms
 4. Room capacity: Stude

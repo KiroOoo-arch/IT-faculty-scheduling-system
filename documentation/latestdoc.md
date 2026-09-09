@@ -19,7 +19,7 @@ Archived Schedule Viewer	Toggle to show/hide archived
 AI Constraints (8 Total)
 #	Constraint	Purpose
 1	Faculty qualification	Only qualified teachers assigned
-2	Faculty availability	No scheduling outside declared hours
+2	Faculty availability	No scheduling on unavailable days (day-level)
 3	Room type matching	Labs in labs, lectures in lecture rooms
 4	Room capacity	Students ≤ room capacity
 5	No faculty double-booking	One teacher, one place at a time

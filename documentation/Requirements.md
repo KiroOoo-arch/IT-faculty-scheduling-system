@@ -42,7 +42,7 @@
 - AI Schedule Generation (OPTIMAL / PARTIAL / INFEASIBLE)
 - Schedule Approval Workflow (Draft → Approved → Published → Archived)
 - Unpublish Schedule (Published → Draft for editing)
-- Reports Dashboard (Overview, Faculty Load, Room Usage, Sections, Generation Logs)
+- Reports Dashboard (Faculty Load, Room Usage, Sections, Schedule Status, Conflicts)
 - Manual Edit Conflict Detection
 - Publish Conflict Gate
 - Cascade Delete Integrity
@@ -69,7 +69,7 @@
 | Manual Edit Conflict Check | ✅ Real-time validation |
 | Schedule Approval Workflow | ✅ Draft → Approved → Published |
 | Unpublish Schedule | ✅ Published → Draft reversion |
-| Reports Dashboard | ✅ Overview, Faculty Load, Room Usage, Sections, Generation Logs |
+| Reports Dashboard | ✅ Faculty Load, Room Usage, Sections, Schedule Status, Conflicts |
 
 ## Database Tables
 
