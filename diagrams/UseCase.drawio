@@ -1,13 +1,71 @@
-             Admin
-               |
-               |
-       Manage Faculty
-       Manage Rooms
-       Generate Schedule
-
-
-             Faculty
-               |
-               |
-       Submit Availability
-       View Schedule
+<mxfile host="app.diagrams.net">
+  <diagram id="uc" name="Use Case Diagram">
+    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" page="1" pageWidth="900" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="admin" value="Admin /&#10;Department Head" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="40" width="420" height="800" as="geometry" />
+        </mxCell>
+        <mxCell id="syst" value="Faculty Scheduling System" style="text;html=1;align=center;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="330" y="50" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="uc1" value="Log in (admin-only — non-admin roles rejected)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="300" y="90" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc2" value="Manage Faculty Records&#10;(name, type, max load)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="300" y="155" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc3" value="Manage Faculty Availability&#10;&amp; Subject Qualifications" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="300" y="220" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc4" value="Manage Subjects, Rooms / Labs, Sections" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="300" y="285" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc5" value="Generate Schedule (AI / CP-SAT)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="300" y="350" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc6" value="Review &amp; Manually Edit Draft&#10;(conflict-checked)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="300" y="415" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc7" value="Approve Schedule" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="300" y="480" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc8" value="Publish Schedule&#10;(via publish conflict gate)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="300" y="545" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc9" value="Unpublish Schedule&#10;(published → draft for re-editing)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="300" y="610" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc10" value="View Reports&#10;(workload, rooms, sections, status)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="300" y="675" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="uc11" value="Print / Download Published Schedule&#10;(PDF / hard copy)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="300" y="740" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fac" value="Faculty&#10;(scheduling records —&#10;NOT system users)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#f8cecc;strokeColor=#b85450;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="740" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="stu" value="Students" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#f8cecc;strokeColor=#b85450;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="820" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" style="edgeStyle=none;html=1;" edge="1" parent="1" source="admin" target="uc11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ef" value="receives printed/PDF copy" style="edgeStyle=none;html=1;dashed=1;" edge="1" parent="1" source="uc11" target="fac"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="es" value="posted schedule" style="edgeStyle=none;html=1;dashed=1;" edge="1" parent="1" source="uc11" target="stu"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

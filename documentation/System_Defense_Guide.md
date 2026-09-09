@@ -373,7 +373,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | 18/18 tests passing |
+| Testing | ✅ Complete | 6/6 automated feature tests + frontend typecheck |
 
 ---
 
@@ -622,7 +622,7 @@ For university scale, architectural changes would be needed, but the core constr
    - Forced constraints (respect faculty availability)
    - Broken constraints (INFEASIBLE with explanation)
 3. **End-to-end testing**: Full workflow verification
-4. **18/18 tests passing**: All features validated
+4. **Automated test suite passing**: backend feature tests + frontend typecheck validate the workflow
 
 Test coverage:
 - Authentication & RBAC ✅
