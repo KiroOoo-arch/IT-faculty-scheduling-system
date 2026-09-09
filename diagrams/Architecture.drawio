@@ -1,9 +1,58 @@
-React Frontend
-        |
-        |
-Laravel Backend API
-        |
-   ----------------
-   |              |
-PostgreSQL    Python AI Engine
-Database      (OR-Tools)
+<mxfile host="app.diagrams.net">
+  <diagram id="arch" name="System Architecture">
+    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" page="1" pageWidth="850" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="admin" value="ADMIN / DEPARTMENT HEAD&#10;(Browser — the only login account)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="280" y="20" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe" value="REACT + TYPESCRIPT FRONTEND (port 5173)&#10;Admin Dashboard · Manage Faculty/Subjects/Rooms/Sections ·&#10;Availability &amp; Qualifications · Generate · Review/Edit ·&#10;Approve · Publish · Unpublish · Print/Download · Reports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="180" y="120" width="480" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="be" value="LARAVEL 13 BACKEND (port 8000)&#10;Sanctum Auth + EnsureUserIsAdmin (admin-only gate)&#10;CRUD + Validation + Business Logic&#10;ScheduleController · ScheduleApprovalController&#10;ScheduleSessionController (conflict detection)&#10;Publish Conflict Gate · Reports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="180" y="260" width="480" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="db" value="POSTGRESQL&#10;(central persistence — Eloquent ORM)&#10;Users(admin) · Faculty(records) · Subjects · Sections ·&#10;Rooms · Schedules · Sessions · Availability ·&#10;Qualifications · Generation Logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="420" width="330" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ai" value="PYTHON FASTAPI AI ENGINE (port 8001)&#10;app.py → OR-TOOLS CP-SAT SOLVER&#10;8 constraint categories + section preferred window&#10;Candidate schedule: OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="450" y="420" width="340" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="flow" value="CANDIDATE SCHEDULE → LARAVEL stores as DRAFT&#10;→ ADMIN REVIEW / MANUAL EDIT (conflict-checked)&#10;→ APPROVE → PUBLISH CONFLICT GATE&#10;conflict → REJECT | no conflict → PUBLISHED&#10;→ PRINT / DOWNLOAD (PDF) → FACULTY + STUDENTS&#10;(Unpublish: PUBLISHED → DRAFT for re-editing)&#10;AI proposes — the Admin decides. Publishing is never automatic." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="180" y="570" width="480" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="admin" target="fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1l" value="HTTP/JSON + Bearer Token" style="text;html=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="480" y="85" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="fe" target="be">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="be" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3l" value="Eloquent ORM" style="text;html=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="390" width="110" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="be" target="ai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4l" value="HTTP POST /generate-schedule" style="text;html=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="600" y="390" width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;" edge="1" parent="1" source="ai" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5l" value="direct psycopg2 read" style="text;html=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="380" y="530" width="150" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="ai" target="flow">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

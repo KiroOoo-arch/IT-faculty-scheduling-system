@@ -2,6 +2,15 @@
 
 ## 1. Architecture Overview
 
+> **Role model:** The authorized **Admin / Department Head** is the only system user and operator. **Faculty are scheduling records/entities, not system users** — they never log in. Faculty data (name, employee number, employment type, qualifications, subject assignments, availability, max teaching load) feeds the scheduling engine, and published schedules reach faculty and students as **printed/PDF copies**.
+
+### The three protection layers (conflicts can never slip through)
+
+1. **AI generation constraints** — the CP-SAT solver mathematically enforces all constraint categories when producing a candidate schedule
+2. **Manual edit conflict detection** — every admin edit of a draft/approved session is re-checked server-side
+3. **Publish conflict gate** — a final cross-section conflict check runs before any schedule goes live
+
+> **Human oversight:** Publishing never happens automatically. The AI produces a *candidate* schedule only; the Admin reviews, edits, approves, and decides publication through the conflict gate.
 ```mermaid
 graph TB
     subgraph Frontend["Frontend — React + TypeScript + Vite (port 5173)"]
@@ -93,8 +102,83 @@ sequenceDiagram
     Note over U: Hard copies distributed to faculty and students
 ```
 
+### 2.3 Manual Session Editing (Conflict Detection)
 
-### 2.2.1 Print / Download Flow (Hard-Copy Distribution)
+```mermaid
+sequenceDiagram
+    participant U as Admin
+    participant L as Laravel (ScheduleSessionController)
+    participant DB as PostgreSQL
+
+    U->>L: PATCH /api/schedule-sessions/{id} (day/time/room/faculty)
+    L->>DB: Load session + related schedule context
+    L->>L: Conflict detection:
+    L->>L:  • faculty double-booking?
+    L->>L:  • room double-booking?
+    L->>L:  • room type matches session (lab → required lab type)?
+    L->>L:  • within section's time window / days?
+    alt conflict found
+        L-->>U: 422 plain-language error (edit rejected)
+    else no conflict
+        L->>DB: Save updated session
+        L-->>U: Updated session JSON
+    end
+```
+
+### 2.4 Unpublish → Re-edit Loop
+
+When a published schedule needs changes:
+
+```text
+PUBLISHED → Admin selects Unpublish → status becomes DRAFT
+        → Admin edits (conflict-checked) → Approve → Publish conflict gate → PUBLISHED
+```
+
+Unpublish returns the *current* schedule to draft for editing — it does not restore any earlier schedule state.
+
+### 2.5 Room & Laboratory Eligibility
+
+A subject's lab sessions can only be placed in rooms satisfying **all** of:
+
+```text
+room.type == subject.lab_room_type        (e.g. computer_lab)
+AND room.capacity >= section.student_count
+AND room.status == available
+```
+
+Example: *Programming Laboratory — lab_hours = 3, lab_room_type = computer_lab* → the solver only considers rooms with type `computer_lab`, sufficient capacity, and available status. Lecture sessions likewise require `lecture`-type rooms.
+
+### 2.6 Solver Result Terminology
+
+The engine is **AI-assisted constraint-based scheduling using OR-Tools CP-SAT** (a constraint optimizer — not a machine-learning model). Possible results:
+
+| Status | Meaning |
+|---|---|
+| **OPTIMAL** | Best possible solution found — all sessions placed |
+| **FEASIBLE** | A valid solution found within the time limit (all placed, but optimality unproven) |
+| **PARTIAL** | Some sessions placed; each unplaced session gets a plain-language reason |
+| **INFEASIBLE** | No sessions could be placed; reasons reported |
+
+The solver is designed to satisfy the defined scheduling constraints and reports partial or infeasible results when the available resources and constraints prevent complete scheduling. The system implements **eight main constraint categories**, with the **section's preferred scheduling window** (preferred days + start/end time) also directly modeled by the solver:
+
+1. Faculty qualification
+2. Faculty availability
+3. Room type matching
+4. Room capacity
+5. Faculty no double-booking
+6. Room no double-booking
+7. Maximum teaching load
+8. Cross-section conflicts (against existing approved/published sessions)
+
+### 2.7 End-to-End Workflow
+
+```text
+Generate → DRAFT → Admin Review / Manual Edit → APPROVED
+        → Publish Conflict Gate → (conflict: REJECT) / (no conflict: PUBLISHED)
+        → Print / Download PDF → Distribution to Faculty + Students
+        → (Unpublish returns PUBLISHED → DRAFT for re-editing)
+```
+### 2.8 Print / Download (Hard-Copy Distribution)
 
 After a schedule is published, the Admin produces the hard copy for distribution:
 
@@ -105,7 +189,7 @@ After a schedule is published, the Admin produces the hard copy for distribution
 
 **Design note:** Faculty do not log into the system. Faculty are records used by the scheduling engine; published schedules reach them as printed/PDF copies. This shrinks the security surface and matches the per-semester usage pattern of the department.
 
-### 2.2.2 Unpublish Flow
+### 2.9 Unpublish API Detail
 
 When an admin needs to make changes to a published schedule:
 
@@ -122,17 +206,18 @@ When an admin needs to make changes to a published schedule:
 - Error: { message: "Only published schedules can be unpublished." }
 
 
-## 2.4 Reports Dashboard
+## 6. Reports Dashboard
 
 The Reports page provides analytics and summaries with the following tabs:
 
 | Tab | Description | Data Source |
 |-----|-------------|-------------|
-| **Overview** | Schedule Status Overview (Archived/Published counts), Faculty Members count, Rooms count, Sections count | /api/reports/overview |
-| **Faculty Load** | Faculty workload distribution, hours per faculty member | /api/reports/workload |
-| **Room Usage** | Room utilization rates, booking frequency per room | /api/reports/room-utilization |
-| **Sections** | Section schedules, session counts per section | /api/reports/sections |
-| **Generation Logs** | Schedule generation history, success/failure rates | /api/reports/generation-logs |
+| **Overview** | Schedule Status Overview (Archived/Published counts), Faculty Members count, Rooms count, Sections count | /api/reports/schedule-status |
+| **Faculty Load** | Assigned hours vs max teaching load per faculty member | /api/reports/faculty-workload |
+| **Room Usage** | Booked hours per week per room | /api/reports/room-utilization |
+| **Sections** | Sessions, hours, faculty count per section | /api/reports/section-summary |
+| **Conflicts** | Cross-section conflict scan of published schedules | /api/reports/conflicts |
+| **Generation Logs** | Schedule generation history, success/failure rates | generation log records (via section-summary/schedule-status data) |
 
 ### Schedule Status Overview
 - **Archived**: Count of schedules that have been archived (old versions)
@@ -206,7 +291,7 @@ erDiagram
     ROOMS {
         int id PK
         string name
-        string type "lecture | computer_lab"
+        string type "lecture | computer_lab | science_lab | electronics_lab"
         int capacity
         string status "available | under_maintenance | inactive"
     }

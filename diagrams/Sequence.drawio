@@ -1,15 +1,100 @@
-Admin
- |
- | Generate Schedule Request
- ↓
-Laravel Backend
- |
- | Send Constraints
- ↓
-AI Engine
- |
- | Return Schedule
- ↓
-Database
- |
- | Save Schedule
+<mxfile host="app.diagrams.net">
+  <diagram id="seq" name="Sequence Diagram">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" page="1" pageWidth="1200" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="a" value="Admin" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r" value="React Frontend" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="l" value="Laravel Backend" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="380" y="20" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f" value="FastAPI AI Engine" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="570" y="20" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="o" value="OR-Tools CP-SAT" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="760" y="20" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="d" value="PostgreSQL" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="950" y="20" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s0" value="1. Generate Schedule (click)" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="370" y="100" width="280" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="2. POST /api/schedules/generate/{section}&#10;(Bearer token)" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="360" y="145" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="3. archive old drafts for section" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="380" y="200" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="4. POST /generate-schedule/{id}" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="380" y="245" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="5. read scheduling data (section, subjects,&#10;qualified faculty, availability, loads, rooms,&#10;existing approved/published sessions)" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="560" y="290" width="320" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="6. scheduling data" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="620" y="355" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="7. solve (maximize scheduled sessions,&#10;8 constraint categories + preferred window)" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="560" y="400" width="330" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" value="8. result: OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="560" y="455" width="330" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s8" value="9. schedule result" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="400" y="500" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s9" value="10. create DRAFT + sessions + generation log" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="380" y="545" width="280" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s10" value="11. generated result" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="150" y="590" width="260" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s11" value="12. display draft for review / edit" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="60" y="635" width="250" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ap" value="APPROVAL &amp; PUBLICATION" style="text;html=1;align=center;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="380" y="700" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="p0" value="13. Approve" style="html=1;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="14. status: draft → approved" style="html=1;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="820" y="730" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="15. Publish" style="html=1;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="790" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="16. findPublishConflicts()&#10;(publish conflict gate)" style="html=1;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="380" y="840" width="240" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="alt: conflict → reject publication (422)" style="html=1;rounded=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="40" y="910" width="320" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="else: no conflict → status → published&#10;(archive older published/approved of same section)" style="html=1;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="620" y="910" width="360" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pr" value="PRINT / DOWNLOAD" style="text;html=1;align=center;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="380" y="990" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t0" value="17. Print / Download" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1020" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t1" value="18. print-friendly schedule view" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1070" width="260" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="19. Print / Save as PDF (browser)" style="html=1;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1120" width="260" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t3" value="20. PDF / hard copy → Faculty + Students&#10;(faculty do NOT make authenticated API calls —&#10;they are scheduling records, not users)" style="html=1;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1170" width="420" height="50" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

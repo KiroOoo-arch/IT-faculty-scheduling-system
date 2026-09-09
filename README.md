@@ -65,7 +65,7 @@ diagrams/         System Diagrams
 
 ## Development Status
 **Implementation and Testing — core features verified end-to-end:**
-- ✅ All sections generate OPTIMAL schedules with zero unscheduled sessions
+- ✅ AI schedule generation verified live — returns OPTIMAL / PARTIAL / INFEASIBLE with per-session reasons when resources can't fit
 - ✅ Approval → Publish workflow working
 - ✅ Zero cross-section conflicts (AI constraints + publish gate)
 - ✅ Admin prints/downloads published schedules for hard-copy distribution

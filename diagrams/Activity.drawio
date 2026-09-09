@@ -1,11 +1,80 @@
-Login
- ↓
-Dashboard
- ↓
-Input Data
- ↓
-Generate Schedule
- ↓
-Check Conflicts
- ↓
-Approve Schedule
+<mxfile host="app.diagrams.net">
+  <diagram id="act" name="Activity Diagram">
+    <mxGraphModel dx="900" dy="1200" grid="1" gridSize="10" page="1" pageWidth="700" pageHeight="1600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="start" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="320" y="20" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Log in (Admin / Department Head)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="250" y="80" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="Manage scheduling data&#10;(faculty records · availability · qualifications ·&#10;subjects · rooms/labs · sections)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="220" y="150" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="Generate Schedule (AI / CP-SAT)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="240" y="240" width="190" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="DRAFT created&#10;(old drafts auto-archived)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="250" y="310" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" value="Review generated schedule" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="240" y="390" width="190" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" value="Edit needed?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="270" y="460" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a7" value="Manually edit session&#10;(server-side conflict detection —&#10;reject on conflict)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="470" y="455" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="a8" value="Approve schedule" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="240" y="560" width="190" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a9" value="Publish conflict gate&#10;(cross-section check)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="250" y="630" width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a10" value="Reject publication&#10;(fix conflicts, re-approve)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="60" y="640" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a11" value="PUBLISHED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="255" y="750" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a12" value="Changes needed?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="270" y="820" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a13" value="Unpublish&#10;(published → draft, edit, re-approve)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="470" y="815" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="a14" value="Print / Download&#10;(browser print or Save as PDF)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="240" y="920" width="190" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a15" value="Distribute to Faculty + Students&#10;(hard copy / PDF)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="230" y="1000" width="210" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="end" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;strokeWidth=4;" vertex="1" parent="1">
+          <mxGeometry x="320" y="1090" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="start" target="a1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a1" target="a2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a2" target="a3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f4" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a3" target="a4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f5" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a4" target="a5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f6" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a5" target="a6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f7" value="yes" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a6" target="a7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f8" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a7" target="a8"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="570" y="580" /></Array></mxGeometry></mxCell>
+        <mxCell id="f9" value="no" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a6" target="a8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f10" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a8" target="a9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f11" value="conflict" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a9" target="a10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f12" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a10" target="a8"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="140" y="580" /></Array></mxGeometry></mxCell>
+        <mxCell id="f13" value="no conflict" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a9" target="a11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f14" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a11" target="a12"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f15" value="yes" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a12" target="a13"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f16" value="loop back to edit/approve" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;" edge="1" parent="1" source="a13" target="a8"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="570" y="580" /></Array></mxGeometry></mxCell>
+        <mxCell id="f17" value="no" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a12" target="a14"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f18" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a14" target="a15"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f19" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="a15" target="end"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
