@@ -15,7 +15,7 @@
 9. [Generating Schedules](#9-generating-schedules)
 10. [Reviewing and Approving Schedules](#10-reviewing-and-approving-schedules)
 11. [Editing Sessions](#11-editing-sessions)
-12. [Faculty Portal](#12-faculty-portal)
+12. [Schedule Distribution (Print / Download)](#12-schedule-distribution-print--download)
 13. [Reports](#13-reports)
 14. [Schedule Lifecycle](#14-schedule-lifecycle)
 15. [Troubleshooting and FAQ](#15-troubleshooting-and-faq)
@@ -32,11 +32,11 @@ The **Faculty Scheduling System** is a web application that uses AI-powered sche
 - Faculty Management with qualifications and availability
 - Room Management with capacity tracking
 - Reports and Analytics (workload, utilization, status)
-- Faculty Portal for viewing published schedules
+- Print/Download published schedules for hard-copy distribution
 
 **User Roles:**
-- **Admin** - Full access to all features
-- **Faculty** - Can only view their own published schedule
+- **Admin / Department Head** - The only login account; full access to all features
+- **Faculty** - *(No system access)* — faculty are scheduling records (name, availability, qualifications, workload, subject assignments), not system users
 
 ---
 
@@ -47,7 +47,7 @@ The **Faculty Scheduling System** is a web application that uses AI-powered sche
 1. Open the application in your web browser
 2. Enter your email and password
 3. Click Log in
-4. Admin users go to the Admin Dashboard; Faculty users go to the Faculty Dashboard
+4. You are taken to the Admin Dashboard (only admin/Department Head accounts can log in)
 
 ### Logging Out
 
@@ -83,9 +83,8 @@ All generated schedules appear as cards with status badges and session tables.
 **Path:** Dashboard > Users
 
 ### Creating a User
-1. Fill in Name, Email, Password
-2. Select Role (Admin or Faculty)
-3. Click Create
+1. Fill in Name, Email, Password (role is Admin — all system users are admins)
+2. Click Create
 
 ### Editing
 1. Click Edit next to the user
@@ -95,7 +94,7 @@ All generated schedules appear as cards with status badges and session tables.
 ### Deleting
 1. Click Delete, then confirm
 
-> Note: When you create a Faculty member from the Faculty page, a user account is automatically created.
+> Note: Admin accounts only — faculty are records managed under Faculty Management and do not log in.
 
 ---
 
@@ -104,10 +103,10 @@ All generated schedules appear as cards with status badges and session tables.
 **Path:** Dashboard > Faculty
 
 ### Creating a Faculty Member
-1. Fill in: Full Name, Email, Password, Faculty Type, Max Teaching Load
+1. Fill in: Full Name, Faculty Type, Max Teaching Load
 2. Click Create Faculty
 
-This creates both the user account and faculty record in one step.
+> Faculty are records, not login accounts — no email or password is needed.
 
 ### Editing
 Click Edit to open the form with 3 sections:
@@ -195,7 +194,7 @@ Existing drafts are automatically archived. Click Show Archived to view them.
 - Click Publish to make visible to faculty
 
 ### Published (Green Badge)
-- Live and visible to faculty
+- Finalized — ready for printing/PDF distribution
 - Cannot be edited while published
 - Click Unpublish to revert to Draft
 
@@ -271,12 +270,12 @@ After a schedule is **Published**, the Admin can produce a hard copy for distrib
 11. Click Publish
 
 **PUBLISHED:**
-12. Faculty can now see their schedules
+12. Print/download the schedule and distribute hard copies to faculty
 
 **Status Summary:**
-- Draft (Yellow) - Editable, not visible to faculty
-- Approved (Blue) - Editable, not visible to faculty
-- Published (Green) - Not editable, visible to faculty
+- Draft (Yellow) - Editable, not yet distributed
+- Approved (Blue) - Editable, not yet distributed
+- Published (Green) - Not editable, ready for print/PDF distribution
 - Archived (Gray) - Not editable, not visible
 
 ---
@@ -295,8 +294,8 @@ A: Unpublish it first, then delete.
 **Q: Room conflict when editing?**
 A: The room is booked. Choose a different time or room.
 
-**Q: Faculty cannot see any schedule?**
-A: Schedule must be Published. Draft and Approved are admin-only.
+**Q: How do I give faculty their schedules?**
+A: Publish the schedule, then use Print / Download (Print or Save as PDF) and distribute the copies.
 
 **Q: How to change faculty available days?**
 A: Faculty > Edit > Availability section > toggle day buttons > Save.
@@ -307,4 +306,4 @@ A: Yes. Old drafts are auto-archived. Click Show Archived to view them.
 ---
 
 *System User Manual - Faculty Scheduling System*
-*Version 1.0*
+*Version 2.0 — Updated September 8, 2026 (admin-only login; faculty are scheduling records)*

@@ -68,7 +68,7 @@ diagrams/         System Diagrams
 - ✅ All sections generate OPTIMAL schedules with zero unscheduled sessions
 - ✅ Approval → Publish workflow working
 - ✅ Zero cross-section conflicts (AI constraints + publish gate)
-- ✅ Faculty portal showing published schedules correctly
+- ✅ Admin prints/downloads published schedules for hard-copy distribution
 - ✅ Conflict detection on manual session edits
 
 ## Team Members

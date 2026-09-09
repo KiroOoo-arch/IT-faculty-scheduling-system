@@ -4,14 +4,14 @@ System Architecture
 React (Frontend) → Laravel (API, Auth, Business Logic) → Python FastAPI (AI Engine, CP-SAT Solver) → PostgreSQL
 Features Implemented
 Feature	Description
-RBAC	Admin/Faculty roles via Laravel Sanctum
+RBAC	Admin-only access via Laravel Sanctum (login rejects non-admin roles; faculty are records, not users)
 CRUD Operations	Faculty, Subjects, Rooms, Sections, Users
 Faculty-Subject Assignment	Qualifications mapping
 AI Schedule Generation	OR-Tools CP-SAT with 8 constraints
 Best-Effort Scheduling	Places what it can, reports why rest failed
 Room Capacity Enforcement	Prevents overcrowding
 Approval Workflow	Draft → Approved → Published
-Faculty Portal	View published schedule
+Print/Download (PDF)	Print published schedule for hard-copy distribution (Faculty Portal removed by design decision)
 Reports	Faculty workload, room utilization
 Section Dropdown	Generate schedules for any section
 Auto-Archive	Old drafts archived on new generation
@@ -75,6 +75,6 @@ AI Schedule Generation      ✅  (OPTIMAL / PARTIAL / INFEASIBLE)
 Manual Edit Conflict Check  ✅
 Schedule Approval Workflow  ✅
 Reports (Workload, Rooms)   ✅
-Faculty Portal              ✅
+Print/Download (PDF)        ✅
 
 01/08/26

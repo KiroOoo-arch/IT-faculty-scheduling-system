@@ -1,3 +1,10 @@
+-- ⚠️ HISTORICAL — DO NOT RUN
+-- This file represents the original sample data and is preserved for
+-- historical/reference purposes only. It has been superseded by Laravel
+-- migrations and seeders (see documentation/Implementation_Status.md §6).
+-- The current system does not provide faculty user accounts or faculty login;
+-- faculty are scheduling records/entities, not system users.
+
 -- ============================================================================
 -- Sample seed data — mirrors the fake dataset already validated in
 -- ai-engine/prototype/scheduler_prototype.py, so you can sanity-check

@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
-import FacultyDashboard from './pages/FacultyDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import PrintableSchedule from './pages/PrintableSchedule'
 import RoomsPage from './pages/admin/RoomsPage'
@@ -14,7 +13,8 @@ import ReportsPage from './pages/admin/ReportsPage'           // ← ADD THIS LI
 function Dashboard() {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
-  return user.role === 'admin' ? <AdminDashboard /> : <FacultyDashboard />
+  // Only admin accounts exist — faculty are records, not users.
+  return <AdminDashboard />
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {

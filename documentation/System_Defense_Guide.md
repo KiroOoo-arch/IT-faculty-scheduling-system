@@ -45,11 +45,12 @@ This system automates faculty, classroom, and laboratory scheduling for the IT D
 │  │              │ │ (Generate)   │ │ Controller   │        │
 │  └──────────────┘ └──────────────┘ └──────────────┘        │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
-│  │ Schedule     │ │ MySchedule   │ │ User         │        │
-│  │ Session      │ │ Controller   │ │ Observer     │        │
-│  │ Controller   │ │              │ │ (Auto-create │        │
-│  └──────────────┘ └──────────────┘ │  Faculty)    │        │
-│                                     └──────────────┘        │
+│  │ Schedule     │ │ Schedule     │ │ User         │        │
+│  │ Session      │ │ Approval     │ │ Controller   │        │
+│  │ Controller   │ │ Controller   │ │ (Admin-only) │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+│             (Admin/Department Head is the only login;        │
+│              faculty are records, not users)                 │
 └─────────────────────────────────────────────────────────────┘
                             │
                             │ HTTP POST /generate-schedule/id
@@ -137,10 +138,8 @@ sequenceDiagram
         L-->>U: published
     end
 
-    Note over U: Faculty logs in
-    F->>L: GET /api/my-schedule
-    L->>DB: sessions where schedule = published & faculty = me
-    L-->>F: sessions[]
+    Note over U: Admin prints/downloads the published schedule
+    Note over U: for hard-copy distribution (faculty do not log in)
 ```
 
 ### Flow 3: Manual Session Editing with Conflict Detection
@@ -186,12 +185,12 @@ erDiagram
         string name
         string email
         string password
-        string role "admin | faculty"
+        string role "admin"
     }
 
     FACULTY {
         int id PK
-        int user_id FK
+        string name "stored directly; no user account"
         string employee_no
         string faculty_type "full_time | part_time"
         int max_teaching_load
@@ -350,7 +349,6 @@ erDiagram
 | GET | `/api/schedules/{id}` | Get schedule by ID |
 | PATCH | `/api/schedules/{id}/approve` | Approve schedule |
 | PATCH | `/api/schedules/{id}/publish` | Publish schedule |
-| GET | `/api/my-schedule` | Get current user's schedule |
 | GET | `/api/reports/workload` | Faculty workload report |
 | GET | `/api/reports/room-utilization` | Room utilization report |
 
@@ -373,7 +371,7 @@ erDiagram
 | Manual Edit Conflict Check | ✅ Complete | Real-time validation |
 | Schedule Approval Workflow | ✅ Complete | Draft → Approved → Published |
 | Reports | ✅ Complete | Faculty workload, room utilization |
-| Faculty Portal | ✅ Complete | View published schedules |
+| Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
 | Testing | ✅ Complete | 18/18 tests passing |
 
@@ -553,7 +551,7 @@ Without pivot tables, we'd need to duplicate data or use denormalized structures
 **A:** Laravel Sanctum provides:
 1. **Token-based authentication**: Users login → receive bearer token
 2. **Middleware protection**: API routes require valid token
-3. **Role-based access control (RBAC)**: Different permissions for Admin vs Faculty
+3. **Admin-only access control**: login rejects non-admin roles; all management routes behind admin middleware
 4. **Session management**: Tokens can be revoked on logout
 
 Example flow:
@@ -633,7 +631,7 @@ Test coverage:
 - Manual Edit Conflict Check ✅
 - Schedule Approval Workflow ✅
 - Reports ✅
-- Faculty Portal ✅
+- Print/Download (PDF) ✅
 
 ---
 
@@ -701,7 +699,7 @@ Hard constraints (must be satisfied) vs soft constraints (nice to have):
 1. **Soft constraints**: Add preference weighting for faculty
 2. **Lunch break**: Mandatory break in daily schedules
 3. **UI enhancements**: Drag-and-drop schedule editing
-4. **Mobile responsiveness**: Faculty portal on mobile
+4. **Excel/CSV export**: Export schedules and reports to spreadsheets
 5. **Notifications**: Email/SMS for schedule changes
 6. **Analytics dashboard**: Advanced reporting and insights
 7. **Multi-semester planning**: Semester-to-semester carryover

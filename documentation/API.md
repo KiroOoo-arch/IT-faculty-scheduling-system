@@ -70,9 +70,9 @@
 |---|---|---|---|
 | PATCH | `/api/schedule-sessions/{id}` | ✅ Implemented | Update session with conflict detection |
 
-### Faculty Portal
+### Schedule Distribution (Print/PDF)
 
-> **Removed by design decision** — faculty do not log into the system. Published schedules are distributed as printed/PDF hard copies (see FR-017).
+> **Faculty Portal removed by design decision** — faculty do not log into the system; they are scheduling records, not users. Published schedules are distributed as printed/PDF hard copies via the Print/Download button (see FR-017).
 
 ### Reports
 

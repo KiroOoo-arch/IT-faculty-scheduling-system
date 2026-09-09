@@ -1,3 +1,10 @@
+-- ⚠️ HISTORICAL — DO NOT RUN
+-- This file represents the original database design and is preserved for
+-- historical/reference purposes only. It has been superseded by Laravel
+-- migrations and seeders (see documentation/Implementation_Status.md §6).
+-- The current system does not provide faculty user accounts or faculty login;
+-- faculty are scheduling records/entities, not system users.
+
 -- ==================================================
 -- AI Faculty Scheduling System
 -- Database Schema
