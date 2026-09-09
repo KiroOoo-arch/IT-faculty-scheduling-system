@@ -78,11 +78,11 @@
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| GET | `/api/reports/overview` | ✅ Implemented | Schedule status overview, faculty/room/section counts |
-| GET | `/api/reports/workload` | ✅ Implemented | Faculty workload distribution |
-| GET | `/api/reports/room-utilization` | ✅ Implemented | Room utilization rates |
-| GET | `/api/reports/sections` | ✅ Implemented | Section schedules and session counts |
-| GET | `/api/reports/generation-logs` | ✅ Implemented | Schedule generation history |
+| GET | `/api/reports/faculty-workload` | ✅ Implemented | Assigned hours vs max load per faculty member |
+| GET | `/api/reports/room-utilization` | ✅ Implemented | Booked hours per week per room |
+| GET | `/api/reports/conflicts` | ✅ Implemented | Cross-section conflict scan of published schedules |
+| GET | `/api/reports/schedule-status` | ✅ Implemented | Schedule status overview (draft/approved/published/archived counts) |
+| GET | `/api/reports/section-summary` | ✅ Implemented | Sessions, hours, faculty count per section |
 
 ---
 

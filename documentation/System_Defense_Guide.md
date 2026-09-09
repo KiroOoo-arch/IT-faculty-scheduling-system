@@ -223,7 +223,7 @@ erDiagram
     ROOMS {
         int id PK
         string name
-        string type "lecture | computer_lab"
+        string type "lecture | computer_lab | science_lab | electronics_lab"
         int capacity
         string status "available | under_maintenance | inactive"
     }
@@ -287,7 +287,7 @@ erDiagram
 | # | Constraint | What It Prevents | Implementation |
 |---|------------|------------------|----------------|
 | 1 | Faculty qualification | Unqualified faculty assigned to subjects | faculty_subjects pivot table |
-| 2 | Faculty availability | Scheduling outside declared hours | faculty_availabilities table |
+| 2 | Faculty availability | Scheduling on unavailable days | faculty_availabilities table (day-level) |
 | 3 | Room type matching | Labs in lecture halls | rooms.type = session_type |
 | 4 | Room capacity | Overcrowded rooms (students > capacity) | sections.student_count ≤ rooms.capacity |
 | 5 | Faculty no double-booking | Same teacher in two places at once | No overlapping time slots |
@@ -309,9 +309,8 @@ erDiagram
 
 | Role | Responsibilities | Access Level |
 |------|------------------|--------------|
-| **Administrator** | Manage users, faculty, rooms, laboratories; generate schedules | Full CRUD + Schedule Generation |
-| **Department Head** | Review schedules, approve, publish, monitor conflicts | Schedule Approval + Publishing |
-| **Faculty** | Submit availability, view assigned schedules | View Only (Published Schedules) |
+| **Administrator / Department Head** | The only login: manage users, faculty records (availability/qualifications entered by the Admin), subjects, rooms, laboratories, sections; generate, review/edit, approve, publish, unpublish, print/download schedules; reports | Full access |
+| **Faculty** | *(No system access)* — scheduling records maintained by the Admin; receive schedules as printed/PDF copies | None — not system users |
 
 ---
 
@@ -349,8 +348,11 @@ erDiagram
 | GET | `/api/schedules/{id}` | Get schedule by ID |
 | PATCH | `/api/schedules/{id}/approve` | Approve schedule |
 | PATCH | `/api/schedules/{id}/publish` | Publish schedule |
-| GET | `/api/reports/workload` | Faculty workload report |
+| GET | `/api/reports/faculty-workload` | Faculty workload report |
 | GET | `/api/reports/room-utilization` | Room utilization report |
+| GET | `/api/reports/conflicts` | Cross-section conflict scan |
+| GET | `/api/reports/schedule-status` | Schedule status overview |
+| GET | `/api/reports/section-summary` | Sessions/hours/faculty per section |
 
 ### AI Engine (Port 8001)
 
@@ -729,7 +731,7 @@ Hard constraints (must be satisfied) vs soft constraints (nice to have):
 
 **A:** Example: Prof. Cruz is part-time (Mon/Wed/Fri only)
 1. **Availability stored**: `faculty_availabilities` table has Mon/Wed/Fri entries
-2. **Solver respects**: Constraint #2 prevents scheduling outside declared hours
+2. **Solver respects**: Constraint #2 prevents scheduling on unavailable days (day-level restriction; the section's preferred start/end window defines the scheduling hours)
 3. **Tested and verified**: System correctly schedules Prof. Cruz only on available days
 
 If availability is empty, system falls back to section's preferred days (best-effort approach).
