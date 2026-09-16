@@ -13,6 +13,38 @@ class ScheduleController extends Controller
 {
     public function generate(Section $section)
     {
+        // Pre-scheduling data-integrity gate: every subject assigned to the
+        // section must match the section's year level and semester. Blocks
+        // legacy/invalid assignments before the AI engine is ever called.
+        $mismatches = [];
+        foreach ($section->subjects as $subject) {
+            if ((int) $subject->year_level !== (int) $section->year_level
+                || $subject->semester_name !== $section->semester_name) {
+                $problems = [];
+                if ((int) $subject->year_level !== (int) $section->year_level) {
+                    $problems[] = "belongs to Year {$subject->year_level}";
+                }
+                if ($subject->semester_name !== $section->semester_name) {
+                    $problems[] = "belongs to {$subject->semester_name}";
+                }
+                $mismatches[] = sprintf(
+                    '%s %s; this section is Year %d, %s.',
+                    $subject->code,
+                    implode(' and ', $problems),
+                    $section->year_level,
+                    $section->semester_name
+                );
+            }
+        }
+
+        if (!empty($mismatches)) {
+            return response()->json([
+                'message' => 'Schedule generation blocked: some assigned subjects do not match this section\'s year level and semester. Fix the section\'s subject assignments first. '
+                    . implode(' ', $mismatches),
+                'errors' => ['subject_ids' => $mismatches],
+            ], 422);
+        }
+
         // Archive old drafts
         Schedule::where('section_id', $section->id)
             ->where('status', 'draft')

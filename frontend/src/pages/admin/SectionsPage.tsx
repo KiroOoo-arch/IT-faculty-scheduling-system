@@ -5,7 +5,11 @@ type Subject = {
   id: number
   code: string
   title: string
+  year_level: number
+  semester_name: string
 }
+
+const YEAR_LABELS = ['', '1st Year', '2nd Year', '3rd Year', '4th Year']
 
 type Section = {
   id: number
@@ -117,7 +121,7 @@ export default function SectionsPage() {
       fetchSections()
     } else {
       const data = await res.json()
-      setError(data.message || JSON.stringify(data.errors) || 'Failed to save section')
+      setError(data.message || (data.errors ? Object.values(data.errors).flat().join(' ') : '') || 'Failed to save section')
     }
   }
 
@@ -215,23 +219,74 @@ export default function SectionsPage() {
               </div>
             </div>
 
-            {/* ===== NEW: Subject Assignment ===== */}
+            {/* ===== Subject Assignment (filtered to this section's year + semester) ===== */}
             <div className="border-t border-gray-200 pt-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Subjects Offered</h3>
-              <p className="text-xs text-gray-500 mb-3">Check the subjects this section will take.</p>
-              {allSubjects.length === 0 && <p className="text-xs text-gray-400">No subjects available.</p>}
-              <div className="flex flex-wrap gap-3">
-                {allSubjects.map((subject) => (
-                  <label key={subject.id}
-                    className="flex items-center gap-2 bg-white border border-gray-300 rounded-md px-3 py-2 cursor-pointer hover:bg-gray-50 transition">
-                    <input type="checkbox" checked={selectedSubjectIds.includes(subject.id)}
-                      onChange={() => toggleSubject(subject.id)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                    <span className="text-sm font-mono">{subject.code}</span>
-                    <span className="text-sm text-gray-500">— {subject.title}</span>
-                  </label>
-                ))}
-              </div>
+              <p className="text-xs text-gray-500 mb-1">
+                Check the subjects this section will take. Only subjects for
+                <span className="font-semibold text-gray-700"> {YEAR_LABELS[form.year_level] ?? `Year ${form.year_level}`}</span> ·
+                <span className="font-semibold text-gray-700"> {form.semester_name}</span> are listed.
+              </p>
+              <p className="text-xs text-gray-400 mb-3">Need a different subject? Change the Year Level or Semester above, or add the subject on the Subjects page.</p>
+
+              {/* Already-attached subjects from another year/semester (legacy data) stay visible with a warning */}
+              {(() => {
+                const mismatched = allSubjects.filter(
+                  (s) => selectedSubjectIds.includes(s.id)
+                  && (s.year_level !== form.year_level || s.semester_name !== form.semester_name)
+                )
+                if (mismatched.length === 0) return null
+                return (
+                  <div className="mb-3">
+                    <p className="text-xs font-semibold text-amber-700 mb-2">⚠ Assigned subjects not matching this section (fix or remove):</p>
+                    <div className="flex flex-wrap gap-3">
+                      {mismatched.map((subject) => (
+                        <label key={subject.id}
+                          className="flex items-center gap-2 bg-amber-50 border border-amber-400 rounded-md px-3 py-2 cursor-pointer hover:bg-amber-100 transition">
+                          <input type="checkbox" checked={selectedSubjectIds.includes(subject.id)}
+                            onChange={() => toggleSubject(subject.id)}
+                            className="rounded border-amber-500 text-amber-600 focus:ring-amber-500" />
+                          <span className="text-sm font-mono">{subject.code}</span>
+                          <span className="text-sm text-gray-500">— {subject.title}</span>
+                          <span className="text-xs bg-amber-200 text-amber-800 rounded-full px-2 py-0.5 whitespace-nowrap">
+                            {YEAR_LABELS[subject.year_level] ?? `Year ${subject.year_level}`} · {subject.semester_name} ⚠
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {(() => {
+                const matching = allSubjects.filter(
+                  (s) => s.year_level === form.year_level && s.semester_name === form.semester_name
+                )
+                if (matching.length === 0) {
+                  return (
+                    <p className="text-xs text-gray-400">
+                      No subjects available for {YEAR_LABELS[form.year_level] ?? `Year ${form.year_level}`} · {form.semester_name} — add them on the Subjects page.
+                    </p>
+                  )
+                }
+                return (
+                  <div className="flex flex-wrap gap-3">
+                    {matching.map((subject) => (
+                      <label key={subject.id}
+                        className="flex items-center gap-2 bg-white border border-gray-300 rounded-md px-3 py-2 cursor-pointer hover:bg-gray-50 transition">
+                        <input type="checkbox" checked={selectedSubjectIds.includes(subject.id)}
+                          onChange={() => toggleSubject(subject.id)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                        <span className="text-sm font-mono">{subject.code}</span>
+                        <span className="text-sm text-gray-500">— {subject.title}</span>
+                        <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 whitespace-nowrap">
+                          {YEAR_LABELS[subject.year_level] ?? `Year ${subject.year_level}`} · {subject.semester_name}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )
+              })()}
             </div>
 
             <div className="flex gap-2">

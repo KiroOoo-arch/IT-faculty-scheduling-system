@@ -3,10 +3,48 @@
 namespace App\Http\Controllers;
 
 use App\Models\Section;
+use App\Models\Subject;
 use Illuminate\Http\Request;
 
 class SectionController extends Controller
 {
+    /**
+     * Validate that every subject assigned to a section belongs to the
+     * section's year level and semester. Returns the offending subjects
+     * keyed by code => reason, or an empty array when all match.
+     */
+    private function subjectMismatches(int $yearLevel, string $semesterName, array $subjectIds): array
+    {
+        if (empty($subjectIds)) {
+            return [];
+        }
+
+        $subjects = Subject::whereIn('id', $subjectIds)->get();
+        $mismatches = [];
+
+        foreach ($subjects as $subject) {
+            if ((int) $subject->year_level !== (int) $yearLevel
+                || $subject->semester_name !== $semesterName) {
+                $problems = [];
+                if ((int) $subject->year_level !== (int) $yearLevel) {
+                    $problems[] = "belongs to Year {$subject->year_level}";
+                }
+                if ($subject->semester_name !== $semesterName) {
+                    $problems[] = "belongs to {$subject->semester_name}";
+                }
+                $mismatches[] = sprintf(
+                    '%s %s; this section is Year %d, %s.',
+                    $subject->code,
+                    implode(' and ', $problems),
+                    $yearLevel,
+                    $semesterName
+                );
+            }
+        }
+
+        return $mismatches;
+    }
+
     public function index()
     {
         return response()->json(Section::with('subjects')->get());
@@ -44,6 +82,21 @@ class SectionController extends Controller
             'subject_ids' => 'sometimes|array',
             'subject_ids.*' => 'exists:subjects,id',
         ]);
+
+        if (!empty($validated['subject_ids'])) {
+            $mismatches = $this->subjectMismatches(
+                $validated['year_level'],
+                $validated['semester_name'],
+                $validated['subject_ids']
+            );
+            if (!empty($mismatches)) {
+                return response()->json([
+                    'message' => 'Some subjects do not match this section\'s year level and semester: '
+                        . implode(' ', $mismatches),
+                    'errors' => ['subject_ids' => $mismatches],
+                ], 422);
+            }
+        }
 
         $section = Section::create([
             'name' => $validated['name'],
@@ -87,6 +140,25 @@ class SectionController extends Controller
             'subject_ids' => 'sometimes|array',
             'subject_ids.*' => 'exists:subjects,id',
         ]);
+
+        // Effective values: submitted changes merged over the section's current state
+        $effectiveYearLevel = $validated['year_level'] ?? $section->year_level;
+        $effectiveSemester = $validated['semester_name'] ?? $section->semester_name;
+
+        if (isset($validated['subject_ids'])) {
+            $mismatches = $this->subjectMismatches(
+                $effectiveYearLevel,
+                $effectiveSemester,
+                $validated['subject_ids']
+            );
+            if (!empty($mismatches)) {
+                return response()->json([
+                    'message' => 'Some subjects do not match this section\'s year level and semester: '
+                        . implode(' ', $mismatches),
+                    'errors' => ['subject_ids' => $mismatches],
+                ], 422);
+            }
+        }
 
         $section->update(collect($validated)->except('subject_ids')->toArray());
 
