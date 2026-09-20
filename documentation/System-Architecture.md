@@ -314,6 +314,10 @@ The Reports page provides analytics and summaries with the following tabs:
 
 ## 5. Database Design (ER Diagram)
 
+> **Entity naming:** ER entities are shown in singular form (FACULTY, SUBJECTS, …); the physical PostgreSQL tables use Laravel's plural convention (`faculties`, `subjects`, …). They are the same structures.
+>
+> **Two different status fields (not a wording drift):** `SCHEDULES.status` and solver results use uppercase `OPTIMAL | FEASIBLE | PARTIAL | INFEASIBLE` (the FastAPI/OR-Tools response values), while `SCHEDULE_GENERATION_LOGS.status` is stored lowercase (`optimal | partial | failure`) — exactly as written by `ScheduleController`.
+
 ```mermaid
 erDiagram
     USERS ||--o{ FACULTY : has
