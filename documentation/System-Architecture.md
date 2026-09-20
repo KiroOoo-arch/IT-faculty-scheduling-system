@@ -10,6 +10,8 @@
 2. **Manual edit conflict detection** — every admin edit of a draft/approved session is re-checked server-side
 3. **Publish conflict gate** — a final cross-section conflict check runs before any schedule goes live
 
+Plus a **pre-scheduling validation gate in Laravel** (application-layer business rules, not solver constraints): subject–section year/semester integrity (FR-018) and subject lab consistency (FR-019) are enforced when data is saved and re-checked before the AI engine is ever called — invalid assignments return HTTP 422 and cannot reach the solver.
+
 > **Human oversight:** Publishing never happens automatically. The AI produces a *candidate* schedule only; the Admin reviews, edits, approves, and decides publication through the conflict gate.
 ```mermaid
 graph TB
@@ -206,7 +208,88 @@ When an admin needs to make changes to a published schedule:
 - Error: { message: "Only published schedules can be unpublished." }
 
 
-## 6. Reports Dashboard
+## 3. User Types and User Flows
+
+### 3.1 System Users (Complete List)
+
+| User Type | System Access | Role in the System |
+|---|---|---|
+| **Administrator / Department Head** | **Login account — the only system user** (one combined role; the Department Head logs in with the Administrator account) | Full operational control: manage faculty/subject/room/section records, generate schedules, review/edit, approve, publish, unpublish, print/download, view reports, manage admin accounts |
+| **Faculty** | **No login — not a system user** | Maintained as scheduling records (name, employment type, qualifications, availability, max load). Their data feeds the scheduling engine; they receive published schedules as **printed/PDF copies** |
+| **Students** | **No login — not a system user** | Recipients of published schedules via printed/PDF copies posted or distributed by the department |
+
+> **Role-model note:** The SRS lists *Administrator* and *Department Head* as two user classes; the implemented system issues a single **admin** login role that covers both (the Department Head uses the Administrator account). There is no faculty login, no faculty portal, and no student account. Faculty and students exist only as data records / recipients.
+
+### 3.2 User Flow — Administrator / Department Head
+
+```mermaid
+flowchart TD
+    A[Login<br/>email + password] --> B{Sanctum auth<br/>role == admin?}
+    B -- no / non-admin --> X[Rejected:<br/>Only administrator accounts can access this system]
+    B -- yes --> C[Admin Dashboard]
+    C --> D[Manage Scheduling Data<br/>Faculty records · Subjects · Rooms · Sections]
+    D --> D1[Create/Edit Subject<br/>lab_hours > 0 requires computer_lab /<br/>science_lab / electronics_lab · else HTTP 422]
+    D1 --> E[Create/Edit Section<br/>assign subjects]
+    E --> E1{Subjects match section<br/>year level + semester?}
+    E1 -- no --> E2[HTTP 422<br/>offending subject codes named<br/>· assignment rejected]
+    E2 --> E
+    E1 -- yes --> F[Generate Schedule]
+    F --> F1{Laravel validation gate:<br/>all assigned subjects match<br/>year level + semester?}
+    F1 -- no --> F2[HTTP 422<br/>AI engine never called]
+    F2 --> E
+    F1 -- yes --> F3[FastAPI → OR-Tools CP-SAT<br/>candidate schedule]
+    F3 --> G{Result}
+    G -- OPTIMAL / PARTIAL --> H[DRAFT: Review / Manual Edit<br/>server-side conflict detection]
+    G -- INFEASIBLE --> I[Reasons reported<br/>fix data and retry]
+    I --> E
+    H --> J[Approve]
+    J --> K{Publish conflict gate:<br/>cross-section conflicts?}
+    K -- conflict --> L[Publish rejected 422]
+    L --> H
+    K -- none --> M[PUBLISHED]
+    M --> N[Print / Download<br/>print-friendly weekly grid<br/>→ browser print dialog → Save as PDF]
+    N --> O[Distribute hard copies<br/>to faculty and students]
+    M -. changes needed .-> P[Unpublish<br/>PUBLISHED → DRAFT]
+    P --> H
+```
+
+Text flow (same steps):
+
+```text
+Login (admin-only) → Manage Data → Create/Edit Subjects (lab consistency validated)
+  → Create/Edit Sections + Assign Subjects (year/semester validated, 422 on mismatch)
+  → Generate Schedule → Laravel validation gate (422 blocks legacy mismatches; AI never called)
+  → OR-Tools CP-SAT candidate → DRAFT → Review / Manual Edit (conflict-checked)
+  → Approve → Publish conflict gate → PUBLISHED → Print/Download PDF → Distribute
+  → (Unpublish returns to DRAFT for re-editing)
+```
+
+Every validation step above is enforced server-side (SectionController, SubjectController, ScheduleController) and mirrored in the UI — the subject checklist on the Sections page only lists subjects matching the section's year level and semester, with legacy mismatches flagged in place.
+
+### 3.3 User Flow — Faculty (Non-User)
+
+Faculty never log in and never interact with the system directly:
+
+```text
+Admin enters faculty data (name, type, qualifications, availability, max load)
+  → faculty records feed the scheduling engine
+  → Admin publishes the schedule
+  → Admin prints / exports PDF
+  → faculty member receives the printed/PDF copy of their schedule
+```
+
+### 3.4 User Flow — Students (Non-User)
+
+Students never log in and never interact with the system directly:
+
+```text
+Admin publishes the section schedule
+  → Admin prints / exports PDF
+  → copies are posted or distributed to the class
+```
+
+
+## 4. Reports Dashboard
 
 The Reports page provides analytics and summaries with the following tabs:
 
@@ -229,7 +312,7 @@ The Reports page provides analytics and summaries with the following tabs:
 - **Rooms**: Total rooms with breakdown (lecture rooms, labs)
 - **Sections**: Total sections with total session count
 
-## 3. Database Design (ER Diagram)
+## 5. Database Design (ER Diagram)
 
 ```mermaid
 erDiagram
@@ -246,6 +329,7 @@ erDiagram
     SECTIONS ||--o{ SCHEDULE_GENERATION_LOGS : logged
     ROOMS ||--o{ SCHEDULE_SESSIONS : hosts
     SCHEDULES ||--o{ SCHEDULE_SESSIONS : contains
+    USERS ||--o{ SCHEDULE_GENERATION_LOGS : requested
 
     USERS {
         int id PK
@@ -260,7 +344,7 @@ erDiagram
         string name "faculty name stored directly"
         int user_id FK "nullable — legacy link, not a login"
         string employee_no
-        string faculty_type "full_time | part_time"
+        string faculty_type "full_time | part_time | evening (app validates full_time, part_time)"
         int max_teaching_load
         boolean is_active
     }
@@ -273,7 +357,7 @@ erDiagram
         string semester_name
         int lecture_hours
         int lab_hours
-        string lab_room_type "computer_lab | null"
+        string lab_room_type "computer_lab | science_lab | electronics_lab | null"
         boolean is_active
     }
 
@@ -281,6 +365,7 @@ erDiagram
         int id PK
         string name
         int year_level
+        string academic_year
         string semester_name
         int student_count
         json preferred_days
@@ -346,7 +431,7 @@ erDiagram
     }
 ```
 
-## 4. Project Structure
+## 6. Project Structure
 
 ```text
 it-faculty-scheduling-system/
