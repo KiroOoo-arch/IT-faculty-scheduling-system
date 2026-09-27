@@ -74,7 +74,9 @@ flowchart TD
     EP -.->|"psycopg2 reads of section, subjects, faculty, rooms,<br/>existing approved/published sessions"| TBL
 ```
 
-*(Diagram source for the manuscript: `documentation/screenshots/program-flow.mmd`; rendered image: `documentation/screenshots/11-program-flow.png`.)*
+*(Diagram source for the manuscript: `documentation/screenshots/program-flow.mmd`; rendered image: `documentation/screenshots/11-program-flow.png` — the block above and the `.mmd` file are the same 61 lines, so they cannot drift.)*
+
+*Re-rendering after an edit (no Mermaid tooling is installed in this repository): either `npx -y @mermaid-js/mermaid-cli -i documentation/screenshots/program-flow.mmd -o documentation/screenshots/11-program-flow.png -b white`, or paste the `.mmd` into the Mermaid Live editor and export a PNG. The committed figure was rendered at 2600 px wide (`&width=2600` on the mermaid.ink renderer) for print legibility.*
 
 **Reading the chart:**
 
