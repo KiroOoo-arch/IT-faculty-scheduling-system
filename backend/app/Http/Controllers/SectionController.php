@@ -79,6 +79,7 @@ class SectionController extends Controller
             'preferred_days' => 'required|array',
             'preferred_start_time' => 'required|date_format:H:i',
             'preferred_end_time' => 'required|date_format:H:i|after:preferred_start_time',
+            'student_count' => 'sometimes|integer|min:1|max:1000',
             'subject_ids' => 'sometimes|array',
             'subject_ids.*' => 'exists:subjects,id',
         ]);
@@ -98,7 +99,7 @@ class SectionController extends Controller
             }
         }
 
-        $section = Section::create([
+        $attributes = [
             'name' => $validated['name'],
             'year_level' => $validated['year_level'],
             'academic_year' => $validated['academic_year'],
@@ -106,7 +107,15 @@ class SectionController extends Controller
             'preferred_days' => $validated['preferred_days'],
             'preferred_start_time' => $validated['preferred_start_time'],
             'preferred_end_time' => $validated['preferred_end_time'],
-        ]);
+        ];
+
+        // Class size is only set when supplied, so the column's own default
+        // stays authoritative for clients that do not send it.
+        if (isset($validated['student_count'])) {
+            $attributes['student_count'] = $validated['student_count'];
+        }
+
+        $section = Section::create($attributes);
 
         if (!empty($validated['subject_ids'])) {
             $section->subjects()->sync($validated['subject_ids']);
@@ -137,6 +146,7 @@ class SectionController extends Controller
             'preferred_days' => 'sometimes|array',
             'preferred_start_time' => 'sometimes|date_format:H:i',
             'preferred_end_time' => 'sometimes|date_format:H:i',
+            'student_count' => 'sometimes|integer|min:1|max:1000',
             'subject_ids' => 'sometimes|array',
             'subject_ids.*' => 'exists:subjects,id',
         ]);

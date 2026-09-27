@@ -549,6 +549,102 @@ class TestCrossSectionConflicts(unittest.TestCase):
         assert result["status"] in ("OPTIMAL", "FEASIBLE")
         assert len(scheduled(result)) == 1
 
+    def test_existing_session_later_than_the_window_does_not_block_a_free_day(self):
+        """A window closing before the committed 19:00-21:00 session must still work:
+        the candidate can simply avoid that day/time instead of being pinned after it."""
+        subject = make_subject(subject_id=1, code="A", lecture_hours=2)
+        section = make_section(preferred_days=[1, 2], preferred_end_hour=18)
+        faculty = [make_faculty(faculty_id=1, subject_ids=[1], available_days=[1, 2])]
+        existing = [{"day_of_week": 1, "start_hour": 19, "end_hour": 21,
+                     "faculty_id": 1, "room_id": 1}]
+
+        result = generate_schedule(
+            section=section, subjects=[subject], faculty=faculty,
+            rooms=[make_room(room_id=1)], existing_sessions=existing,
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE"), result
+        assert len(scheduled(result)) == 1, result
+        placed = scheduled(result)[0]
+        assert placed["end_hour"] <= 18
+        assert not (placed["day_of_week"] == 1
+                    and placed["start_hour"] < 21 and placed["end_hour"] > 19)
+
+    def test_free_preferred_day_is_used_when_the_other_day_is_fully_booked(self):
+        """Day 1 is committed for the whole window: the session must land on day 2."""
+        subject = make_subject(subject_id=1, code="A", lecture_hours=2)
+        section = make_section(preferred_days=[1, 2], preferred_end_hour=18)
+        faculty = [make_faculty(faculty_id=1, subject_ids=[1], available_days=[1, 2])]
+        existing = [
+            {"day_of_week": 1, "start_hour": 7, "end_hour": 18,
+             "faculty_id": 1, "room_id": 1},
+            {"day_of_week": 1, "start_hour": 19, "end_hour": 21,
+             "faculty_id": 1, "room_id": 1},
+        ]
+
+        result = generate_schedule(
+            section=section, subjects=[subject], faculty=faculty,
+            rooms=[make_room(room_id=1)], existing_sessions=existing,
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE"), result
+        assert [s["day_of_week"] for s in scheduled(result)] == [2], result
+
+    def test_existing_session_after_the_candidate_does_not_block_the_same_day(self):
+        """Same day, candidate ending before the committed 16:00 slot: allowed."""
+        subject = make_subject(subject_id=1, code="A", lecture_hours=2)
+        section = make_section(preferred_days=[1], preferred_end_hour=18)
+        faculty = [make_faculty(faculty_id=1, subject_ids=[1], available_days=[1])]
+        existing = [{"day_of_week": 1, "start_hour": 16, "end_hour": 18,
+                     "faculty_id": 1, "room_id": 1}]
+
+        result = generate_schedule(
+            section=section, subjects=[subject], faculty=faculty,
+            rooms=[make_room(room_id=1)], existing_sessions=existing,
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE"), result
+        placed = scheduled(result)
+        assert len(placed) == 1, result
+        assert placed[0]["day_of_week"] == 1
+        assert placed[0]["end_hour"] <= 16, placed[0]
+
+    def test_same_day_placement_after_an_earlier_existing_session_is_allowed(self):
+        """Same day, candidate starting at/after the committed 07:00-09:00 slot."""
+        subject = make_subject(subject_id=1, code="A", lecture_hours=2)
+        section = make_section(preferred_days=[1], preferred_end_hour=18)
+        faculty = [make_faculty(faculty_id=1, subject_ids=[1], available_days=[1])]
+        existing = [{"day_of_week": 1, "start_hour": 7, "end_hour": 9,
+                     "faculty_id": 1, "room_id": 1}]
+
+        result = generate_schedule(
+            section=section, subjects=[subject], faculty=faculty,
+            rooms=[make_room(room_id=1)], existing_sessions=existing,
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE"), result
+        placed = scheduled(result)
+        assert len(placed) == 1, result
+        assert placed[0]["start_hour"] >= 9, placed[0]
+
+    def test_same_day_overlap_with_a_shared_resource_is_still_rejected(self):
+        """Existing 10:00-14:00 on the only preferred day: overlap stays banned."""
+        subject = make_subject(subject_id=1, code="A", lecture_hours=2)
+        section = make_section(preferred_days=[1], preferred_end_hour=18)
+        faculty = [make_faculty(faculty_id=1, subject_ids=[1], available_days=[1])]
+        existing = [{"day_of_week": 1, "start_hour": 10, "end_hour": 14,
+                     "faculty_id": 1, "room_id": 1}]
+
+        result = generate_schedule(
+            section=section, subjects=[subject], faculty=faculty,
+            rooms=[make_room(room_id=1)], existing_sessions=existing,
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE"), result
+        placed = scheduled(result)
+        assert len(placed) == 1, result
+        assert placed[0]["end_hour"] <= 10 or placed[0]["start_hour"] >= 14, placed[0]
+
 
 # ---------------------------------------------------------------------------
 # J. Section preferred scheduling window

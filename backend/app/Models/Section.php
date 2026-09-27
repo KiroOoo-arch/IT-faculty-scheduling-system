@@ -13,6 +13,7 @@ class Section extends Model
     protected $fillable = [
         'name', 'year_level', 'academic_year', 'semester_name',
         'preferred_days', 'preferred_start_time', 'preferred_end_time',
+        'student_count',
     ];
 
     protected $casts = [

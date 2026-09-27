@@ -20,6 +20,7 @@ type Section = {
   preferred_days: number[]
   preferred_start_time: string
   preferred_end_time: string
+  student_count: number
   subjects?: Subject[]
 }
 
@@ -27,6 +28,7 @@ const emptyForm = {
   name: '', year_level: 1, academic_year: '2026-2027',
   semester_name: '1st Semester', preferred_days: [1, 2, 3, 4, 5],
   preferred_start_time: '07:00', preferred_end_time: '15:00',
+  student_count: 30,
 }
 
 const ALL_DAYS = [
@@ -132,6 +134,7 @@ export default function SectionsPage() {
       semester_name: s.semester_name, preferred_days: s.preferred_days,
       preferred_start_time: s.preferred_start_time.slice(0, 5),
       preferred_end_time: s.preferred_end_time.slice(0, 5),
+      student_count: s.student_count,
     })
     setSelectedSubjectIds(s.subjects?.map((sub) => sub.id) ?? [])
   }
@@ -200,6 +203,14 @@ export default function SectionsPage() {
                 <input type="time" value={form.preferred_end_time}
                   onChange={(e) => setForm({ ...form, preferred_end_time: e.target.value })}
                   className="w-full border border-gray-300 rounded-md px-3 py-2" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Students</label>
+                <input type="number" min={1} value={form.student_count}
+                  onChange={(e) => setForm({ ...form, student_count: e.target.value === '' ? 0 : parseInt(e.target.value) })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="30" />
+                <p className="text-xs text-gray-400 mt-1">Used by the solver: a room is only eligible when its capacity is at least this number.</p>
               </div>
             </div>
 
@@ -311,7 +322,7 @@ export default function SectionsPage() {
               <thead className="bg-gray-800 text-white">
                 <tr>
                   <th className="p-3">Name</th><th className="p-3">Year</th><th className="p-3">Semester</th>
-                  <th className="p-3">Days</th><th className="p-3">Time</th><th className="p-3">Subjects</th>
+                  <th className="p-3">Days</th><th className="p-3">Time</th><th className="p-3">Students</th><th className="p-3">Subjects</th>
                   <th className="p-3">Actions</th>
                 </tr>
               </thead>
@@ -322,6 +333,7 @@ export default function SectionsPage() {
                     <td className="p-3">{s.semester_name}</td>
                     <td className="p-3">{s.preferred_days.map((d) => dayLabels[d]).join(', ')}</td>
                     <td className="p-3">{s.preferred_start_time.slice(0, 5)} – {s.preferred_end_time.slice(0, 5)}</td>
+                    <td className="p-3">{s.student_count}</td>
                     <td className="p-3">{s.subjects?.map((sub) => sub.code).join(', ') || '—'}</td>
                     <td className="p-3">
                       <button onClick={() => handleEdit(s)} className="text-blue-600 hover:underline text-sm mr-3">Edit</button>

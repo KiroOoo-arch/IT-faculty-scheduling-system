@@ -17,7 +17,18 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // The SPA talks to this API over fetch(); several call sites do not
+        // send an "Accept: application/json" header. Without this, Laravel
+        // answers such requests the way it would answer a browser form post:
+        // an unauthenticated call is redirected to the `login` route (which
+        // lives behind auth itself, producing an endless redirect loop) and a
+        // ValidationException is redirected `back()` to the SPA's own origin,
+        // which the browser then blocks as a cross-origin redirect. Both
+        // surface in the UI as an unhelpful "Failed to fetch" instead of a
+        // 401/422 the frontend can read.
+        $exceptions->shouldRenderJsonWhen(
+            fn ($request, $e) => $request->is('api/*') || $request->expectsJson()
+        );
     })->create();
 
 

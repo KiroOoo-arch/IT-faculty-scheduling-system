@@ -168,10 +168,22 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
             model.Add(v["day"] != ext_day).OnlyEnforceIf(same_day.Not())
 
             end_var = v["start"] + v["duration"]
+
+            # `overlap` is only true when the two clock intervals really do
+            # overlap. When they don't, the candidate sits either fully before
+            # or fully after the existing session — expressing only the "after"
+            # half (start >= ext_end) made the whole model infeasible whenever an
+            # existing session ended after the section's window, even on a free
+            # day, because there was no way to satisfy it inside the window.
             overlap = model.NewBoolVar(f"ext_overlap_{idx}_{id(ext)}")
             model.Add(v["start"] < ext_end).OnlyEnforceIf(overlap)
             model.Add(ext_start < end_var).OnlyEnforceIf(overlap)
-            model.Add(v["start"] >= ext_end).OnlyEnforceIf(overlap.Not())
+
+            ends_before = model.NewBoolVar(f"ext_ends_before_{idx}_{id(ext)}")
+            starts_after = model.NewBoolVar(f"ext_starts_after_{idx}_{id(ext)}")
+            model.Add(end_var <= ext_start).OnlyEnforceIf(ends_before)
+            model.Add(v["start"] >= ext_end).OnlyEnforceIf(starts_after)
+            model.AddBoolOr([overlap, ends_before, starts_after])
 
             if ext_faculty_id is not None:
                 faculty_ids_in_model = [f["id"] for f in faculty]
