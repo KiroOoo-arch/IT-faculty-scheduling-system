@@ -13,6 +13,8 @@
 Plus a **pre-scheduling validation gate in Laravel** (application-layer business rules, not solver constraints): subject–section year/semester integrity (FR-018) and subject lab consistency (FR-019) are enforced when data is saved and re-checked before the AI engine is ever called — invalid assignments return HTTP 422 and cannot reach the solver.
 
 > **Human oversight:** Publishing never happens automatically. The AI produces a *candidate* schedule only; the Admin reviews, edits, approves, and decides publication through the conflict gate.
+>
+> **Companion documents:** `User-Flow.md` — the Administrator user flow as a standalone document; `Program-Flow.md` — how the program actually executes (entry points and control flow, request lifecycle, per-process flows, validation-gate placement, status handling, file/function index).
 ```mermaid
 graph TB
     subgraph Frontend["Frontend — React + TypeScript + Vite (port 5173)"]
@@ -455,7 +457,7 @@ it-faculty-scheduling-system/
 │   │   └── Providers/AppServiceProvider.php
 │   ├── bootstrap/app.php
 │   ├── config/
-│   ├── database/migrations/        # 15 tables
+│   ├── database/migrations/        # 11 domain tables + 3 framework tables
 │   ├── routes/api.php
 │   └── .env                        # (ignored)
 │

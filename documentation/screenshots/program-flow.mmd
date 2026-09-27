@@ -1,0 +1,61 @@
+flowchart TD
+    subgraph FE["Frontend — React + TypeScript + Vite (port 5173)"]
+        M["main.tsx — createRoot renders App"]
+        BR["App.tsx — BrowserRouter → AuthProvider → AppRoutes"]
+        G{"AuthContext: user + token in localStorage?"}
+        LP["LoginPage — POST /api/login"]
+        PP["ProtectedRoute pages — AdminDashboard · RoomsPage · UsersPage ·<br/>FacultyPage · SubjectsPage · SectionsPage · ReportsPage · PrintableSchedule"]
+        M --> BR --> G
+        G -- "no" --> LP
+        G -- "yes" --> PP
+    end
+
+    subgraph RT["Laravel routes — backend/routes/api.php"]
+        PUB["POST /api/login — public route"]
+        AUTHG["middleware auth:sanctum — logout · me"]
+        ADMG{"middleware admin — EnsureUserIsAdmin"}
+    end
+
+    LP --> PUB
+    PP -->|"fetch + Bearer token + Accept: application/json"| AUTHG
+    AUTHG -->|"401 Unauthenticated"| PP
+    AUTHG --> ADMG
+    ADMG -- "role not admin" --> F403["403 Forbidden"]
+    ADMG -- "role is admin" --> C
+
+    C["Route controller — Auth · Faculty · Subject · Room · Section ·<br/>Schedule · ScheduleApproval · ScheduleSession · Report · User"]
+
+    C --> G1["Gate 1 — SubjectController store/update:<br/>lab_hours above 0 requires a canonical lab_room_type;<br/>lab_hours = 0 requires none · else 422"]
+    C --> G2["Gate 2 — SectionController store/update:<br/>assigned subjects must match section year + semester · else 422"]
+    C --> G3["Gate 3 — ScheduleController generate:<br/>re-checks every assigned subject · 422 before the AI engine is called"]
+    C --> G4["Gate 4 — ScheduleSessionController update:<br/>room type · faculty availability · self-overlap · external double-booking · 422"]
+    C --> G5["Gate 5 — ScheduleApprovalController publish:<br/>cross-section conflict gate · 422 with conflict list"]
+
+    G3 -- "clean" --> EP
+    G4 -- "clean" --> SAVE["session updated · 200"]
+    G5 -- "no conflicts" --> ARC["archive other approved/published schedules of this section"]
+    ARC --> ST["status → published · 200"]
+
+    subgraph AIE["AI engine — Python FastAPI (port 8001)"]
+        EP["POST /generate-schedule/section_id"]
+        SOL["solver/scheduler.py — OR-Tools CP-SAT<br/>max 15 s · maximize number of placed sessions"]
+        EP --> SOL
+    end
+
+    SOL -->|"200 OPTIMAL · FEASIBLE · PARTIAL · INFEASIBLE · ERROR"| DEC{"Laravel accepts status?"}
+    DEC -- "OPTIMAL or PARTIAL" --> DRAFT["Create Schedule status=draft<br/>+ ScheduleSession rows for placed sessions<br/>+ ScheduleGenerationLog"]
+    DEC -- "anything else" --> FLOG["ScheduleGenerationLog status=failure<br/>422 to the browser"]
+    DRAFT --> ADMIN["Admin reviews draft on AdminDashboard"]
+    ADMIN --> EDIT{"Manual edit needed?"}
+    EDIT -- "yes" --> G4
+    EDIT -- "no" --> APR["PATCH /schedules/id/approve → status=approved"]
+    APR --> G5
+    ST --> PRINT["PrintableSchedule — GET /schedules/id<br/>weekly grid → window.print → PDF"]
+    PRINT --> DIST["Hard-copy distribution to faculty and students"]
+
+    subgraph DB["PostgreSQL"]
+        TBL["schedules · schedule_sessions · schedule_generation_logs<br/>faculties · subjects · rooms · sections and their pivot tables"]
+    end
+
+    DRAFT --> TBL
+    EP -.->|"psycopg2 reads of section, subjects, faculty, rooms,<br/>existing approved/published sessions"| TBL

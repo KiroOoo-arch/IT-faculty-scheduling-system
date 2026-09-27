@@ -179,6 +179,7 @@ erDiagram
     SECTIONS ||--o{ SCHEDULE_GENERATION_LOGS : logged
     ROOMS ||--o{ SCHEDULE_SESSIONS : hosts
     SCHEDULES ||--o{ SCHEDULE_SESSIONS : contains
+    USERS ||--o{ SCHEDULE_GENERATION_LOGS : requested
 
     USERS {
         int id PK
@@ -375,7 +376,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | 6/6 automated feature tests + frontend typecheck |
+| Testing | ✅ Complete | Backend: 23 feature tests (100 assertions) · AI engine: 32 solver unit tests · frontend typecheck + production build |
 
 ---
 
@@ -619,12 +620,9 @@ For university scale, architectural changes would be needed, but the core constr
 
 **A:** Testing approach:
 1. **Ad-hoc testing**: Throughout development
-2. **Stress tests**: Tested solver with:
-   - Normal case (OPTIMAL)
-   - Forced constraints (respect faculty availability)
-   - Broken constraints (INFEASIBLE with explanation)
-3. **End-to-end testing**: Full workflow verification
-4. **Automated test suite passing**: backend feature tests + frontend typecheck validate the workflow
+2. **AI engine unit tests**: 32 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day-level availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 32 passed, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
+3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
+4. **Automated backend suite**: 23 Laravel feature tests (100 assertions) — authentication, subject/section validation rules, generation attribution, publish gate — plus frontend typecheck and production build
 
 Test coverage:
 - Authentication & RBAC ✅
@@ -641,8 +639,8 @@ Test coverage:
 
 **A:**
 - **Backend (Laravel)**: PHPUnit (built-in)
-- **Frontend (React)**: Jest + React Testing Library
-- **AI Engine**: Python unittest + manual testing
+- **Frontend (React)**: TypeScript typecheck + production build
+- **AI Engine**: Python standard-library `unittest` — 32 tests running the CP-SAT solver directly with controlled fixtures (no database needed)
 - **Integration**: Postman/curl for API testing
 
 We focused on practical testing that verifies real functionality rather than achieving 100% code coverage.
@@ -819,9 +817,9 @@ it-faculty-scheduling-system/
 ├── backend/                        # Laravel 13 + Sanctum (port 8000)
 │   ├── app/
 │   │   ├── Http/Controllers/       # All API controllers
-│   │   ├── Models/                 # Eloquent models
-│   │   └── Observers/             # Model observers
-│   ├── database/migrations/        # 15 tables
+│   │   ├── Http/Middleware/        # EnsureUserIsAdmin — the admin gate
+│   │   └── Models/                 # Eloquent models
+│   ├── database/migrations/        # 11 domain tables + 3 framework tables
 │   ├── routes/api.php             # API routes
 │   └── .env
 │

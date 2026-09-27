@@ -74,7 +74,7 @@ Remove obsolete: overview, workload, sections, generation-logs.
 
 ## 8. Testing chapter — rewrite
 
-- Replace any "18/18 manual tests" claim with the automated suite: 6/6 backend feature tests (30 assertions) including section/year-level generation tests (schedule attributed to correct section, year level, semester; other sections untouched; regeneration archives only the target's drafts), run on an isolated scheduling_system_testing database.
+- Replace any "18/18 manual tests" claim with the automated suite: 23 backend feature tests (100 assertions) including section/year-level generation tests and the subject-validation rule tests (subject–section year/semester integrity, subject lab consistency), run on an isolated scheduling_system_testing database, plus 32 AI-engine unit tests (Python stdlib unittest) that exercise the CP-SAT solver directly — 32 passed, 0 failed, 0 skipped, 0 warnings/errors.
 - Add the live end-to-end integration test (September 2026): admin login > AI generated BIT-3A's schedule OPTIMAL with all constraints verified (IAS lab correctly placed in a computer lab) > approve > publish through the gate > unpublish > all 5 reports — all passed.
 - Frontend TypeScript typecheck + production build pass.
 
@@ -88,11 +88,13 @@ Remove obsolete: overview, workload, sections, generation-logs.
 | File | Use for |
 |---|---|
 | documentation/System-Architecture.md | Authoritative architecture, flows, ERD |
+| documentation/Program-Flow.md | Program-level execution: entry points and control flow, request lifecycle, per-process flows, validation-gate placement, status handling, file/function index |
 | documentation/Constraints.md | Correct constraint list and solver behavior |
 | documentation/System_Complete_Guide.docx | Overall narrative (regenerated Sept 9) |
 | documentation/Progress-report.md | Dated development timeline, July 18 > September 9 (ready-made methodology chapter) |
 | documentation/Data-Privacy-and-Security.md | Privacy/security chapter |
 | diagrams/*.drawio | Re-export all 5 diagrams for the manuscript |
+| documentation/screenshots/program-flow.mmd | Source of the rendered program-flow figure (11-program-flow.png) |
 
 ## 11. DELETE checklist for the old manuscript
 
@@ -106,6 +108,7 @@ Remove obsolete: overview, workload, sections, generation-logs.
 - "Not enforced" max-load claims
 - Old report endpoint names (overview, workload, sections, generation-logs)
 - Two-type room list (lecture/computer_lab only)
+- Any claim that subject assignment lacks year/semester validation or that lab subjects need no lab room type — both are now enforced server-side (HTTP 422) and documented as FR-018/FR-019
 
 ---
 
