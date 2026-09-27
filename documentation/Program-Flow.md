@@ -4,6 +4,8 @@
 
 *Every step below was read out of the implementation — `backend/routes/api.php`, `backend/bootstrap/app.php`, the controllers in `backend/app/Http/Controllers/`, `ai-engine/api/app.py`, `ai-engine/solver/scheduler.py`, `frontend/src/main.tsx`, `frontend/src/App.tsx`, `frontend/src/context/AuthContext.tsx` and `frontend/src/pages/`. No behavior is described here that is not in the code; each section cites its file, and §5 maps every step to it.*
 
+*The runtime claims — the status codes, the five validation gates, the publish and edit conflict gates, and the solver-result branching — were then **exercised against the live stack** (September 27, 2026) and corrected where the code read differently from the wire. §7 records every request and response, and flags the few paths that remain read-from-source.*
+
 ---
 
 ## 1. Program Entry and Control Flow
@@ -120,13 +122,15 @@ sequenceDiagram
 | Code | Produced by | When |
 |---|---|---|
 | 200 | controllers | Successful read/update/approve/publish/unpublish |
-| 201 | `SubjectController::store`, `SectionController::store` | Record created |
+| 201 | `SubjectController::store`, `SectionController::store` (the section create was observed on the wire) | Record created |
 | 401 | `auth:sanctum` | Missing or invalid Bearer token |
-| 403 | `EnsureUserIsAdmin`, `authorizeAdmin()` / role check in controllers | Authenticated but not an `admin` |
-| 404 | Route-model binding (`/schedules/{schedule}`, `/sections/{section}`, …), FastAPI `get_connection` path | Row does not exist |
+| 403 | `EnsureUserIsAdmin` — observed; the `authorizeAdmin()` / role checks inside the controllers sit behind that middleware and are not reachable through these routes | Authenticated but not an `admin` |
+| 404 | Route-model binding (`/schedules/{schedule}`, `/sections/{section}`, …) — observed, returning the framework's exception payload while `APP_DEBUG=true`; FastAPI answers its own 404 for an unknown section | Row does not exist |
 | 422 | `$request->validate(...)`, business-rule gates (Gates 1–5), wrong-status actions | Input rejected — the standard rejection code for this program |
-| 502 | `ScheduleController::generate` | The AI engine answered with a non-2xx response |
-| 500 | AI engine (`psycopg2.Error`, unexpected exception) | Database or unexpected solver-side failure |
+| 502 | `ScheduleController::generate` — observed as `{"error":"AI engine request failed","details":"<engine response body>"}` | The AI engine answered with a non-2xx **response** |
+| 500 | **Observed:** the engine is unreachable — `Illuminate\Http\Client\ConnectionException` (cURL error 7) escapes `generate()` unhandled and **no generation log row is written**. Also expected, but *not* exercised: the engine's own `psycopg2.Error` / unexpected-exception handler | Connection refused, database or unexpected solver-side failure |
+
+Every row above was exercised against the running stack (`php artisan serve` + `uvicorn`) on September 27, 2026, except the second half of the 500 row; §7 lists the requests and what came back.
 
 **Note on login failures:** `AuthController::login` throws a `ValidationException` for both wrong credentials and a non-admin role, so the program answers **422 with an `email` error message** (not 401) — the frontend sends `Accept: application/json`, which is what makes Laravel render that as JSON instead of a redirect.
 
@@ -155,6 +159,7 @@ flowchart TD
 - Login is the **only public route**; everything else sits behind `auth:sanctum`.
 - Faculty have no accounts, so the role check is the program-level enforcement of the admin-only design (`FAC-AUTH-003`).
 - Frontend logout clears `localStorage` (`AuthContext.logout`); the server-side token is revoked by `POST /api/logout`.
+- **Observed live:** valid admin login → `200 {user, token}`; wrong password, unknown email and a missing field → 422 (`The provided credentials are incorrect.` / `The password field is required.`); a non-admin account → 422 `Only administrator accounts can access this system.`, so a non-admin can never obtain a token through the API — and a token minted for one directly still gets `403 Forbidden. Admin access required.` on admin routes while `/api/me` answers 200.
 
 ### 3.2 Schedule generation (`ScheduleController::generate` → FastAPI → CP-SAT)
 
@@ -182,7 +187,7 @@ flowchart TD
 ```
 
 - The engine's own failure codes surface to the browser as **502** (non-2xx from FastAPI) — the Laravel call has no `try`/`catch`.
-- Draft archiving happens **before** the engine is called, so a failed generation still leaves the section with its previous drafts archived.
+- Draft archiving happens **before** the engine is called, so a failed generation still leaves the section with its previous drafts archived — **observed**: a `FEASIBLE` rejection and an engine-500 run each archived the section's existing draft even though no new schedule was created, and a connection failure archived it too.
 - The solver is a pure function: `ai-engine/api/app.py` does the reading (psycopg2) and `ai-engine/solver/scheduler.py` does the solving, with no HTTP code inside it.
 
 ### 3.3 Approve → publish → print (`ScheduleApprovalController`, `PrintableSchedule`)
@@ -208,7 +213,8 @@ flowchart TD
     GRID --> PDF["Browser print dialog → paper or Save as PDF → distribution"]
 ```
 
-- Approval requires `draft`, publishing requires `approved`; every other state answers 422 with the current status named.
+- Approval requires `draft`, publishing requires `approved`; every other state answers 422 with the current status named — **observed** (`Only approved schedules can be published. This schedule is currently 'published'.`; `Only draft schedules can be approved. …`; `Only published schedules can be unpublished.`).
+- **Observed:** publishing a second schedule for the same section answered 200 and archived that section's previously published schedule, exactly as the diagram shows.
 - The publish gate compares only against **other sections'** approved/published schedules — a section never conflicts with itself.
 - Print is a read-only page: it fetches one schedule (`GET /api/schedules/{schedule}`) and calls `window.print()`.
 
@@ -250,6 +256,8 @@ flowchart TD
 
 This is protection layer 2 — the same rules that the solver enforces at generation time are re-checked on every manual edit.
 
+**Observed:** one rejected edit returned all five conflict classes at once — room type (`Room 'ROOM6' is type 'lecture', but this session needs 'computer_lab'.`), faculty availability (`… is not available on day 2 from 19:00 to 21:00.`), same-schedule overlap, cross-section faculty double-booking, and cross-section room double-booking — which confirms the merge-then-validate-full-state behavior. Putting a session on a **published** schedule answers 422 `Cannot edit a session on a 'published' schedule.`, and a clean change answers 200.
+
 ### 3.6 Reports (`ReportController`, `ReportsPage`)
 
 `ReportsPage` fires all five report calls in parallel on load; every report is read-only and admin-gated.
@@ -287,12 +295,14 @@ This is protection layer 2 — the same rules that the solver enforces at genera
 
 **Flow:** `draft → approved → published → archived`, with `unpublish` returning `published → draft` for re-editing and `reject` sending a draft to `rejected`.
 
+Every transition in this table was exercised through the API, including the wrong-state rejections and the full unpublish loop (`published → draft` → re-approve → re-publish). `reject` is the one transition still read from source — the demo data has no rejected schedules and the probe did not create one.
+
 ### 4.2 Solver result branching (`ai-engine/solver/scheduler.py`)
 
 | Returned status | When the solver sets it | Laravel's handling (`ScheduleController`) |
 |---|---|---|
 | `OPTIMAL` | Every computed session placed **and** the solver proved the objective optimal | Accepted → draft + log `optimal` |
-| `FEASIBLE` | Every computed session placed but the 15 s limit was hit before optimality was proven | **Not** in the accepted list → log `failure`, 422 (see §6, observation 1) |
+| `FEASIBLE` | Every computed session placed but the 15 s limit was hit before optimality was proven | **Not** in the accepted list → log `failure`, 422 — **observed** against the running API: the response was `{"status":"FEASIBLE","message":"No feasible schedule found."}` and the log row read `status=failure`, `message=No feasible schedule found.` (see §6, observation 1) |
 | `PARTIAL` | Some sessions placed (`scheduled_count > 0`) — each unplaced session carries a reason | Accepted → draft + log `partial`, unscheduled list stored |
 | `INFEASIBLE` | No session could be placed; reasons reported per session | Log `failure`, 422 with the engine message |
 | `ERROR` | The section has no subject with lecture or lab hours defined (engine-side guard in `app.py` returns 400 earlier for "no subjects assigned") | Log `failure`, 422 |
@@ -302,6 +312,8 @@ Session-level reasons are always preserved: structurally impossible sessions (no
 ### 4.3 Generation log vocabulary
 
 `ScheduleController` writes `schedule_generation_logs.status` as **lowercase**: `strtolower($result['status'])` → `optimal` or `partial` on success, and the literal `failure` for every rejected/failed path (engine unreachable, non-optimal status). `unscheduled_sessions` stores the unplaced sessions with their reasons, which is exactly what the Reports → Generation Logs tab displays.
+
+**Observed while exercising the API:** the stored vocabulary is exactly `optimal | partial | failure` (the demo database holds 32 / 9 / 12 of them); a `502` writes the engine's response body into `message`; a subject–section mismatch blocked by Gate 3 writes **no** row (like the connection failure); and log rows **cascade-delete with their section** (`section_id … cascadeOnDelete`), observed when the probe section was deleted.
 
 ### 4.4 Frontend state handling
 
@@ -342,9 +354,42 @@ Session-level reasons are always preserved: structurally impossible sessions (no
 
 Documentation-only notes — nothing here was changed, and each is traceable to the file named. They are recorded so the code and the manuscript tell the same story.
 
-1. **`FEASIBLE` is treated as a failure by Laravel.** The solver returns `FEASIBLE` when every session is placed but optimality was not proven within the 15 s limit (`scheduler.py`, `overall_status = solver.StatusName(status)`), while `ScheduleController::generate` accepts only `['OPTIMAL', 'PARTIAL']`. A fully-placed `FEASIBLE` run is therefore logged as `failure` and answered with 422 "No feasible schedule found." Follow-up for the team: accept `FEASIBLE` alongside `OPTIMAL`, or map it to the same success path.
+1. **`FEASIBLE` is treated as a failure by Laravel — observed, not inferred.** The solver returns `FEASIBLE` when every session is placed but optimality was not proven within the 15 s limit (`scheduler.py`, `overall_status = solver.StatusName(status)`), while `ScheduleController::generate` accepts only `['OPTIMAL', 'PARTIAL']`. Driving the real endpoint with a `FEASIBLE` payload returned **422 `{"status":"FEASIBLE","message":"No feasible schedule found."}`** and wrote a `failure` log row — a fully-placed schedule reported to the Admin as "no feasible schedule found". The 32-test suite asserts that `FEASIBLE` is a legitimate fully-placed result, so this is reachable in practice once a model exhausts the 15 s budget. Follow-up for the team: accept `FEASIBLE` alongside `OPTIMAL`, or map it to the same success path.
 2. **The `GET /api/login` fallback route is unreachable and returns nothing.** It is declared *inside* the `auth:sanctum` + `admin` groups in `routes/api.php`, and its closure builds a JSON response without returning it, so an unauthenticated caller gets 401 from the guard and a non-admin caller gets 403 from the middleware before the closure runs.
 3. **`rejected` is a real schedule status but appears in no documented lifecycle.** `ScheduleApprovalController::reject` writes `status = 'rejected'` and `destroy` allows only `draft`/`archived`; the ERD and lifecycle lists in `System-Architecture.md` / `User-Flow.md` mention only draft, approved, published, archived.
 4. **Log-status vocabulary differs from the migration comment.** `create_schedule_generation_logs_table` comments the column as "success, partial, failure"; the code writes `optimal`, `partial`, or `failure`. The ERD value list (`optimal | partial | failure`) matches the code.
-5. **The Laravel → engine call has no exception handling.** Only a non-2xx *response* becomes a 502; a refused connection to port 8001 propagates as an unhandled `ConnectionException` instead of a clean "AI engine unavailable" message.
+5. **The Laravel → engine call has no exception handling — observed.** Only a non-2xx *response* becomes a 502 (verified with the engine answering 400 and 500). With the engine stopped, the endpoint returned **500** carrying `Illuminate\Http\Client\ConnectionException` and `cURL error 7: Failed to connect to 127.0.0.1:8001`, and — unlike every other failure path — wrote **no** generation log row, so that outage leaves no trace in the Reports → Generation Logs tab. Follow-up for the team: catch the connection exception and answer 502 with a plain-language message while still logging the attempt.
 6. **Engine time budget vs HTTP budget.** The solver is capped at 15 s (`max_time_in_seconds = 15.0`) inside a 30 s HTTP timeout, and one request is issued per section — sequential generation of many sections can approach the HTTP limit before the solver's own budget matters.
+
+---
+
+## 7. Verification — What Was Exercised
+
+Every status code and branch in §2, §3 and §4 was driven against the running stack on September 27, 2026: `php artisan serve` on port 8000, `uvicorn api.app:app` on port 8001, PostgreSQL on 5432, and `curl` with a real Sanctum token from `POST /api/login` (seeded admin, `admin@example.com`). The two rows marked with a stub below used a throwaway in-process server on port 8001 (removed afterwards) so that the `FEASIBLE` and engine-error branches could be reached deterministically; every other row ran against the real FastAPI engine.
+
+| Probe | Request | Observed |
+|---|---|---|
+| Unauthenticated request | `GET /api/schedules`, no token | `401 {"message":"Unauthenticated."}` |
+| Login failures | `POST /api/login` wrong password / unknown email / missing field | `422` with `errors.email` / `errors.password` |
+| Login success | `POST /api/login` admin | `200 {user, token}` |
+| Non-admin rejection | `POST /api/login` as a non-admin account | `422 Only administrator accounts can access this system.` |
+| Middleware gate | admin-only route with a token minted for that non-admin | `403 {"message":"Forbidden. Admin access required."}`; the same token on `/api/me` → `200` |
+| Unknown row | `GET /api/schedules/999999` | `404`, framework exception payload |
+| Subject-less generation | scratch section with no subjects → `POST /schedules/generate/{id}` | engine `400` → Laravel `502 {"error":"AI engine request failed","details":"{\"detail\":\"Section N has no subjects assigned.\"}"}` + `failure` log row |
+| Engine unreachable | engine stopped, `POST /schedules/generate/5` | `500` + `ConnectionException` (cURL error 7), **no** log row |
+| `FEASIBLE` result | stub answering `{"status":"FEASIBLE","message":null,"sessions":[]}` | `422 {"status":"FEASIBLE","message":"No feasible schedule found."}` + `failure` log row |
+| Engine 500 response | stub answering HTTP 500 | `502` + `failure` log row carrying the engine body |
+| Section–subject gate | mismatched subject attached to a section, then generate | `422` naming the offending subject; engine access log unchanged, no log row, no schedule created |
+| Happy-path generation | `POST /schedules/generate/5` with valid data | `200 {schedule_id, status:"OPTIMAL", sessions, unscheduled}`, new `draft`, `optimal` log row, older draft auto-archived |
+| Approval / publish | `PATCH /schedules/{id}/approve` then `/publish` | `200` `approved` (with `approved_by`/`approved_at`) then `200` `published` |
+| Wrong-state actions | approve a published schedule; publish twice; unpublish twice | `422` with the current status named, each time |
+| Unpublish loop | `PATCH /unpublish` then re-approve, re-publish | `200` → `draft` (approval fields cleared) → `200` → `200` |
+| Publish conflict gate | conflicting session in another section's approved schedule, then publish | `422 {"message":"Cannot publish: …","conflicts":["Room 'ROOM6' is booked day 2 19:00:00–21:00:00 (schedule #77, section BIT-3A)."]}` |
+| Publish after fixing the clash | move the session, publish again | `200 published` — the gate rejects only real conflicts |
+| Edit gate (all classes) | `PUT /schedules/sessions/{id}` onto a clashing slot | `422` listing room type, faculty availability, self-overlap, cross-section faculty and cross-section room conflicts |
+| Edit gate (clean / wrong state) | valid change; session on a published schedule | `200` with the reloaded relations; `422 Cannot edit a session on a 'published' schedule.` |
+| Same-section auto-archive | publish a second schedule for a section that already has a published one | `200`, previous schedule → `archived` |
+
+**Still read from source, not exercised here:** the engine's own `500` paths (`psycopg2.Error`, unexpected exception), FastAPI's `404` for a deleted section, the five `GET /api/reports/*` endpoints (§3.6), the `reject` transition, and the frontend-side behaviors described in §4.4 — those were traced in code and in the earlier UI walkthrough, not re-run in this pass. The 32-case AI-engine suite was re-run and passes (`Ran 32 tests … OK`), which is what makes `FEASIBLE` a real, reachable engine result.
+
+**State restored:** every row created for these probes (schedules, sessions, generation-log rows, the scratch section, the non-admin account) was deleted afterwards, and the demo database's pre-probe counts are back: 32 schedules (29 archived / 1 published / 2 drafts), 87 sessions, 53 generation logs.
