@@ -78,6 +78,7 @@ Three-tier architecture:
 | FR-SUB-004 | Delete subjects | Medium | ✅ Implemented |
 | FR-SUB-005 | Define lecture/lab hours | High | ✅ Implemented |
 | FR-SUB-006 | Specify required room types | High | ✅ Implemented |
+| FR-SUB-007 | Subject lab consistency: lab_hours > 0 requires a lab_room_type of `computer_lab`, `science_lab`, or `electronics_lab`; lab_hours = 0 requires lab_room_type to be null. Enforced server-side on create and update; violations return HTTP 422. (Pre-scheduling subject data-integrity validation, not a solver constraint.) | High | ✅ Implemented |
 
 ### 3.4 Room Management
 | ID | Requirement | Priority | Status |
@@ -98,6 +99,7 @@ Three-tier architecture:
 | FR-SEC-004 | Delete sections with cascade cleanup | Medium | ✅ Implemented |
 | FR-SEC-005 | Assign subjects to sections | High | ✅ Implemented |
 | FR-SEC-006 | Set preferred days and time windows | High | ✅ Implemented |
+| FR-SEC-007 | Subject–section year/semester integrity: a section may only be assigned subjects whose year level and semester match the section's own. Mismatched assignments are rejected during section save/update and prevent schedule generation until corrected (HTTP 422). The Sections UI filters the subject checklist to matching year/semester. (Pre-scheduling data-integrity/business-rule validation in Laravel — not an OR-Tools constraint.) | High | ✅ Implemented |
 
 ### 3.6 AI Schedule Generation
 | ID | Requirement | Priority | Status |
@@ -121,8 +123,8 @@ Three-tier architecture:
 ### 3.8 Schedule Distribution (replaces Faculty Portal)
 | ID | Requirement | Priority | Status |
 |----|-------------|----------|--------|
-| FR-DIST-001 | Print/Download published schedule as hard copy | High | 🔜 Planned — UI handled separately |
-| FR-DIST-002 | Print-friendly weekly grid layout | High | 🔜 Planned — UI handled separately |
+| FR-DIST-001 | Print/Download published schedule as hard copy | High | ✅ Implemented |
+| FR-DIST-002 | Print-friendly weekly grid layout (A4 landscape, department header, day × time grid) | High | ✅ Implemented |
 
 > **Design decision:** The Faculty Portal was removed. Faculty do not have login accounts; the system is used per semester by the department, and published schedules are distributed as printed/PDF copies.
 
@@ -182,8 +184,23 @@ Three-tier architecture:
 
 ## 5. System Constraints
 
-### 5.1 Hard Constraints (Enforced by Solver)
+### 5.1 Hard Constraints (Enforced by the OR-Tools CP-SAT Solver)
 1. Faculty qualification: Only qualified faculty assigned to subjects
-2. Faculty availability: No scheduling on unavailable days (day-level; the section's preferred start/end window defines the scheduling hours)
-3. Room type matching: Labs in labs, lectures in lecture rooms
-4. Room capacity: Stude
+2. Faculty availability: No scheduling on unavailable days (day-level; the section's preferred start/end window defines the scheduling hours — hourly availability is not enforced by the solver)
+3. Room type matching: Labs in matching lab rooms, lectures in lecture rooms
+4. Room capacity: Students never exceed room capacity
+5. Faculty no double-booking: No overlapping sessions for one faculty member
+6. Room no double-booking: No overlapping sessions in one room
+7. Maximum teaching load: Total hours (including existing load) cannot exceed `max_teaching_load`
+8. Cross-section conflicts: No conflicts with other sections' approved/published schedules
+
+Plus:
+- Section preferred scheduling window (days and start/end hours) and section self-overlap — modeled directly by the solver
+
+### 5.2 Pre-Scheduling Data-Integrity Validation (Application Layer — Laravel, NOT solver constraints)
+Applied before schedule generation so invalid data can never reach the solver:
+1. **Subject–section year/semester integrity** — a section may only be assigned subjects matching its own year level and semester (FR-SEC-007); enforced at assignment time in the Sections UI and by `SectionController`, and re-checked at generation time by `ScheduleController` (HTTP 422, AI engine not invoked)
+2. **Subject lab consistency** — lab_hours > 0 requires a canonical lab room type (`computer_lab`, `science_lab`, `electronics_lab`); lab_hours = 0 requires no lab room type (FR-SUB-007); enforced server-side on create and update (HTTP 422)
+
+### 5.3 Solver Result Statuses
+The solver reports `OPTIMAL`, `FEASIBLE`, `PARTIAL` (with per-session reasons), or `INFEASIBLE`. Not every scheduling problem is guaranteed fully schedulable — best-effort placement with explanations is the designed behavior.

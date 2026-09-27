@@ -19,7 +19,9 @@
 | FR-014 | Session editing with conflict detection | ✅ Implemented — ScheduleSessionController with validation |
 | FR-015 | Publish conflict gate (cross-section double-booking prevention) | ✅ Implemented — ScheduleApprovalController |
 | FR-016 | Unpublish schedule (revert to draft) | ✅ Implemented — ScheduleApprovalController with status change |
-| FR-017 | Print/Download published schedule for hard-copy distribution | 🔜 Planned — UI handled separately; data available via `GET /api/schedules/{id}` |
+| FR-017 | Print/Download published schedule for hard-copy distribution | ✅ Implemented — Print-friendly weekly grid (PrintableSchedule page) feeding the browser print dialog for print or save-as-PDF |
+| FR-018 | Subject–section year/semester integrity: a section may only be assigned subjects whose year level and semester match the section's own; mismatched assignments are rejected at save time, and schedule generation is blocked for any legacy mismatched assignment | ✅ Implemented — Sections UI filters the subject checklist to the section's year level and semester; SectionController validates assignments (HTTP 422 naming offending subject codes); ScheduleController blocks generation (HTTP 422, AI engine never invoked) until mismatches are fixed |
+| FR-019 | Subject lab consistency: lab_hours > 0 requires a lab_room_type of computer_lab, science_lab, or electronics_lab; lab_hours = 0 requires lab_room_type to be null. Enforced server-side on create and update (HTTP 422), so invalid subject data can never reach schedule generation | ✅ Implemented — SubjectController validates the lab_hours/lab_room_type pair on store and update; canonical types mirror the frontend constant shared with the Rooms page |
 
 > **Note:** FR-012 (Faculty portal) was **removed by design decision** — faculty do not log into the system. The system is used per semester by the department; published schedules are distributed as printed/PDF copies. See `UI-HANDOFF.md` and the Architecture doc.
 
@@ -46,9 +48,8 @@
 - Manual Edit Conflict Detection
 - Publish Conflict Gate
 - Cascade Delete Integrity
-
-### 🔜 Planned (UI in progress)
-- Print/Download published schedule (hard-copy distribution after publish)
+- Subject–Section Year/Semester Validation (pre-scheduling data-integrity/business-rule validation in Laravel — enforced at assignment time and again before AI generation; NOT an OR-Tools constraint)
+- Subject Lab Consistency Validation (pre-scheduling subject data-integrity validation in Laravel — canonical lab room types required when lab hours exist; NOT an OR-Tools constraint)
 
 ### ⚠️ Partially Implemented
 - Scalability (department-level only)
@@ -66,6 +67,9 @@
 | Authentication (admin-only login) | ✅ Passing |
 | CRUD Operations | ✅ All endpoints verified |
 | AI Schedule Generation | ✅ OPTIMAL / PARTIAL / INFEASIBLE |
+| Subject–Section Year/Semester Validation | ✅ Mismatched assignments rejected with 422; generation blocked (AI engine never called) |
+| Subject Lab Consistency Validation | ✅ Invalid lab_hours/lab_room_type combinations rejected with 422 on create and update |
+| AI Engine Unit Tests | ✅ 32 unit tests directly exercising the CP-SAT solver (`generate_schedule()`) via stdlib unittest — 32 passed, 0 failed, 0 skipped, 0 warnings/errors |
 | Manual Edit Conflict Check | ✅ Real-time validation |
 | Schedule Approval Workflow | ✅ Draft → Approved → Published |
 | Unpublish Schedule | ✅ Published → Draft reversion |
@@ -102,8 +106,8 @@
 
 ## Notes
 
-This document reflects the current state of the system as of September 2026.
+This document reflects the current state of the system as of September 2026. Final regression verification (September 16, 2026): backend 23 tests passed (100 assertions), AI scheduler 32 unit tests passed (0 failed/skipped/warnings), frontend production build passed, and full live lifecycle verified (generate → review/edit → approve → publish → print → unpublish).
 
 **Design decision:** Faculty login accounts were removed at the instructor's direction. Faculty remain as data records (name, availability, qualifications, workload, employment type, subject assignments) used by the scheduling engine; only the Admin/Department Head authenticates. Published schedules are distributed as printed/PDF hard copies.
 
-**Last Updated:** September 8, 2026
+**Last Updated:** September 16, 2026 (documentation synchronization)

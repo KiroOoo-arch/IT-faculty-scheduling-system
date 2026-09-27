@@ -28,8 +28,8 @@
 |---|---|---|---|
 | GET | `/api/subjects` | ✅ Implemented | List all subjects with nested `faculties` |
 | GET | `/api/subjects/{id}` | ✅ Implemented | Get one subject record |
-| POST | `/api/subjects` | ✅ Implemented | Create new subject |
-| PUT | `/api/subjects/{id}` | ✅ Implemented | Update subject |
+| POST | `/api/subjects` | ✅ Implemented | Create new subject. Validates lab consistency: `lab_hours > 0` requires `lab_room_type` of `computer_lab`, `science_lab`, or `electronics_lab`; `lab_hours = 0` requires `lab_room_type` null. Violations → HTTP 422 |
+| PUT | `/api/subjects/{id}` | ✅ Implemented | Update subject — same lab consistency validation as create |
 | DELETE | `/api/subjects/{id}` | ✅ Implemented | Delete subject |
 
 ### Room Management
@@ -48,15 +48,15 @@
 |---|---|---|---|
 | GET | `/api/sections` | ✅ Implemented | List all sections with nested `subjects` |
 | GET | `/api/sections/{id}` | ✅ Implemented | Get one section |
-| POST | `/api/sections` | ✅ Implemented | Create new section |
-| PUT | `/api/sections/{id}` | ✅ Implemented | Update section with subject sync |
+| POST | `/api/sections` | ✅ Implemented | Create new section. Validates subject assignments: every `subject_ids` entry must match the section's year level and semester, otherwise HTTP 422 naming the offending subject codes |
+| PUT | `/api/sections/{id}` | ✅ Implemented | Update section with subject sync — same year/semester validation against the section's effective (post-update) values |
 | DELETE | `/api/sections/{id}` | ✅ Implemented | Delete section with cascade cleanup |
 
 ### Schedule Management
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| POST | `/api/schedules/generate/{section}` | ✅ Implemented | Generate schedule for section via AI engine |
+| POST | `/api/schedules/generate/{section}` | ✅ Implemented | Generate schedule for section via AI engine. Pre-generation gate: if any assigned subject mismatches the section's year level or semester (legacy data), returns HTTP 422 naming the offenders and the AI engine is never called |
 | GET | `/api/schedules` | ✅ Implemented | List all schedules |
 | GET | `/api/schedules/{id}` | ✅ Implemented | Get one schedule with sessions |
 | PATCH | `/api/schedules/{id}/approve` | ✅ Implemented | Approve draft schedule |
@@ -135,4 +135,4 @@
 - Conflict detection runs in real-time on manual session edits
 - Publish conflict gate prevents cross-section double-booking
 
-**Last Updated:** September 8, 2026
+**Last Updated:** September 16, 2026

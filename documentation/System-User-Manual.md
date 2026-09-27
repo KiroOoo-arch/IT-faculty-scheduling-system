@@ -131,6 +131,8 @@ Click Save when done.
 1. Fill in: Code, Title, Year Level, Semester, Lecture Hours, Lab Hours, Lab Room Type
 2. Click Create
 
+> **Lab rule (also enforced by the server):** subjects with Lab Hours must declare a Lab Room Type — Computer Lab, Science Lab, or Electronics Lab; subjects with zero Lab Hours must have no Lab Room Type. Inconsistent entries are rejected with a clear error message.
+
 ### Editing and Deleting
 Click Edit or Delete next to any subject.
 
@@ -143,7 +145,7 @@ Click Edit or Delete next to any subject.
 **Path:** Dashboard > Rooms
 
 ### Creating a Room
-1. Fill in: Name, Type (Lecture or Computer Lab), Capacity, Status
+1. Fill in: Name, Type (Lecture, Computer Lab, Science Lab, or Electronics Lab), Capacity, Status
 2. Click Add Room
 
 > The AI matches lab subjects to lab rooms and lecture subjects to lecture rooms automatically.
@@ -157,7 +159,7 @@ Click Edit or Delete next to any subject.
 ### Creating a Section
 1. Fill in: Name, Year Level, Academic Year, Semester, Start/End Time
 2. Select Preferred Days (Mon through Sun)
-3. Check the boxes for subjects this section will take
+3. Check the boxes for subjects this section will take — the checklist only lists subjects matching the section's Year Level and Semester (enforced by the server too: mismatches are rejected with an error)
 4. Click Create
 
 > A section must have subjects assigned before generating a schedule.

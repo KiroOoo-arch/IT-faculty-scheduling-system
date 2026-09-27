@@ -11,10 +11,13 @@ An **AI-assisted, constraint-based scheduling system** for the IT Department tha
 **The workflow:**
 
 ```
-Admin Login → Manage Scheduling Data → Generate Schedule (AI)
+Admin Login → Manage Scheduling Data → Assign Valid Subjects
+           (year/semester + lab consistency validated) → Generate Schedule (AI)
            → Review/Edit → Approve → Publish Conflict Gate → Publish
            → Print/Download → Distribution to Faculty + Students
 ```
+
+Subject assignment is validated before generation: a section can only take subjects matching its year level and semester, and subjects with laboratory hours must declare a matching lab room type. Invalid data is rejected with HTTP 422 and never reaches the AI engine.
 
 **Key design decision:** Only the **Admin/Department Head** has a login account. Faculty are **scheduling records/entities, not system users** — the system is operated per semester by the department, and published schedules are distributed as **printed/PDF hard copies**.
 
@@ -178,9 +181,9 @@ Conflicts are prevented at three independent points:
 | Faculty Management | `/admin/faculty` | Records with **name, employment type, max load** — no login accounts |
 | Faculty Availability | Faculty → Edit | Available days/times used by the scheduler |
 | Faculty Qualifications | Faculty → Edit | Faculty-subject qualification mapping |
-| Subjects | `/admin/subjects` | Code, year level, semester, lecture/lab hours, lab room type (validated: lab hours require a lab room type and vice versa) |
+| Subjects | `/admin/subjects` | Code, year level, semester, lecture/lab hours, lab room type (validated server-side: lab hours require one of the canonical lab room types — computer_lab, science_lab, electronics_lab — and zero lab hours require no lab room type; violations return HTTP 422) |
 | Rooms | `/admin/rooms` | Type (lecture / computer_lab / science_lab / electronics_lab), capacity, status |
-| Sections | `/admin/sections` | Name, year level, semester, student count, preferred days/times, subject assignments |
+| Sections | `/admin/sections` | Name, year level, semester, student count, preferred days/times, subject assignments (subject checklist auto-filtered to the section's year level and semester; mismatched assignments rejected server-side with HTTP 422, and schedule generation is blocked until corrected) |
 | AI Schedule Generation | Dashboard | One click per section; OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE |
 | Draft / Review / Edit | Dashboard | Manual session editing with conflict detection |
 | Approval | Dashboard | Draft → Approved |
@@ -222,10 +225,13 @@ Conflicts are prevented at three independent points:
 
 ## 13. Verification & Tests
 
-- Backend feature tests (`php artisan test`, 6/6 passing) run against a dedicated `scheduling_system_testing` database — real data is never touched
+- **AI scheduler unit tests**: 32 automated tests (Python standard-library `unittest`) directly exercise `generate_schedule()` with controlled fixtures — no database required. They cover faculty qualification, day-level availability (the solver enforces availability by day, not by hour), room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, the preferred scheduling window, and partial/infeasible handling with per-session reasons. Final run: **32 passed, 0 failed, 0 skipped, 0 warnings/errors**. The suite respects all solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE)
+- **Backend feature tests** (`php artisan test`, 23 tests / 100 assertions, all passing) run against a dedicated `scheduling_system_testing` database — real data is never touched
 - **Section/year-level generation tests** verify the AI-generated schedule is attributed to the correct section, year level, and semester, that other sections' schedules are untouched, and that regeneration archives only the target section's drafts
+- **Subject–section year/semester validation tests**: matching assignments accepted; wrong-semester and wrong-year assignments rejected (HTTP 422); generation blocked with the AI engine never called on legacy mismatches
+- **Subject lab consistency tests**: `lab_hours > 0` without a canonical lab room type rejected; `lab_hours = 0` with a lab room type rejected; enforced on create and update
 - Frontend TypeScript typecheck clean; production build passes
-- Live end-to-end integration test performed (September 2026): admin login → AI generation for BIT-3A (OPTIMAL, 3 sessions, all 8 constraint categories verified) → approve → publish (conflict gate) → unpublish → reports — all passed
+- Live end-to-end integration test performed (September 2026): admin login → AI generation for BIT-3A (OPTIMAL, 3 sessions, all 8 constraint categories verified) → approve → publish (conflict gate) → unpublish → reports — all passed. Final regression verification (September 16, 2026) repeated the full lifecycle after the validation features were added, with no regressions
 
 ---
 

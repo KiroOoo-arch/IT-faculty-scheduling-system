@@ -67,7 +67,15 @@ Symptom: Old draft schedules piling up, hard to track current one
 **Root Cause`: No cleanup when generating new schedules
 Fix: Added auto-archive old drafts on generate + "Show Archived" toggle button
 Files: ScheduleController.php, ScheduleApprovalController.php, AdminDashboard.tsx
-Test Results: 18/18 Passing
+Test Results (historical, 01/08/26): 18/18 Passing
+
+16/09/26
+Data-Integrity Validation & Test Restoration
+- Subject-section year/semester validation (FR-018): UI filtering + Laravel save/update validation + generation-time gate (HTTP 422, FastAPI never called on mismatch)
+- Subject lab consistency validation (FR-019): lab_hours > 0 requires a canonical lab room type (computer_lab, science_lab, electronics_lab); lab_hours = 0 requires none (HTTP 422 on create and update)
+Files: SectionsPage.tsx, SectionController.php, ScheduleController.php, SubjectController.php
+- AI scheduler test suite restored: 32 unit tests (Python stdlib unittest) exercising generate_schedule() directly with controlled fixtures
+Test Results: Backend 23 passed (100 assertions); AI engine 32 passed, 0 failed, 0 skipped, 0 warnings/errors; frontend production build passed; full live lifecycle regression verified (generate - review - approve - publish - print - unpublish)
 
 Authentication & RBAC       ✅
 CRUD Operations             ✅
