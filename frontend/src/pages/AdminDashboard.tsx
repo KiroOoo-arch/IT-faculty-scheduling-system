@@ -248,7 +248,12 @@ export default function AdminDashboard() {
       })
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data.message || (data.conflicts ? data.conflicts.join(', ') : 'Edit failed'))
+        // The API always returns a generic `message` alongside a specific
+        // `conflicts` list, so prefer the reasons — that is the actionable part.
+        const details = Array.isArray(data.conflicts) && data.conflicts.length > 0
+          ? data.conflicts.join(' ')
+          : data.message
+        throw new Error(details || 'Edit failed')
       }
       setEditingSession(null)
       fetchSchedules()

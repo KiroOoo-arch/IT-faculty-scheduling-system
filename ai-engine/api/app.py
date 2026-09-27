@@ -131,13 +131,39 @@ def generate_schedule_for_section(section_id: int):
             )
             can_teach = [r["subject_id"] for r in cur.fetchall()]
 
-            # FIX: Default to section's days when faculty has no availability set
+            # Declared availability: the days AND the hour windows behind them.
+            # The API's session validator (ScheduleSessionController) requires a
+            # session to fit inside one declared window on its day, so the solver
+            # has to work from the same windows, not just the day list.
             cur.execute(
-                "SELECT DISTINCT day_of_week FROM faculty_availabilities WHERE faculty_id = %s",
+                "SELECT day_of_week, start_time, end_time "
+                "FROM faculty_availabilities WHERE faculty_id = %s",
                 (f["id"],),
             )
-            available_days = [r["day_of_week"] for r in cur.fetchall()]
-            if not available_days:
+            availability_rows = cur.fetchall()
+
+            available_windows = []
+            for row in availability_rows:
+                if row["start_time"] is None or row["end_time"] is None:
+                    continue
+                window_start = parse_hour(row["start_time"])
+                window_end = parse_hour(row["end_time"])
+                if window_end <= window_start:
+                    continue
+                available_windows.append({
+                    "day_of_week": row["day_of_week"],
+                    "start_hour": window_start,
+                    "end_hour": window_end,
+                })
+
+            # Only a faculty with no declared availability at all falls back to
+            # the section's days — the same condition the validator uses.
+            if availability_rows:
+                available_days = sorted(
+                    {w["day_of_week"] for w in available_windows}
+                )
+            else:
+                available_windows = []
                 available_days = section["preferred_days"]
 
             cur.execute(
@@ -169,6 +195,7 @@ def generate_schedule_for_section(section_id: int):
                     "name": f["name"],
                     "can_teach_subject_ids": can_teach,
                     "available_days": available_days,
+                    "available_windows": available_windows,
                     "max_teaching_load": max_teaching_load,
                     "existing_load_hours": existing_load_hours,
                 }

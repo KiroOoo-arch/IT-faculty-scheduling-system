@@ -97,9 +97,32 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
             model.Add(v["faculty"] == f_idx).OnlyEnforceIf(is_this_faculty)
             model.Add(v["faculty"] != f_idx).OnlyEnforceIf(is_this_faculty.Not())
             if set(f["available_days"]) != set(DAYS):
-                model.AddAllowedAssignments(
-                    [v["day"]], [[d] for d in f["available_days"]]
-                ).OnlyEnforceIf([is_this_faculty, v["is_scheduled"]])
+                if f["available_days"]:
+                    model.AddAllowedAssignments(
+                        [v["day"]], [[d] for d in f["available_days"]]
+                    ).OnlyEnforceIf([is_this_faculty, v["is_scheduled"]])
+                else:
+                    # Declared availability with no usable window left: this
+                    # faculty cannot host the session on any day.
+                    model.Add(v["is_scheduled"] == 0).OnlyEnforceIf(is_this_faculty)
+
+            # Declared hours are a hard boundary, exactly as the API's session
+            # validator enforces them: the (day, start) pair must sit inside one
+            # declared window, so a window ends the session rather than merely
+            # banning the day.
+            if f.get("available_windows"):
+                allowed_slots = [
+                    [w["day_of_week"], start]
+                    for w in f["available_windows"]
+                    if w["day_of_week"] in DAYS
+                    for start in range(w["start_hour"], w["end_hour"] - v["duration"] + 1)
+                ]
+                if allowed_slots:
+                    model.AddAllowedAssignments(
+                        [v["day"], v["start"]], allowed_slots
+                    ).OnlyEnforceIf([is_this_faculty, v["is_scheduled"]])
+                else:
+                    model.Add(v["is_scheduled"] == 0).OnlyEnforceIf(is_this_faculty)
 
     # --- Teaching load: only counts hours from sessions that ARE scheduled ---
     for f_idx, f in enumerate(faculty):

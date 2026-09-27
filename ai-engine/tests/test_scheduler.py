@@ -60,7 +60,7 @@ def make_subject(subject_id=1, code="PROG1", lecture_hours=2, lab_hours=0,
 
 def make_faculty(faculty_id=1, name="Prof. Test", subject_ids=None,
                  available_days=None, max_teaching_load=24,
-                 existing_load_hours=0):
+                 existing_load_hours=0, available_windows=None):
     return {
         "id": faculty_id,
         "name": name,
@@ -68,7 +68,12 @@ def make_faculty(faculty_id=1, name="Prof. Test", subject_ids=None,
         "available_days": available_days if available_days is not None else [1, 2, 3, 4, 5],
         "max_teaching_load": max_teaching_load,
         "existing_load_hours": existing_load_hours,
+        "available_windows": available_windows or [],
     }
+
+
+def window(day, start_hour, end_hour):
+    return {"day_of_week": day, "start_hour": start_hour, "end_hour": end_hour}
 
 
 def make_room(room_id=1, name="R101", room_type="lecture", capacity=40):
@@ -239,6 +244,126 @@ class TestFacultyAvailability(unittest.TestCase):
 
         assert result["status"] == "INFEASIBLE"
         assert len(scheduled(result)) == 0
+
+
+# ---------------------------------------------------------------------------
+# C2. Faculty availability time windows
+# ---------------------------------------------------------------------------
+
+class TestFacultyAvailabilityWindows(unittest.TestCase):
+    """Declared hours are a hard boundary: a session must fit inside one declared
+    window on its chosen day — the same rule the API session validator
+    (ScheduleSessionController::findConflicts) applies to manual edits."""
+
+    def day_windows(self, start_hour, end_hour, days=(1, 2, 3, 4, 5)):
+        return [window(d, start_hour, end_hour) for d in days]
+
+    def test_session_outside_declared_hours_is_not_scheduled(self):
+        """Faculty free 07:00-17:00 but the section only allows 17:00-21:00."""
+        subject = make_subject(subject_id=1, lecture_hours=2)
+        faculty = [make_faculty(subject_ids=[1], available_windows=self.day_windows(7, 17))]
+
+        result = generate_schedule(
+            section=make_section(preferred_start_hour=17, preferred_end_hour=21),
+            subjects=[subject], faculty=faculty, rooms=[make_room()],
+        )
+
+        assert result["status"] == "INFEASIBLE", result
+        assert len(scheduled(result)) == 0
+
+    def test_session_inside_declared_hours_is_scheduled(self):
+        """Same faculty, section window inside the declared hours: placed inside."""
+        subject = make_subject(subject_id=1, lecture_hours=2)
+        faculty = [make_faculty(subject_ids=[1], available_windows=self.day_windows(7, 17))]
+
+        result = generate_schedule(
+            section=make_section(preferred_start_hour=7, preferred_end_hour=17),
+            subjects=[subject], faculty=faculty, rooms=[make_room()],
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE")
+        placed = scheduled(result)
+        assert len(placed) == 1
+        assert placed[0]["start_hour"] >= 7 and placed[0]["end_hour"] <= 17, placed[0]
+
+    def test_session_is_pushed_inside_the_declared_window(self):
+        """Declared 09:00-12:00 inside a 07:00-21:00 section window: must land in it."""
+        subject = make_subject(subject_id=1, lecture_hours=2)
+        faculty = [make_faculty(subject_ids=[1], available_windows=self.day_windows(9, 12))]
+
+        result = generate_schedule(
+            section=make_section(preferred_start_hour=7, preferred_end_hour=21),
+            subjects=[subject], faculty=faculty, rooms=[make_room()],
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE")
+        placed = scheduled(result)
+        assert len(placed) == 1
+        assert placed[0]["start_hour"] >= 9 and placed[0]["end_hour"] <= 12, placed[0]
+
+    def test_session_that_cannot_fit_any_declared_window_is_refused(self):
+        """A 4-hour session with only a 3-hour declared window cannot be placed."""
+        subject = make_subject(subject_id=1, lecture_hours=4)
+        faculty = [make_faculty(subject_ids=[1], available_windows=self.day_windows(9, 12))]
+
+        result = generate_schedule(
+            section=make_section(preferred_start_hour=7, preferred_end_hour=21),
+            subjects=[subject], faculty=faculty, rooms=[make_room()],
+        )
+
+        assert result["status"] == "INFEASIBLE", result
+        assert len(scheduled(result)) == 0
+
+    def test_session_must_fit_within_one_of_several_windows(self):
+        """Two windows a day (09-12 and 13-16): the 12-13 gap is not usable."""
+        subject = make_subject(subject_id=1, lecture_hours=3)
+        faculty = [make_faculty(
+            subject_ids=[1],
+            available_windows=self.day_windows(9, 12) + self.day_windows(13, 16),
+        )]
+
+        result = generate_schedule(
+            section=make_section(preferred_start_hour=7, preferred_end_hour=21),
+            subjects=[subject], faculty=faculty, rooms=[make_room()],
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE")
+        placed = scheduled(result)
+        assert len(placed) == 1
+        fits_morning = placed[0]["start_hour"] >= 9 and placed[0]["end_hour"] <= 12
+        fits_afternoon = placed[0]["start_hour"] >= 13 and placed[0]["end_hour"] <= 16
+        assert fits_morning or fits_afternoon, placed[0]
+
+    def test_day_level_availability_still_limits_the_day(self):
+        """Windows on a single day: the existing day-level rule must still hold."""
+        subject = make_subject(subject_id=1, lecture_hours=2)
+        faculty = [make_faculty(
+            subject_ids=[1], available_days=[2],
+            available_windows=[window(2, 7, 17)],
+        )]
+
+        result = generate_schedule(
+            section=make_section(preferred_days=[1, 2]), subjects=[subject],
+            faculty=faculty, rooms=[make_room()],
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE")
+        assert [s["day_of_week"] for s in scheduled(result)] == [2]
+
+    def test_faculty_without_declared_availability_is_unconstrained(self):
+        """No declared windows -> no hour restriction (mirrors the API validator)."""
+        subject = make_subject(subject_id=1, lecture_hours=2)
+        faculty = [make_faculty(subject_ids=[1], available_windows=[])]
+
+        result = generate_schedule(
+            section=make_section(preferred_start_hour=19, preferred_end_hour=21),
+            subjects=[subject], faculty=faculty, rooms=[make_room()],
+        )
+
+        assert result["status"] in ("OPTIMAL", "FEASIBLE")
+        placed = scheduled(result)
+        assert len(placed) == 1
+        assert placed[0]["start_hour"] >= 19 and placed[0]["end_hour"] <= 21, placed[0]
 
 
 # ---------------------------------------------------------------------------
