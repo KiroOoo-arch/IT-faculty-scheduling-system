@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use App\Models\Section;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use App\Models\ScheduleGenerationLog;
@@ -50,10 +51,27 @@ class ScheduleController extends Controller
             ->where('status', 'draft')
             ->update(['status' => 'archived']);
 
-        // Call the Python AI engine
-        $response = Http::timeout(30)->post(
-            "http://127.0.0.1:8001/generate-schedule/{$section->id}"
-        );
+        // Call the Python AI engine. A connection failure (engine not
+        // running, port closed) throws instead of returning a response, so it
+        // is handled explicitly: the attempt is logged and reported as 502.
+        try {
+            $response = Http::timeout(30)->post(
+                "http://127.0.0.1:8001/generate-schedule/{$section->id}"
+            );
+        } catch (ConnectionException $e) {
+            ScheduleGenerationLog::create([
+                'section_id' => $section->id,
+                'requested_by' => auth()->id(),
+                'status' => 'failure',
+                'message' => 'AI engine unreachable: ' . $e->getMessage(),
+                'unscheduled_sessions' => null,
+            ]);
+
+            return response()->json([
+                'error' => 'AI engine unreachable',
+                'details' => $e->getMessage(),
+            ], 502);
+        }
 
         if ($response->failed()) {
             ScheduleGenerationLog::create([
@@ -72,7 +90,11 @@ class ScheduleController extends Controller
 
         $result = $response->json();
 
-        if (!in_array($result['status'], ['OPTIMAL', 'PARTIAL'])) {
+        // FEASIBLE means every session was placed but the solver hit its time
+        // budget before proving optimality (scheduler.py returns StatusName()
+        // once scheduled_count === total), so it is a successful result and
+        // must be treated like OPTIMAL/PARTIAL rather than as a failure.
+        if (!in_array($result['status'], ['OPTIMAL', 'FEASIBLE', 'PARTIAL'])) {
             ScheduleGenerationLog::create([
                 'section_id' => $section->id,
                 'requested_by' => auth()->id(),

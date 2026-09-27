@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('section_id')->constrained()->cascadeOnDelete();
             $table->foreignId('requested_by')->constrained('users')->cascadeOnDelete();
-            $table->string('status'); // success, partial, failure
+            $table->string('status'); // optimal | feasible | partial | failure
             $table->text('message')->nullable();
             $table->json('unscheduled_sessions')->nullable();
             $table->timestamps();

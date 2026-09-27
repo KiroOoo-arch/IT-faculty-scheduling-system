@@ -7,10 +7,12 @@ use App\Models\FacultyAvailability;
 use App\Models\Room;
 use App\Models\Section;
 use App\Models\Schedule;
+use App\Models\ScheduleGenerationLog;
 use App\Models\ScheduleSession;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -205,5 +207,90 @@ class ScheduleGenerationSectionTest extends TestCase
         $newDraft = Schedule::where('status', 'draft')->first();
         $this->assertNotNull($newDraft);
         $this->assertSame($this->section->id, $newDraft->section_id);
+    }
+
+    #[Test]
+    public function feasible_result_is_accepted_and_logged_as_feasible(): void
+    {
+        // FEASIBLE means every session was placed but the solver's time budget
+        // ran out before optimality was proven (ai-engine/solver/scheduler.py).
+        Http::fake([
+            '127.0.0.1:8001/generate-schedule/*' => Http::response([
+                'status' => 'FEASIBLE',
+                'message' => null,
+                'sessions' => [
+                    [
+                        'subject_id' => $this->subject->id,
+                        'faculty_id' => $this->faculty->id,
+                        'room_id' => $this->room->id,
+                        'session_type' => 'lecture',
+                        'day_of_week' => 1,
+                        'start_hour' => 8,
+                        'end_hour' => 10,
+                        'is_scheduled' => true,
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/schedules/generate/{$this->section->id}")
+            ->assertOk()
+            ->assertJsonPath('status', 'FEASIBLE');
+
+        $schedule = Schedule::firstOrFail();
+        $this->assertSame('draft', $schedule->status);
+        $this->assertSame(1, ScheduleSession::where('schedule_id', $schedule->id)->count());
+
+        $log = ScheduleGenerationLog::firstOrFail();
+        $this->assertSame('feasible', $log->status);
+        $this->assertSame('All sessions scheduled successfully.', $log->message);
+    }
+
+    #[Test]
+    public function infeasible_result_is_rejected_and_logged_as_failure(): void
+    {
+        Http::fake([
+            '127.0.0.1:8001/generate-schedule/*' => Http::response([
+                'status' => 'INFEASIBLE',
+                'message' => 'No sessions could be scheduled. See individual reasons.',
+                'sessions' => [
+                    [
+                        'subject_id' => $this->subject->id,
+                        'session_type' => 'lecture',
+                        'is_scheduled' => false,
+                        'reason' => 'No available lecture room with enough capacity.',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/schedules/generate/{$this->section->id}")
+            ->assertStatus(422)
+            ->assertJsonPath('status', 'INFEASIBLE');
+
+        $this->assertSame(0, Schedule::count());
+
+        $log = ScheduleGenerationLog::firstOrFail();
+        $this->assertSame('failure', $log->status);
+        $this->assertCount(1, $log->unscheduled_sessions);
+    }
+
+    #[Test]
+    public function unreachable_engine_returns_502_and_writes_a_failure_log(): void
+    {
+        Http::fake(fn () => throw new ConnectionException('cURL error 7: Failed to connect to 127.0.0.1:8001'));
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/schedules/generate/{$this->section->id}")
+            ->assertStatus(502)
+            ->assertJsonPath('error', 'AI engine unreachable');
+
+        $this->assertSame(0, Schedule::count());
+
+        $log = ScheduleGenerationLog::firstOrFail();
+        $this->assertSame('failure', $log->status);
+        $this->assertStringStartsWith('AI engine unreachable:', $log->message);
     }
 }
