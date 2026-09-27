@@ -68,7 +68,7 @@
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| PATCH | `/api/schedule-sessions/{id}` | ✅ Implemented | Update session with conflict detection |
+| PUT | `/api/schedules/sessions/{id}` | ✅ Implemented | Update session with conflict detection |
 
 ### Schedule Distribution (Print/PDF)
 

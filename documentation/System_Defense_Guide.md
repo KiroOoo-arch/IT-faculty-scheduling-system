@@ -150,7 +150,7 @@ sequenceDiagram
     participant L as Laravel (ScheduleSessionController)
     participant DB as PostgreSQL
 
-    U->>L: PATCH /api/schedule-sessions/{id}
+    U->>L: PUT /api/schedules/sessions/{id}
     L->>DB: Check for conflicts
     alt conflicts found
         L-->>U: 422 {conflicts: [...]}
@@ -288,7 +288,7 @@ erDiagram
 | # | Constraint | What It Prevents | Implementation |
 |---|------------|------------------|----------------|
 | 1 | Faculty qualification | Unqualified faculty assigned to subjects | faculty_subjects pivot table |
-| 2 | Faculty availability | Scheduling on unavailable days | faculty_availabilities table (day-level) |
+| 2 | Faculty availability | Scheduling on unavailable days or outside declared time windows | faculty_availabilities table (day + time window) |
 | 3 | Room type matching | Labs in lecture halls | rooms.type = session_type |
 | 4 | Room capacity | Overcrowded rooms (students > capacity) | sections.student_count ≤ rooms.capacity |
 | 5 | Faculty no double-booking | Same teacher in two places at once | No overlapping time slots |
@@ -376,7 +376,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | Backend: 26 feature tests (116 assertions) · AI engine: 32 solver unit tests · frontend typecheck + production build |
+| Testing | ✅ Complete | Backend: 43 feature tests (192 assertions) · AI engine: 44 solver unit tests · frontend typecheck + production build |
 
 ---
 
@@ -620,9 +620,9 @@ For university scale, architectural changes would be needed, but the core constr
 
 **A:** Testing approach:
 1. **Ad-hoc testing**: Throughout development
-2. **AI engine unit tests**: 32 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day-level availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 32 passed, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
+2. **AI engine unit tests**: 44 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 44 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
-4. **Automated backend suite**: 26 Laravel feature tests (116 assertions) — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), and the unreachable-engine 502 path — plus frontend typecheck and production build
+4. **Automated backend suite**: 43 Laravel feature tests (192 assertions) — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
 
 Test coverage:
 - Authentication & RBAC ✅
@@ -640,7 +640,7 @@ Test coverage:
 **A:**
 - **Backend (Laravel)**: PHPUnit (built-in)
 - **Frontend (React)**: TypeScript typecheck + production build
-- **AI Engine**: Python standard-library `unittest` — 32 tests running the CP-SAT solver directly with controlled fixtures (no database needed)
+- **AI Engine**: Python standard-library `unittest` — 44 tests running the CP-SAT solver directly with controlled fixtures (no database needed)
 - **Integration**: Postman/curl for API testing
 
 We focused on practical testing that verifies real functionality rather than achieving 100% code coverage.
@@ -729,7 +729,7 @@ Hard constraints (must be satisfied) vs soft constraints (nice to have):
 
 **A:** Example: Prof. Cruz is part-time (Mon/Wed/Fri only)
 1. **Availability stored**: `faculty_availabilities` table has Mon/Wed/Fri entries
-2. **Solver respects**: Constraint #2 prevents scheduling on unavailable days (day-level restriction; the section's preferred start/end window defines the scheduling hours)
+2. **Solver respects**: Constraint #2 prevents scheduling on unavailable days and outside the declared time window (day + time window; the section's preferred start/end window also applies)
 3. **Tested and verified**: System correctly schedules Prof. Cruz only on available days
 
 If availability is empty, system falls back to section's preferred days (best-effort approach).

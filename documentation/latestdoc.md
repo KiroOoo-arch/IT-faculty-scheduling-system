@@ -19,7 +19,7 @@ Archived Schedule Viewer	Toggle to show/hide archived
 AI Constraints (8 Total)
 #	Constraint	Purpose
 1	Faculty qualification	Only qualified teachers assigned
-2	Faculty availability	No scheduling on unavailable days (day-level)
+2	Faculty availability	No scheduling on unavailable days or outside declared time windows (day + window)
 3	Room type matching	Labs in labs, lectures in lecture rooms
 4	Room capacity	Students ≤ room capacity
 5	No faculty double-booking	One teacher, one place at a time
@@ -74,8 +74,8 @@ Data-Integrity Validation & Test Restoration
 - Subject-section year/semester validation (FR-018): UI filtering + Laravel save/update validation + generation-time gate (HTTP 422, FastAPI never called on mismatch)
 - Subject lab consistency validation (FR-019): lab_hours > 0 requires a canonical lab room type (computer_lab, science_lab, electronics_lab); lab_hours = 0 requires none (HTTP 422 on create and update)
 Files: SectionsPage.tsx, SectionController.php, ScheduleController.php, SubjectController.php
-- AI scheduler test suite restored: 32 unit tests (Python stdlib unittest) exercising generate_schedule() directly with controlled fixtures
-Test Results: Backend 23 passed (100 assertions); AI engine 32 passed, 0 failed, 0 skipped, 0 warnings/errors; frontend production build passed; full live lifecycle regression verified (generate - review - approve - publish - print - unpublish)
+- AI scheduler test suite restored: 44 unit tests (Python stdlib unittest) exercising generate_schedule() directly with controlled fixtures
+Test Results: Backend 43 passed (192 assertions); AI engine 44 passed, 0 failed, 0 skipped, 0 warnings/errors; frontend production build passed; full live lifecycle regression verified (generate - review - approve - publish - print - unpublish)
 
 27/09/26
 Live API Verification & Scheduling Defect Fixes
@@ -84,7 +84,7 @@ Live API Verification & Scheduling Defect Fixes
 - Defect 2: an unreachable AI engine returned a raw 500 with no generation log row. Fixed - the connection failure is caught, answered as 502 {"error":"AI engine unreachable", ...} and logged as 'failure'
 - Regression tests added (FEASIBLE accepted + logged, INFEASIBLE still rejected, unreachable engine -> 502 + log)
 Files: ScheduleController.php, tests/Feature/ScheduleGenerationSectionTest.php
-Test Results: Backend 26 passed (116 assertions); AI engine 32 passed
+Test Results: Backend 43 passed (192 assertions); AI engine 44 passed
 
 Authentication & RBAC       ✅
 CRUD Operations             ✅

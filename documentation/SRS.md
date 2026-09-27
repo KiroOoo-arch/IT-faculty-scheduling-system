@@ -187,7 +187,7 @@ Three-tier architecture:
 
 ### 5.1 Hard Constraints (Enforced by the OR-Tools CP-SAT Solver)
 1. Faculty qualification: Only qualified faculty assigned to subjects
-2. Faculty availability: No scheduling on unavailable days (day-level; the section's preferred start/end window defines the scheduling hours — hourly availability is not enforced by the solver)
+2. Faculty availability: No scheduling on unavailable days, and no scheduling outside the faculty's declared time window for that day (a session must fit within a declared window on its day; the section's preferred start/end window also applies)
 3. Room type matching: Labs in matching lab rooms, lectures in lecture rooms
 4. Room capacity: Students never exceed room capacity
 5. Faculty no double-booking: No overlapping sessions for one faculty member

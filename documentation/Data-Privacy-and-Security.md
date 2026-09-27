@@ -27,6 +27,7 @@ This system collects and processes personal information of faculty members **for
 | Control | Implementation |
 |---|---|
 | **Authentication** | Laravel Sanctum token-based login; tokens revoked on logout and re-issue |
+| **Session expiry handling** | An unauthenticated or invalid-token API request answers JSON `401`; the frontend clears the stored session state and redirects to the login page instead of rendering empty data |
 | **Authorization** | Admin-only access — every management route is behind the `EnsureUserIsAdmin` middleware (403 on failure); login explicitly rejects non-admin roles |
 | **Password storage** | Bcrypt hashing (never stored in plain text) |
 | **Last-admin guard** | The system prevents deleting your own account or the last remaining admin, preventing lockout |

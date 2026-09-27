@@ -101,7 +101,7 @@ PostgreSQL                        ↓
 Published → **Unpublish** → Draft → Edit → Approve → Publish again. Unpublishing allows corrections while preserving the workflow; it does not restore any earlier database state — it returns the current schedule to draft for editing.
 
 ### 4.4 Manual Session Editing
-The Admin can review and manually modify generated sessions (day, time, room, faculty). Each edit is validated server-side against the scheduling rules — room type matching, faculty double-booking, room double-booking, room/lab eligibility, and time-window fit — and rejected with a clear error on conflict. Faculty themselves never edit schedules; they have no system access.
+The Admin can review and manually modify generated sessions (day, time, room, faculty). Each edit is validated server-side against the scheduling rules — room type matching, faculty double-booking, room double-booking, room/lab eligibility, and time-window fit — and rejected with the specific conflict reason(s) on conflict (for example a faculty availability window, a room-type mismatch, or an overlap). Faculty themselves never edit schedules; they have no system access.
 
 ---
 
@@ -112,7 +112,7 @@ The scheduler models **eight main constraint categories**, with the **section's 
 | # | Constraint |
 |---|-----------|
 | 1 | Faculty qualification — only qualified teachers assigned (`faculty_subjects`) |
-| 2 | Faculty availability — restricted by each teacher's available **days** (`faculty_availabilities`) |
+| 2 | Faculty availability — restricted by each teacher's available **days and time windows** (`faculty_availabilities`) |
 | 3 | Room type matching — labs in the required lab type, lectures in lecture rooms |
 | 4 | Room capacity — student count ≤ room capacity |
 | 5 | Faculty no double-booking |
@@ -225,8 +225,8 @@ Conflicts are prevented at three independent points:
 
 ## 13. Verification & Tests
 
-- **AI scheduler unit tests**: 32 automated tests (Python standard-library `unittest`) directly exercise `generate_schedule()` with controlled fixtures — no database required. They cover faculty qualification, day-level availability (the solver enforces availability by day, not by hour), room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, the preferred scheduling window, and partial/infeasible handling with per-session reasons. Final run: **32 passed, 0 failed, 0 skipped, 0 warnings/errors**. The suite respects all solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE)
-- **Backend feature tests** (`php artisan test`, 26 tests / 116 assertions, all passing) run against a dedicated `scheduling_system_testing` database — real data is never touched. The September 27 additions cover solver-status acceptance (a fully-placed `FEASIBLE` result is stored as a draft and logged as `feasible`; `INFEASIBLE` is still rejected) and the unreachable-engine path (502 plus a `failure` log row)
+- **AI scheduler unit tests**: 44 automated tests (Python standard-library `unittest`) directly exercise `generate_schedule()` with controlled fixtures — no database required. They cover faculty qualification, day + time-window availability (a session must fit within a declared window on its day), room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, the preferred scheduling window, and partial/infeasible handling with per-session reasons. Final run: **44 tests OK, 0 failed, 0 skipped, 0 warnings/errors**. The suite respects all solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE)
+- **Backend feature tests** (`php artisan test`, 43 tests / 192 assertions, all passing) run against a dedicated `scheduling_system_testing` database — real data is never touched. The September 27 additions cover solver-status acceptance (a fully-placed `FEASIBLE` result is stored as a draft and logged as `feasible`; `INFEASIBLE` is still rejected) and the unreachable-engine path (502 plus a `failure` log row)
 - **Section/year-level generation tests** verify the AI-generated schedule is attributed to the correct section, year level, and semester, that other sections' schedules are untouched, and that regeneration archives only the target section's drafts
 - **Subject–section year/semester validation tests**: matching assignments accepted; wrong-semester and wrong-year assignments rejected (HTTP 422); generation blocked with the AI engine never called on legacy mismatches
 - **Subject lab consistency tests**: `lab_hours > 0` without a canonical lab room type rejected; `lab_hours = 0` with a lab room type rejected; enforced on create and update

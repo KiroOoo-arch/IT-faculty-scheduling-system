@@ -5,7 +5,7 @@
 The system implements **eight main constraint categories**, with the **section's preferred scheduling window** also directly modeled by the solver. These are enforced mathematically by the CP-SAT constraint solver — a generated schedule cannot violate them:
 
 1. **Faculty qualification** — a faculty member can only be assigned to subjects they're qualified to teach (`faculty_subjects`)
-2. **Faculty availability** — a faculty member can only teach on days they've marked as available (`faculty_availabilities`)
+2. **Faculty availability** — a faculty member can only teach on days they've marked as available (`faculty_availabilities`), and only within the declared time window for that day (day + start/end time)
 3. **Room type matching** — lecture sessions require lecture rooms; lab sessions require a room whose type matches the subject's `lab_room_type` (e.g. `computer_lab`)
 4. **Room capacity** — eligible rooms must have `capacity >= section.student_count`
 5. **Faculty no double-booking** — a faculty member cannot teach two overlapping sessions

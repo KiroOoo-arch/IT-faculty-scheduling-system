@@ -58,16 +58,16 @@ Per instructor direction, the system's access model was redesigned:
 Final hardening round before the design defense:
 - **Subject–section year/semester validation** (FR-018): the Sections page filters the subject checklist to the section's year level and semester; the backend rejects mismatched assignments with HTTP 422 and blocks schedule generation on any legacy mismatch until corrected (the AI engine is never invoked with invalid assignments). Classified as pre-scheduling data-integrity validation in the Laravel layer — not an OR-Tools constraint
 - **Subject lab consistency validation** (FR-019): lab hours require one of the canonical lab room types (computer_lab, science_lab, electronics_lab); zero lab hours require none. Enforced server-side on create and update (HTTP 422)
-- **AI scheduler test suite restored**: 32 real unit tests (Python stdlib unittest) directly exercising the CP-SAT solver with controlled fixtures — qualification, day-level availability, room type/capacity, double-booking, teaching load, cross-section conflicts, preferred window, partial/infeasible handling. 32 passed, 0 failed, 0 skipped, 0 warnings/errors
+- **AI scheduler test suite restored**: 44 real unit tests (Python stdlib unittest) directly exercising the CP-SAT solver with controlled fixtures — qualification, day + time-window availability, room type/capacity, double-booking, teaching load, cross-section conflicts, preferred window, partial/infeasible handling. 44 tests OK, 0 failed, 0 skipped, 0 warnings/errors
 - **One legacy demo-data defect resolved during verification**: an ADVPROG (Year 2, 2nd Semester) assignment on the Year 1 · 1st Semester ELEC-1B section was found by the validation rules and removed through the normal application flow; ELEC-1B then generated OPTIMAL
-- **Final regression verification passed**: backend 23 tests (100 assertions), AI engine 32 tests, frontend production build, and the full live lifecycle (generate → review → approve → publish → print → unpublish) with no regressions
+- **Final regression verification passed**: backend 43 tests (192 assertions), AI engine 44 tests, frontend production build, and the full live lifecycle (generate → review → approve → publish → print → unpublish) with no regressions
 - **Program-level flow documented**: `documentation/Program-Flow.md` traces each execution step to its file (entry points, request lifecycle, per-process flows, validation-gate placement, status handling) with the rendered figure in `documentation/screenshots/11-program-flow.png`
 
 ### Phase 12 — Live API Verification & Scheduling Defect Fixes (September 27, 2026)
 Every documented status code and validation gate was exercised against the running stack (Laravel on 8000, FastAPI on 8001, `curl` with a real Sanctum token). The pass surfaced two defects in the generation path, both now fixed:
 - **A fully-placed `FEASIBLE` result was reported as a failure.** The solver returns `FEASIBLE` when every session is placed but its 15 s budget expires before optimality is proven; `ScheduleController` accepted only `OPTIMAL`/`PARTIAL`, so a complete schedule was answered with 422 "No feasible schedule found." `FEASIBLE` is now accepted like `OPTIMAL`/`PARTIAL` and logged as `feasible`
 - **An unreachable AI engine returned a raw 500 and logged nothing.** The connection failure is now caught: the endpoint answers `502 {"error":"AI engine unreachable", ...}` and writes a `failure` generation-log row, so an engine outage is visible in the Reports → Generation Logs tab
-- **Regression tests added** for both fixes plus an `INFEASIBLE` guard so the accepted-status boundary cannot drift: backend suite is now **26 tests / 116 assertions** (was 23 / 100), all passing; the AI-engine suite stays at 32
+- **Regression tests added** for both fixes plus an `INFEASIBLE` guard so the accepted-status boundary cannot drift: backend suite is now **43 tests / 192 assertions** (was 26 / 116), all passing; the AI-engine suite is 44
 
 ---
 
@@ -81,7 +81,7 @@ React (Frontend, port 5173) → Laravel (API/Auth, port 8000) → Python FastAPI
 | # | Constraint | Prevents | Status |
 |---|---|---|---|
 | 1 | Faculty qualification | Unqualified faculty assigned | ✅ |
-| 2 | Faculty availability | Scheduling on unavailable days (day-level) | ✅ |
+| 2 | Faculty availability | Scheduling on unavailable days or outside declared time windows | ✅ |
 | 3 | Room type matching | Labs in lecture halls | ✅ |
 | 4 | Room capacity | Overcrowded rooms | ✅ |
 | 5 | Faculty no double-booking | Same teacher, two places | ✅ |
@@ -112,8 +112,8 @@ Admin Login → Manage Scheduling Data → Assign Valid Subjects
 Subject assignments are validated before generation (year/semester match + lab consistency, HTTP 422 on violation).
 
 ### Test Results
-- Backend feature tests: **26 passed (116 assertions)** — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (FEASIBLE accepted, INFEASIBLE rejected), unreachable-engine handling
-- AI engine unit tests: **32 passed, 0 failed, 0 skipped, 0 warnings/errors** — solver exercised directly with controlled fixtures
+- Backend feature tests: **43 passed (192 assertions)** — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (FEASIBLE accepted, INFEASIBLE rejected), unreachable-engine handling, and detailed session-edit conflict payloads
+- AI engine unit tests: **44 tests OK, 0 failed, 0 skipped, 0 warnings/errors** — solver exercised directly with controlled fixtures
 - TypeScript typecheck clean; production build passes
 - Live-verified: admin login, faculty records with names, reports, conflict detection, publish gate, print view, unpublish — plus the September 27 API pass that fixed and re-verified the `FEASIBLE` and unreachable-engine defects
 

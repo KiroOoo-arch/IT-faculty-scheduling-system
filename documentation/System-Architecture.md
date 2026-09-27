@@ -114,15 +114,16 @@ sequenceDiagram
     participant L as Laravel (ScheduleSessionController)
     participant DB as PostgreSQL
 
-    U->>L: PATCH /api/schedule-sessions/{id} (day/time/room/faculty)
+    U->>L: PUT /api/schedules/sessions/{id} (day/time/room/faculty)
     L->>DB: Load session + related schedule context
     L->>L: Conflict detection:
     L->>L:  • faculty double-booking?
     L->>L:  • room double-booking?
     L->>L:  • room type matches session (lab → required lab type)?
+    L->>L:  • within the faculty's declared availability (day + time window)?
     L->>L:  • within section's time window / days?
     alt conflict found
-        L-->>U: 422 plain-language error (edit rejected)
+        L-->>U: 422 with the specific conflict reason(s) (edit rejected)
     else no conflict
         L->>DB: Save updated session
         L-->>U: Updated session JSON
