@@ -14,7 +14,7 @@ flowchart TD
     F2 --> E
     F1 -- yes --> F3[FastAPI → OR-Tools CP-SAT<br/>candidate schedule]
     F3 --> G{Result}
-    G -- OPTIMAL / PARTIAL --> H[DRAFT: Review / Manual Edit<br/>server-side conflict detection]
+    G -- OPTIMAL / FEASIBLE / PARTIAL --> H[DRAFT: Review / Manual Edit<br/>server-side conflict detection]
     G -- INFEASIBLE --> I[Reasons reported<br/>fix data and retry]
     I --> E
     H --> J[Approve]

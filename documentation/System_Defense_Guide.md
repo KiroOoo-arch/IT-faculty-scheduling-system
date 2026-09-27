@@ -103,8 +103,8 @@ sequenceDiagram
     A->>DB: Query section, subjects, faculty + availabilities, rooms
     DB-->>A: data
     A->>A: OR-Tools CP-SAT solver (8 constraints)
-    A-->>L: {status: OPTIMAL/PARTIAL/INFEASIBLE, sessions[]}
-    alt OPTIMAL or PARTIAL
+    A-->>L: {status: OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE, sessions[]}
+    alt OPTIMAL, FEASIBLE or PARTIAL
         L->>DB: Create Schedule (draft) + ScheduleSession rows
         L->>DB: Write ScheduleGenerationLog
         L-->>F: 200 {schedule_id, sessions, unscheduled}
@@ -232,7 +232,7 @@ erDiagram
     SCHEDULES {
         int id PK
         int section_id FK
-        string status "draft | approved | published | archived"
+        string status "draft | approved | published | rejected | archived"
         int approved_by FK
         timestamp approved_at
         timestamp created_at
@@ -272,7 +272,7 @@ erDiagram
         int id PK
         int section_id FK
         int requested_by FK
-        string status "optimal | partial | failure"
+        string status "optimal | feasible | partial | failure"
         string message
         json unscheduled_sessions
         timestamp created_at
@@ -376,7 +376,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | Backend: 23 feature tests (100 assertions) · AI engine: 32 solver unit tests · frontend typecheck + production build |
+| Testing | ✅ Complete | Backend: 26 feature tests (116 assertions) · AI engine: 32 solver unit tests · frontend typecheck + production build |
 
 ---
 
@@ -430,7 +430,7 @@ POST http://127.0.0.1:8001/generate-schedule/{section_id}
 - Laravel sends the section ID
 - FastAPI queries the database directly for required data
 - FastAPI runs the CP-SAT solver
-- FastAPI returns the result (OPTIMAL/PARTIAL/INFEASIBLE)
+- FastAPI returns the result (OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE)
 - Laravel persists the result to the database
 
 This is a synchronous request-response pattern, appropriate for this use case.
@@ -454,7 +454,7 @@ We chose CP over:
 CP-SAT (Constraint Programming - SAT solver) is Google's industrial-grade solver that:
 - Guarantees mathematical proof of solution validity
 - Handles complex constraint combinations efficiently
-- Provides OPTIMAL/PARTIAL/INFEASIBLE status with explanations
+- Provides OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE status with explanations
 
 ---
 
@@ -622,7 +622,7 @@ For university scale, architectural changes would be needed, but the core constr
 1. **Ad-hoc testing**: Throughout development
 2. **AI engine unit tests**: 32 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day-level availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 32 passed, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
-4. **Automated backend suite**: 23 Laravel feature tests (100 assertions) — authentication, subject/section validation rules, generation attribution, publish gate — plus frontend typecheck and production build
+4. **Automated backend suite**: 26 Laravel feature tests (116 assertions) — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), and the unreachable-engine 502 path — plus frontend typecheck and production build
 
 Test coverage:
 - Authentication & RBAC ✅

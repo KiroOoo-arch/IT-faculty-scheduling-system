@@ -58,7 +58,7 @@
         <mxCell id="f6" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="fa" target="wf">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f6l" value="result: OPTIMAL / PARTIAL / INFEASIBLE&#10;Laravel stores draft + generation log" style="text;html=1;align=center;" vertex="1" parent="1">
+        <mxCell id="f6l" value="result: OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE&#10;Laravel stores draft + generation log" style="text;html=1;align=center;" vertex="1" parent="1">
           <mxGeometry x="650" y="465" width="240" height="40" as="geometry" />
         </mxCell>
         <mxCell id="f7" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="wf" target="dst">

@@ -19,6 +19,7 @@ The system automates faculty scheduling processes, reduces manual errors, detect
 - **CP-SAT**: Constraint Programming - SAT solver (Google OR-Tools)
 - **RBAC**: Role-Based Access Control
 - **OPTIMAL**: Schedule where all sessions are placed with no constraint violations
+- **FEASIBLE**: Every session was placed, but the solver reached its time budget before proving the result optimal
 - **PARTIAL**: Schedule where some sessions are placed, others unscheduled with explanations
 - **INFEASIBLE**: No valid schedule exists given current constraints
 
@@ -106,7 +107,7 @@ Three-tier architecture:
 |----|-------------|----------|--------|
 | FR-SCH-001 | Generate schedules for sections | High | ✅ Implemented |
 | FR-SCH-002 | Enforce 8 hard constraints | High | ✅ Implemented |
-| FR-SCH-003 | Return OPTIMAL/PARTIAL/INFEASIBLE status | High | ✅ Implemented |
+| FR-SCH-003 | Return OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE status (OPTIMAL, FEASIBLE and PARTIAL are accepted as successful results; INFEASIBLE is reported as a failure) | High | ✅ Implemented |
 | FR-SCH-004 | Provide explanations for unscheduled sessions | High | ✅ Implemented |
 | FR-SCH-005 | Best-effort scheduling (partial solutions) | High | ✅ Implemented |
 | FR-SCH-006 | Cross-section conflict prevention | High | ✅ Implemented |

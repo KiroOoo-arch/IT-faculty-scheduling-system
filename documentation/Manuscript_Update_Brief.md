@@ -51,7 +51,7 @@ Generate > Draft > Review/Edit > Approve > Publish Conflict Gate > Published > P
 - The 8 categories: (1) faculty qualification, (2) faculty availability, (3) room type matching, (4) room capacity, (5) faculty no double-booking, (6) room no double-booking, (7) maximum teaching load, (8) cross-section conflicts.
 - IMPORTANT — faculty availability wording: the solver restricts faculty by their available DAYS; the section's preferred start/end window is the enforced time window. Do not write "no scheduling outside declared hours" — the code does not enforce hourly availability.
 - IMPORTANT — max teaching load IS enforced (old drafts claimed it was not; verified in ai-engine/solver/scheduler.py).
-- Results: OPTIMAL (all placed, optimality proven) / FEASIBLE (valid, optimality unproven) / PARTIAL (some placed, with reasons: no suitable room, no qualified faculty, window too short, capacity/type limits, other conflicts) / INFEASIBLE (none placed).
+- Results: OPTIMAL (all placed, optimality proven) / FEASIBLE (all placed, optimality unproven — accepted exactly like OPTIMAL) / PARTIAL (some placed, with reasons: no suitable room, no qualified faculty, window too short, capacity/type limits, other conflicts) / INFEASIBLE (none placed).
 - Never claim "all sections generate OPTIMAL with zero unscheduled sessions." Correct: "Best-effort: maximizes the number of successfully scheduled sessions and reports reasons for the rest."
 - Call it "AI-assisted constraint-based scheduling" — not machine learning.
 
@@ -74,7 +74,7 @@ Remove obsolete: overview, workload, sections, generation-logs.
 
 ## 8. Testing chapter — rewrite
 
-- Replace any "18/18 manual tests" claim with the automated suite: 23 backend feature tests (100 assertions) including section/year-level generation tests and the subject-validation rule tests (subject–section year/semester integrity, subject lab consistency), run on an isolated scheduling_system_testing database, plus 32 AI-engine unit tests (Python stdlib unittest) that exercise the CP-SAT solver directly — 32 passed, 0 failed, 0 skipped, 0 warnings/errors.
+- Replace any "18/18 manual tests" claim with the automated suite: 26 backend feature tests (116 assertions) including section/year-level generation tests, the subject-validation rule tests (subject–section year/semester integrity, subject lab consistency), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` is rejected) and the unreachable-engine 502 path, run on an isolated scheduling_system_testing database, plus 32 AI-engine unit tests (Python stdlib unittest) that exercise the CP-SAT solver directly — 32 passed, 0 failed, 0 skipped, 0 warnings/errors.
 - Add the live end-to-end integration test (September 2026): admin login > AI generated BIT-3A's schedule OPTIMAL with all constraints verified (IAS lab correctly placed in a computer lab) > approve > publish through the gate > unpublish > all 5 reports — all passed.
 - Frontend TypeScript typecheck + production build pass.
 

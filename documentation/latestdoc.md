@@ -77,9 +77,18 @@ Files: SectionsPage.tsx, SectionController.php, ScheduleController.php, SubjectC
 - AI scheduler test suite restored: 32 unit tests (Python stdlib unittest) exercising generate_schedule() directly with controlled fixtures
 Test Results: Backend 23 passed (100 assertions); AI engine 32 passed, 0 failed, 0 skipped, 0 warnings/errors; frontend production build passed; full live lifecycle regression verified (generate - review - approve - publish - print - unpublish)
 
+27/09/26
+Live API Verification & Scheduling Defect Fixes
+- Every documented status code and gate exercised against the running stack (Laravel on 8000, FastAPI on 8001, curl with a real Sanctum token); results recorded in documentation/Program-Flow.md
+- Defect 1: a fully-placed FEASIBLE solver result was rejected as a failure (422 "No feasible schedule found."). Fixed - FEASIBLE is accepted like OPTIMAL/PARTIAL and logged as 'feasible'
+- Defect 2: an unreachable AI engine returned a raw 500 with no generation log row. Fixed - the connection failure is caught, answered as 502 {"error":"AI engine unreachable", ...} and logged as 'failure'
+- Regression tests added (FEASIBLE accepted + logged, INFEASIBLE still rejected, unreachable engine -> 502 + log)
+Files: ScheduleController.php, tests/Feature/ScheduleGenerationSectionTest.php
+Test Results: Backend 26 passed (116 assertions); AI engine 32 passed
+
 Authentication & RBAC       ✅
 CRUD Operations             ✅
-AI Schedule Generation      ✅  (OPTIMAL / PARTIAL / INFEASIBLE)
+AI Schedule Generation      ✅  (OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE)
 Manual Edit Conflict Check  ✅
 Schedule Approval Workflow  ✅
 Reports (Workload, Rooms)   ✅

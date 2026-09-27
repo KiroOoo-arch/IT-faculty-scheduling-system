@@ -43,7 +43,7 @@ flowchart TD
     end
 
     SOL -->|"200 OPTIMAL · FEASIBLE · PARTIAL · INFEASIBLE · ERROR"| DEC{"Laravel accepts status?"}
-    DEC -- "OPTIMAL or PARTIAL" --> DRAFT["Create Schedule status=draft<br/>+ ScheduleSession rows for placed sessions<br/>+ ScheduleGenerationLog"]
+    DEC -- "OPTIMAL, FEASIBLE or PARTIAL" --> DRAFT["Create Schedule status=draft<br/>+ ScheduleSession rows for placed sessions<br/>+ ScheduleGenerationLog"]
     DEC -- "anything else" --> FLOG["ScheduleGenerationLog status=failure<br/>422 to the browser"]
     DRAFT --> ADMIN["Admin reviews draft on AdminDashboard"]
     ADMIN --> EDIT{"Manual edit needed?"}

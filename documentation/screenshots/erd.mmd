@@ -67,7 +67,7 @@ erDiagram
     SCHEDULES {
         int id PK
         int section_id FK
-        string status "draft | approved | published | archived"
+        string status "draft | approved | published | rejected | archived"
         int approved_by FK
         timestamp approved_at
         timestamp created_at
@@ -107,7 +107,7 @@ erDiagram
         int id PK
         int section_id FK
         int requested_by FK
-        string status "optimal | partial | failure"
+        string status "optimal | feasible | partial | failure"
         string message
         json unscheduled_sessions
         timestamp created_at

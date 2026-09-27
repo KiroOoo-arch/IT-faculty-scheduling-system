@@ -38,7 +38,7 @@ The system uses constraint-based scheduling techniques (Google OR-Tools CP-SAT) 
 - Room & Laboratory Management
 - Faculty Availability Management
 - Faculty–Subject Qualification Mapping
-- AI Schedule Generation (OPTIMAL / PARTIAL / INFEASIBLE)
+- AI Schedule Generation (OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE)
 - Schedule Approval Workflow (Draft → Approved → Published → Archived)
 - Session Editing with Conflict Detection
 - Publish Conflict Gate (prevents cross-section double-booking)
@@ -65,7 +65,7 @@ diagrams/         System Diagrams
 
 ## Development Status
 **Implementation and Testing — core features verified end-to-end:**
-- ✅ AI schedule generation verified live — returns OPTIMAL / PARTIAL / INFEASIBLE with per-session reasons when resources can't fit
+- ✅ AI schedule generation verified live — returns OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE with per-session reasons when resources can't fit
 - ✅ Approval → Publish workflow working
 - ✅ Zero cross-section conflicts (AI constraints + publish gate)
 - ✅ Admin prints/downloads published schedules for hard-copy distribution

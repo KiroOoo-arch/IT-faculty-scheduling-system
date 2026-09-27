@@ -41,7 +41,7 @@ graph TB
 
     Frontend -->|HTTP/JSON + Bearer token| Backend
     Backend -->|HTTP POST /generate-schedule/id| AI
-    AI -->|OPTIMAL / PARTIAL / INFEASIBLE| Backend
+    AI -->|OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE| Backend
     AI -.direct psycopg2 read.-> DB
     Backend -.Eloquent ORM.-> DB
     Backend -->|JSON| Frontend
@@ -66,8 +66,8 @@ sequenceDiagram
     A->>DB: Query section, subjects, faculty + availabilities,<br/>available rooms, existing approved/published sessions
     DB-->>A: data
     A->>A: OR-Tools CP-SAT solver (8 constraints)
-    A-->>L: {status: OPTIMAL/PARTIAL/INFEASIBLE, sessions[]}
-    alt OPTIMAL or PARTIAL
+    A-->>L: {status: OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE, sessions[]}
+    alt OPTIMAL, FEASIBLE or PARTIAL
         L->>DB: Create Schedule (draft) + ScheduleSession rows
         L->>DB: Write ScheduleGenerationLog
         L-->>F: 200 {schedule_id, sessions, unscheduled}
@@ -241,7 +241,7 @@ flowchart TD
     F2 --> E
     F1 -- yes --> F3[FastAPI → OR-Tools CP-SAT<br/>candidate schedule]
     F3 --> G{Result}
-    G -- OPTIMAL / PARTIAL --> H[DRAFT: Review / Manual Edit<br/>server-side conflict detection]
+    G -- OPTIMAL / FEASIBLE / PARTIAL --> H[DRAFT: Review / Manual Edit<br/>server-side conflict detection]
     G -- INFEASIBLE --> I[Reasons reported<br/>fix data and retry]
     I --> E
     H --> J[Approve]
@@ -318,7 +318,7 @@ The Reports page provides analytics and summaries with the following tabs:
 
 > **Entity naming:** ER entities are shown in singular form (FACULTY, SUBJECTS, …); the physical PostgreSQL tables use Laravel's plural convention (`faculties`, `subjects`, …). They are the same structures.
 >
-> **Two different status fields (not a wording drift):** `SCHEDULES.status` and solver results use uppercase `OPTIMAL | FEASIBLE | PARTIAL | INFEASIBLE` (the FastAPI/OR-Tools response values), while `SCHEDULE_GENERATION_LOGS.status` is stored lowercase (`optimal | partial | failure`) — exactly as written by `ScheduleController`.
+> **Two different status fields (not a wording drift):** `SCHEDULES.status` and solver results use uppercase `OPTIMAL | FEASIBLE | PARTIAL | INFEASIBLE` (the FastAPI/OR-Tools response values), while `SCHEDULE_GENERATION_LOGS.status` is stored lowercase (`optimal | feasible | partial | failure`) — exactly as written by `ScheduleController`. `OPTIMAL`, `FEASIBLE` and `PARTIAL` are all accepted as successful results; `INFEASIBLE` (and the engine's `ERROR`) are logged as `failure` and answered with 422.
 
 ```mermaid
 erDiagram
@@ -390,7 +390,7 @@ erDiagram
     SCHEDULES {
         int id PK
         int section_id FK
-        string status "draft | approved | published | archived"
+        string status "draft | approved | published | rejected | archived"
         int approved_by FK
         timestamp approved_at
         timestamp created_at
@@ -430,7 +430,7 @@ erDiagram
         int id PK
         int section_id FK
         int requested_by FK
-        string status "optimal | partial | failure"
+        string status "optimal | feasible | partial | failure"
         string message
         json unscheduled_sessions
         timestamp created_at
