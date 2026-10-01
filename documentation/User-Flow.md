@@ -30,7 +30,9 @@ flowchart TD
     E1 -- no --> E2[HTTP 422<br/>offending subject codes named<br/>· assignment rejected]
     E2 --> E
     E1 -- yes --> F[Generate Schedule]
-    F --> F1{Laravel validation gate:<br/>all assigned subjects match<br/>year level + semester?}
+    F --> F0{"Section already has a schedule?<br/>show a confirmation prompt<br/>naming what will be replaced"}
+    F0 -- "confirmed / none exists" --> F1{Laravel validation gate:<br/>all assigned subjects match<br/>year level + semester?}
+    F0 -. cancel — nothing is sent .-> C
     F1 -- no --> F2[HTTP 422<br/>AI engine never called]
     F2 --> E
     F1 -- yes --> F3[FastAPI → OR-Tools CP-SAT<br/>candidate schedule]
@@ -54,7 +56,8 @@ Text flow (same steps):
 ```text
 Login (admin-only) → Manage Data → Create/Edit Subjects (lab consistency validated)
   → Create/Edit Sections + Assign Subjects (year/semester validated, 422 on mismatch)
-  → Generate Schedule → Laravel validation gate (422 blocks legacy mismatches; AI never called)
+  → Generate Schedule (if the section already has a schedule, confirm before replacing it — cancelling sends nothing)
+  → Laravel validation gate (422 blocks legacy mismatches; AI never called)
   → OR-Tools CP-SAT candidate → DRAFT → Review / Manual Edit (conflict-checked)
   → Approve → Publish conflict gate → PUBLISHED → Print/Download PDF → Distribute
   → (Unpublish returns to DRAFT for re-editing)

@@ -1,6 +1,6 @@
 # Explainer — User Flow
 
-**Figure:** [`screenshots/14-user-flow-modern.png`](screenshots/14-user-flow-modern.png) — 1860 × 1310 px, 245 KB
+**Figure:** [`screenshots/14-user-flow-modern.png`](screenshots/14-user-flow-modern.png) — 1860 × 1428 px, 261 KB
 **Editable source:** `.tmp-run/diagram/user-flow.html` (not committed — a scratch file)
 **Companion documents:** [`User-Flow.md`](User-Flow.md), [`System-User-Manual.md`](System-User-Manual.md)
 
@@ -52,7 +52,7 @@ The green pill on the left, **Start**, is "Admin logs in". The green pill on the
 | **1 Login** | Login page | Email + password. Only **admin** accounts can access — others are rejected. A 401 later in the session clears the stored session and redirects back here. |
 | **2 Dashboard** | Admin Dashboard | Overview, schedule list with statuses, and entry points to data management and reports. |
 | **3 Manage Data** | Subjects · Sections · Faculty · Rooms | Maintains the inputs the engine needs. This card is the densest, because it is where the data quality is determined. |
-| **4 Generate Schedule** | Admin Dashboard | Selects a section and runs generation. |
+| **4 Generate Schedule** | Admin Dashboard | Selects a section and runs generation. If that section already has a schedule, a confirmation prompt names what would be replaced before anything is sent. |
 
 Three things are called out inside step 3 that are worth reading aloud, because they are the rules the admin must satisfy *before* they can get a good schedule:
 
@@ -60,7 +60,7 @@ Three things are called out inside step 3 that are worth reading aloud, because 
 - **Sections** — the subject checklist only offers subjects matching the section's year level and semester, otherwise 422.
 - **Faculty records** — availability is declared as a **day plus a time window**, along with qualifications and a **maximum teaching load**. The load is a **weekly** figure, not daily.
 
-Step 4 carries a dashed note box with the two failure outcomes: an unreachable engine gives HTTP 502 and a failure log with no draft, and an INFEASIBLE result produces no draft, with the unscheduled reasons recorded in the log.
+Step 4 carries a dashed note box with the two failure outcomes: an unreachable engine gives HTTP 502 and a failure log with no draft, and an INFEASIBLE result produces no draft, with the unscheduled reasons recorded in the log. The card also states the ordering rule the admin benefits from: the section's existing draft is replaced **only after** a successful run, so a failed attempt never costs them their draft. The confirmation prompt on the same card is the misclick guard — it is **client-side**, so cancelling sends no request at all.
 
 ### The "Review and Validation" group — steps 5 to 8
 
@@ -186,12 +186,12 @@ The admin sets it on the faculty record at step 3. It is a **weekly** cap on tot
 "/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
   --headless=new --disable-gpu --no-first-run --hide-scrollbars \
   --user-data-dir="$(mktemp -d)" \
-  --window-size=1860,1310 \
+  --window-size=1860,1428 \
   --screenshot="documentation/screenshots/14-user-flow-modern.png" \
   "file:///<repo>/.tmp-run/diagram/user-flow.html"
 ```
 
-`--window-size` must equal the measured page size or the capture clips. The current figure is 1860 × 1310.
+`--window-size` must equal the measured page size or the capture clips. The current figure is 1860 × 1428. The output path must be **absolute** — Edge resolves a relative `--screenshot` path against its own working directory and silently fails to write.
 
 ---
 

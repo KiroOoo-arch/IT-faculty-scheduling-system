@@ -165,10 +165,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    S["AdminDashboard: POST /api/schedules/generate/sectionId"] --> G3{"Gate 3 — every assigned subject matches<br/>the section year level + semester?"}
+    S["AdminDashboard.handleGenerate: if that section already has a<br/>draft, approved or published schedule, confirm before replacing it<br/>— cancelling sends no request"] --> P["POST /api/schedules/generate/sectionId"]
+    P --> G3{"Gate 3 — every assigned subject matches<br/>the section year level + semester?"}
     G3 -- "no" --> R422["422 with the offending subject codes<br/>AI engine never called"]
-    G3 -- "yes" --> ARCH["Archive existing drafts of this section<br/>(status draft → archived)"]
-    ARCH --> HTTP["Http::timeout(30)->post('http://127.0.0.1:8001/generate-schedule/sectionId')"]
+    G3 -- "yes" --> HTTP["Http::timeout(30)->post('http://127.0.0.1:8001/generate-schedule/sectionId')"]
     HTTP --> F1{"AI engine response ok?"}
     F1 -- "non-2xx" --> L502["ScheduleGenerationLog status=failure<br/>502 to the browser"]
     F1 -- "200" --> READ["FastAPI reads section, subjects, qualified active faculty,<br/>availabilities, existing load, available rooms,<br/>other sections' approved/published sessions"]
@@ -181,13 +181,15 @@ flowchart TD
     PRECHK --> CP["CP-SAT model with the 8 constraint categories<br/>+ section window/self-overlap, Maximize(placed sessions)<br/>max_time_in_seconds = 15"]
     CP --> OUT["{ status, message, sessions[] }<br/>placed sessions carry day/start/end/room/faculty,<br/>unplaced ones carry a reason"]
     OUT --> DEC2{"Laravel accepts the status?"}
-    DEC2 -- "OPTIMAL, FEASIBLE or PARTIAL" --> W["Create Schedule (status=draft) + one ScheduleSession<br/>per placed session + ScheduleGenerationLog<br/>(status optimal | feasible | partial, unscheduled list stored)"]
+    DEC2 -- "OPTIMAL, FEASIBLE or PARTIAL" --> ARCH["Archive the section's existing drafts<br/>(status draft → archived) — only now, after a usable result"]
+    ARCH --> W["Create Schedule (status=draft) + one ScheduleSession<br/>per placed session + ScheduleGenerationLog<br/>(status optimal | feasible | partial, unscheduled list stored)"]
     W --> UI["200 { schedule_id, status, sessions, unscheduled }<br/>AdminDashboard shows 'Status: X — N sessions created'"]
     DEC2 -- "anything else" --> FAIL["ScheduleGenerationLog status=failure<br/>422 with the engine message"]
 ```
 
 - The engine's own failure codes surface to the browser as **502** (non-2xx from FastAPI), and an **unreachable** engine is caught and answered with the same 502 shape — each path writes its own `failure` log row before responding.
-- Draft archiving happens **before** the engine is called, so a failed generation still leaves the section with its previous drafts archived — **observed**: a `FEASIBLE` rejection and an engine-500 run each archived the section's existing draft even though no new schedule was created, and a connection failure archived it too.
+- Draft archiving happens **only after** the engine returns a usable result, and `AdminDashboard.handleGenerate` asks for confirmation up front when the section already has a schedule. **Previously** the bulk `draft → archived` ran *before* the engine call, so any failure left the section with its previous draft archived and no replacement — **observed**: a `FEASIBLE` rejection and an engine-500 run each archived the section's existing draft even though no new schedule was created, and a connection failure did too. **Fixed:** on 422 (INFEASIBLE/ERROR) and 502 (unreachable or non-2xx) the existing draft is now left untouched, pinned by `a_failed_generation_keeps_the_sections_existing_draft` and `an_infeasible_result_keeps_the_sections_existing_draft` in `ScheduleGenerationSectionTest`.
+- The confirmation prompt is **client-side only** (`AdminDashboard.handleGenerate`): a misclick guard, not an enforced rule. It names what would be replaced — an existing draft, approved or published schedule — and cancelling sends no request at all; a direct API call bypasses it.
 - The solver is a pure function: `ai-engine/api/app.py` does the reading (psycopg2) and `ai-engine/solver/scheduler.py` does the solving, with no HTTP code inside it.
 
 ### 3.3 Approve → publish → print (`ScheduleApprovalController`, `PrintableSchedule`)
@@ -285,7 +287,7 @@ This is protection layer 2 — the same rules that the solver enforces at genera
 | Action (code path) | Allowed from | Result | Rejection |
 |---|---|---|---|
 | `ScheduleController::generate` (success) | — | creates `draft` | 422 if the status returned by the engine is not OPTIMAL/FEASIBLE/PARTIAL |
-| `ScheduleController::generate` (start) | `draft` | bulk `draft → archived` for that section | — |
+| `ScheduleController::generate` (success, just before the replacement is written) | `draft` | bulk `draft → archived` for that section | — (a failed or infeasible run archives nothing) |
 | `ScheduleApprovalController::approve` | `draft` | `approved` + `approved_by` + `approved_at` | 422 with current status |
 | `ScheduleApprovalController::publish` | `approved` | `published`; older `approved`/`published` of the same section → `archived` | 422 on wrong status, 422 on conflicts |
 | `ScheduleApprovalController::unpublish` | `published` | `draft`, `approved_by`/`approved_at` cleared | 422 |
@@ -318,7 +320,7 @@ Session-level reasons are always preserved: structurally impossible sessions (no
 ### 4.4 Frontend state handling
 
 - `AuthContext` holds `token` + `user` and mirrors both into `localStorage`; `ProtectedRoute`/`Dashboard` redirect to `/login` when `user` is null. A centralized `fetch` interceptor in the same module watches for HTTP `401`: it clears the stored `token`/`user` and redirects to `/login`, so an expired token never leaves a page rendering empty data. The login endpoints are exempt so a failed sign-in still shows its own error.
-- `AdminDashboard` keeps `selectedSectionId` (initially null, auto-selected from the loaded section list), re-fetches schedules whenever the "Show archived" toggle changes (`?show_archived=`), and surfaces generation outcomes as `Status: X — N sessions created` or the server's error message.
+- `AdminDashboard` keeps `selectedSectionId` (initially null, auto-selected from the loaded section list), re-fetches schedules whenever the "Show archived" toggle changes (`?show_archived=`), and surfaces generation outcomes as `Status: X — N sessions created` or the server's error message. `handleGenerate` also asks for confirmation when the selected section already has a non-archived schedule, naming the draft/approved/published record(s) it would replace.
 - Edit conflicts are shown in the edit dialog itself (`editError`), listing the specific conflict reason(s) returned in the API's `conflicts` array (e.g. faculty availability windows, room type, overlaps); approve/publish/unpublish errors via `alert()`.
 
 ---

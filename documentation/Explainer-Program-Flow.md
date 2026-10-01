@@ -1,6 +1,6 @@
 # Explainer — Program Flow
 
-**Figure:** [`screenshots/17-program-flow.png`](screenshots/17-program-flow.png) — 1900 × 3571 px, 574 KB
+**Figure:** [`screenshots/17-program-flow.png`](screenshots/17-program-flow.png) — 1900 × 3832 px, 650 KB
 **Editable source:** `.tmp-run/diagram/program-flow-v2.html` (not committed — a scratch file)
 **Companion documents:** [`Program-Flow.md`](Program-Flow.md), [`Explainer-System-Flow.md`](Explainer-System-Flow.md)
 
@@ -85,9 +85,13 @@ The dashed callout box under the table is the sentence to deliver: **Gates 1, 2,
 
 Gates 3, 4 and 5 together are why a hand-edited schedule cannot bypass the solver's rules — the same constraints are re-checked on every write.
 
+A sixth checkpoint is drawn beneath the table but is **not** one of the five gates: `AdminDashboard.handleGenerate` asks for **confirmation** when the section already has a draft, approved or published schedule. It is a misclick guard, not a rule — it returns no status code, and a direct API call is still accepted.
+
 ### Section 4 — Control Flow: Schedule Generation
 
-Eight numbered steps followed by both branch outcomes. The step to point at is **step 4**: drafts are archived *before* the engine is called, so a failed run still leaves the section's old drafts archived. That is a real behavioural consequence, and the figure states it.
+Seven numbered steps followed by both branch outcomes. Two things to point at. **Step 1** is the confirmation prompt: if the section already has a draft, approved or published schedule, the UI names what would be replaced *before* sending anything — cancelling sends no request. **Step 7** is the ordering rule: the section's previous draft is archived **only after** the engine returns a usable result, never before the call.
+
+That ordering is worth volunteering as a fixed defect. Archiving up front (the earlier behaviour) meant a failed or infeasible run replaced the draft with *nothing*, so a transient engine outage silently destroyed the admin's work. Now a **422** or **502** leaves the existing draft untouched — a failed attempt is retryable rather than destructive.
 
 The blue callout under it records an asymmetry worth volunteering: **the pre-flight gate writes no generation log at all, while every engine-related failure does.** A blocked generation is visible in the response but absent from Reports → Generation Logs.
 
@@ -200,12 +204,12 @@ Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` co
 "/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
   --headless=new --disable-gpu --no-first-run --hide-scrollbars \
   --user-data-dir="$(mktemp -d)" \
-  --window-size=1900,3571 \
+  --window-size=1900,3832 \
   --screenshot="documentation/screenshots/17-program-flow.png" \
   "file:///<repo>/.tmp-run/diagram/program-flow-v2.html"
 ```
 
-`--window-size` must equal the measured page size or the capture clips. The current figure is 1900 × 3571.
+`--window-size` must equal the measured page size or the capture clips. The current figure is 1900 × 3832. The output path must be **absolute** — Edge resolves a relative `--screenshot` path against its own working directory and silently fails to write.
 
 ---
 
