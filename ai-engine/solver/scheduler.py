@@ -56,17 +56,25 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
         room_type = sess["room_type"]
         subject_id = sess["subject_id"]
 
-        eligible_rooms = [
-        r["id"] for r in rooms
-        if r["type"] == room_type
-        and r["capacity"] >= section.get("student_count", 30)  # ← NEW CONSTRAINT
-        ]
+        # A room has to match the session's type AND seat the whole section.
+        # Keep the two failure causes apart so the reason we report back to the
+        # admin is actionable: claiming the room type does not exist when it
+        # does, and is merely too small, sends them looking for a room they
+        # already have.
+        student_count = section.get("student_count", 30)
+        rooms_of_type = [r for r in rooms if r["type"] == room_type]
+        eligible_rooms = [r["id"] for r in rooms_of_type if r["capacity"] >= student_count]
         eligible_faculty = [f["id"] for f in faculty if subject_id in f["can_teach_subject_ids"]]
         max_start = END_HOUR - duration
 
-        if not eligible_rooms:
+        if not rooms_of_type:
             unschedulable[idx] = (f"No room of type '{room_type}' exists for this "
                                    f"{sess['session_type']} session.")
+        elif not eligible_rooms:
+            largest = max(r["capacity"] for r in rooms_of_type)
+            unschedulable[idx] = (f"No '{room_type}' room is large enough: the biggest "
+                                   f"seats {largest}, but this section has "
+                                   f"{student_count} students.")
         elif not eligible_faculty:
             unschedulable[idx] = "No qualified faculty available to teach this subject."
         elif max_start < START_HOUR:

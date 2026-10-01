@@ -458,6 +458,40 @@ class TestRoomCapacity(unittest.TestCase):
         assert len(scheduled(result)) == 0
         assert "room" in unscheduled(result)[0]["reason"].lower()
 
+    def test_undersized_room_does_not_blame_the_missing_room_type(self):
+        """Rooms of the right type that are simply too small must not be
+        reported as if no room of that type existed — that sends the admin
+        hunting for a room they already have."""
+        subject = make_subject(subject_id=1, lecture_hours=2)
+        rooms = [make_room(room_id=1, name="R101", room_type="lecture", capacity=30)]
+        section = make_section(student_count=45)
+        result = generate_schedule(
+            section=section, subjects=[subject],
+            faculty=[make_faculty(subject_ids=[1])], rooms=rooms,
+        )
+
+        reason = unscheduled(result)[0]["reason"]
+        assert "no room of type" not in reason.lower(), \
+            f"Misleading reason blames a missing room type that does exist: {reason!r}"
+        assert "45" in reason and "30" in reason, \
+            f"Reason should quote the section size and the biggest room: {reason!r}"
+
+    def test_genuinely_absent_room_type_still_reports_the_missing_type(self):
+        subject = make_subject(subject_id=1, lecture_hours=2, lab_hours=3,
+                               lab_room_type="computer_lab")
+        # Only a lecture room exists, so the laboratory session has no type match.
+        rooms = [make_room(room_id=1, name="R101", room_type="lecture", capacity=60)]
+        section = make_section(student_count=30)
+        result = generate_schedule(
+            section=section, subjects=[subject],
+            faculty=[make_faculty(subject_ids=[1])], rooms=rooms,
+        )
+
+        lab_reason = [s["reason"] for s in unscheduled(result)
+                      if s["session_type"] == "laboratory"][0]
+        assert "No room of type 'computer_lab' exists" in lab_reason, \
+            f"A genuinely absent room type should still say so plainly: {lab_reason!r}"
+
 
 # ---------------------------------------------------------------------------
 # F. Faculty no-double-booking
