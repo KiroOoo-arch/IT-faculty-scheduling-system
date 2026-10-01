@@ -30,4 +30,25 @@ class Subject extends Model
     {
         return $this->belongsToMany(Section::class, 'section_subjects');
     }
+
+    public function sessions()
+    {
+        return $this->hasMany(ScheduleSession::class);
+    }
+
+    /**
+     * schedule_sessions.subject_id is a RESTRICT foreign key, so a subject
+     * that is already placed in a schedule cannot be deleted until those
+     * sessions are gone. Clear them first, then detach the subject from every
+     * faculty and section it was linked to. This mirrors the deleting hooks
+     * that Faculty and Room already use.
+     */
+    protected static function booted()
+    {
+        static::deleting(function ($subject) {
+            $subject->sessions()->delete();
+            $subject->faculties()->detach();
+            $subject->sections()->detach();
+        });
+    }
 }

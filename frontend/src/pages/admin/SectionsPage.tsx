@@ -140,7 +140,7 @@ export default function SectionsPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this section?')) return
+    if (!confirm('Delete this section? All of its schedules and schedule sessions will also be removed.')) return
     const res = await fetch(`${API_BASE_URL}/sections/${id}`, {
       method: 'DELETE',
       headers: headers(),

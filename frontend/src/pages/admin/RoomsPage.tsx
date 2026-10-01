@@ -80,7 +80,7 @@ export default function RoomsPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this room?')) return
+    if (!confirm('Delete this room? Its schedule sessions will also be removed.')) return
     try {
       const response = await fetch(`${API_BASE_URL}/rooms/${id}`, {
         method: 'DELETE',

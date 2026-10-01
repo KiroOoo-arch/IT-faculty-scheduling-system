@@ -121,7 +121,7 @@ export default function SubjectsPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this subject?')) return
+    if (!confirm('Delete this subject? Its schedule sessions, faculty assignments, and section links will also be removed.')) return
     const res = await fetch(`${API_BASE_URL}/subjects/${id}`, {
       method: 'DELETE',
       headers: {
