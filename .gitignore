@@ -55,3 +55,14 @@ Thumbs.db
 ai-engine/exports/*.xlsx
 ai-engine/exports/*.pdf
 ai-engine/exports/*.json
+
+# AI Engine environment
+ai-engine/.env
+
+# Local service logs
+sched-ai.out
+sched-ai.err
+
+# Local tooling caches and agent metadata
+.vite/
+.freebuff/
