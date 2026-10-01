@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\GuardsPublishedReferences;
 use App\Models\Faculty;
+use App\Models\ScheduleSession;
 use Illuminate\Http\Request;
 
 class FacultyController extends Controller
 {
+    use GuardsPublishedReferences;
+
     public function index()
     {
         $faculties = Faculty::with(['subjects'])->get();
@@ -45,8 +49,23 @@ class FacultyController extends Controller
         return response()->json($faculty);
     }
 
-    public function destroy(Faculty $faculty)
+    public function destroy(Request $request, Faculty $faculty)
     {
+        $published = ScheduleSession::where('faculty_id', $faculty->id)
+            ->whereHas('schedule', fn ($query) => $query->where('status', 'published'))
+            ->get(['schedule_id']);
+
+        $conflict = $this->publishedReferenceConflict(
+            $request,
+            $published->pluck('schedule_id')->unique()->values()->all(),
+            ScheduleSession::where('faculty_id', $faculty->id)->count(),
+            $published->count()
+        );
+
+        if ($conflict) {
+            return $conflict;
+        }
+
         $faculty->delete();
         return response()->json(['message' => 'Faculty deleted successfully']);
     }

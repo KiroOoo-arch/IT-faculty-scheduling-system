@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\GuardsPublishedReferences;
+use App\Models\Schedule;
+use App\Models\ScheduleSession;
 use App\Models\Section;
 use App\Models\Subject;
 use Illuminate\Http\Request;
 
 class SectionController extends Controller
 {
+    use GuardsPublishedReferences;
+
     /**
      * Validate that every subject assigned to a section belongs to the
      * section's year level and semester. Returns the offending subjects
@@ -179,8 +184,28 @@ class SectionController extends Controller
         return response()->json($section->load('subjects'));
     }
 
-    public function destroy(Section $section)
+    public function destroy(Request $request, Section $section)
     {
+        $publishedIds = Schedule::where('section_id', $section->id)
+            ->where('status', 'published')
+            ->pluck('id')
+            ->all();
+
+        // Deleting a section cascades every schedule it owns, not just the
+        // published one, so the total is every session across all of them.
+        $allScheduleIds = Schedule::where('section_id', $section->id)->pluck('id')->all();
+
+        $conflict = $this->publishedReferenceConflict(
+            $request,
+            $publishedIds,
+            ScheduleSession::whereIn('schedule_id', $allScheduleIds)->count(),
+            ScheduleSession::whereIn('schedule_id', $publishedIds)->count()
+        );
+
+        if ($conflict) {
+            return $conflict;
+        }
+
         $section->delete();
 
         return response()->json(['message' => 'Section deleted successfully']);

@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\GuardsPublishedReferences;
+use App\Models\ScheduleSession;
 use App\Models\Subject;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class SubjectController extends Controller
 {
+    use GuardsPublishedReferences;
+
     /**
      * Canonical lab room types a subject's lab sessions can require.
      * Mirrors frontend/src/constants/roomTypes.ts (LAB_ROOM_TYPES) so both
@@ -110,8 +114,23 @@ class SubjectController extends Controller
         return response()->json($subject);
     }
 
-    public function destroy(Subject $subject)
+    public function destroy(Request $request, Subject $subject)
     {
+        $published = ScheduleSession::where('subject_id', $subject->id)
+            ->whereHas('schedule', fn ($query) => $query->where('status', 'published'))
+            ->get(['schedule_id']);
+
+        $conflict = $this->publishedReferenceConflict(
+            $request,
+            $published->pluck('schedule_id')->unique()->values()->all(),
+            ScheduleSession::where('subject_id', $subject->id)->count(),
+            $published->count()
+        );
+
+        if ($conflict) {
+            return $conflict;
+        }
+
         $subject->delete();
         return response()->json(['message' => 'Subject deleted successfully']);
     }

@@ -293,4 +293,47 @@ class ScheduleGenerationSectionTest extends TestCase
         $this->assertSame('failure', $log->status);
         $this->assertStringStartsWith('AI engine unreachable:', $log->message);
     }
+
+    #[Test]
+    public function a_failed_generation_keeps_the_sections_existing_draft(): void
+    {
+        // The admin already has a working draft for this section...
+        $existing = Schedule::create(['section_id' => $this->section->id, 'status' => 'draft']);
+
+        // ...and the engine is unreachable when they click Generate again.
+        Http::fake(fn () => throw new ConnectionException('cURL error 7: Failed to connect to 127.0.0.1:8001'));
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/schedules/generate/{$this->section->id}")
+            ->assertStatus(502);
+
+        // A transient outage must not destroy the draft: archiving happens only
+        // once a replacement schedule exists.
+        $existing->refresh();
+        $this->assertSame('draft', $existing->status, 'The existing draft was archived by a failed run.');
+        $this->assertSame(1, Schedule::where('status', 'draft')->count());
+        $this->assertSame(0, Schedule::where('status', 'archived')->count());
+    }
+
+    #[Test]
+    public function an_infeasible_result_keeps_the_sections_existing_draft(): void
+    {
+        $existing = Schedule::create(['section_id' => $this->section->id, 'status' => 'draft']);
+
+        Http::fake([
+            '127.0.0.1:8001/generate-schedule/*' => Http::response([
+                'status' => 'INFEASIBLE',
+                'message' => 'No sessions could be scheduled.',
+                'sessions' => [],
+            ], 200),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/schedules/generate/{$this->section->id}")
+            ->assertStatus(422);
+
+        $existing->refresh();
+        $this->assertSame('draft', $existing->status, 'The existing draft was archived by an infeasible run.');
+        $this->assertSame(0, Schedule::where('status', 'archived')->count());
+    }
 }

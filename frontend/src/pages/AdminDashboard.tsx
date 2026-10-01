@@ -139,6 +139,27 @@ export default function AdminDashboard() {
 
   async function handleGenerate() {
     if (!selectedSectionId) return
+
+    // Warn before replacing work that already exists for this section, so a
+    // misclick does not archive the current draft without the admin noticing.
+    const existing = schedules.filter(
+      (s) => s.section_id === selectedSectionId && s.status !== 'archived'
+    )
+    if (existing.length > 0) {
+      const published = existing.find((s) => s.status === 'published')
+      const approved = existing.find((s) => s.status === 'approved')
+      const draft = existing.find((s) => s.status === 'draft')
+      const has = [
+        published && `a published schedule (#${published.id})`,
+        approved && `an approved schedule (#${approved.id})`,
+        draft && `a generated draft (#${draft.id})`,
+      ].filter(Boolean).join(' and ')
+      const effect = published
+        ? 'Generating archives any current draft and creates a new one; the published timetable stays live until you publish the new schedule.'
+        : 'Generating archives the existing schedule and creates a new draft.'
+      if (!confirm(`This section already has ${has}. ${effect}\n\nGenerate anyway?`)) return
+    }
+
     setGenerating(true)
     setGenerateResult('')
     try {

@@ -46,12 +46,12 @@ class ScheduleController extends Controller
             ], 422);
         }
 
-        // Archive old drafts
-        Schedule::where('section_id', $section->id)
-            ->where('status', 'draft')
-            ->update(['status' => 'archived']);
-
-        // Call the Python AI engine. A connection failure (engine not
+        // Call the Python AI engine. The section's existing draft is left
+        // alone until we have a usable result: archiving up front meant a
+        // failed or infeasible attempt replaced the draft with nothing, so a
+        // transient engine outage silently destroyed the admin's work.
+        //
+        // A connection failure (engine not
         // running, port closed) throws instead of returning a response, so it
         // is handled explicitly: the attempt is logged and reported as 502.
         try {
@@ -111,6 +111,11 @@ class ScheduleController extends Controller
 
         $scheduled = array_filter($result['sessions'], fn ($s) => $s['is_scheduled'] === true);
         $unscheduled = array_filter($result['sessions'], fn ($s) => $s['is_scheduled'] === false);
+
+        // Supersede the previous draft only now that the new one is real.
+        Schedule::where('section_id', $section->id)
+            ->where('status', 'draft')
+            ->update(['status' => 'archived']);
 
         $schedule = Schedule::create([
             'section_id' => $section->id,

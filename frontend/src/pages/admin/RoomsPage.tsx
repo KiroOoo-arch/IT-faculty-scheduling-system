@@ -81,12 +81,26 @@ export default function RoomsPage() {
 
   async function handleDelete(id: number) {
     if (!confirm('Delete this room? Its schedule sessions will also be removed.')) return
+    const authHeaders = { Authorization: `Bearer ${token}`, Accept: 'application/json' }
     try {
-      const response = await fetch(`${API_BASE_URL}/rooms/${id}`, {
+      let response = await fetch(`${API_BASE_URL}/rooms/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeaders,
       })
-      if (!response.ok) throw new Error('Delete failed')
+      // A published schedule still uses this room: make the loss explicit
+      // before removing sessions from the timetable of record.
+      if (response.status === 409) {
+        const data = await response.json()
+        if (!confirm(`${data.message}\n\nDelete anyway?`)) return
+        response = await fetch(`${API_BASE_URL}/rooms/${id}?force=1`, {
+          method: 'DELETE',
+          headers: authHeaders,
+        })
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || 'Delete failed')
+      }
       await fetchRooms()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

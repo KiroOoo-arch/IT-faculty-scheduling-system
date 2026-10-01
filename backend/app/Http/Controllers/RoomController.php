@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\GuardsPublishedReferences;
 use App\Models\Room;
+use App\Models\ScheduleSession;
 use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
+    use GuardsPublishedReferences;
+
     public function index()
     {
         return response()->json(Room::all());
@@ -45,8 +49,23 @@ class RoomController extends Controller
         return response()->json($room);
     }
 
-    public function destroy(Room $room)
+    public function destroy(Request $request, Room $room)
     {
+        $published = ScheduleSession::where('room_id', $room->id)
+            ->whereHas('schedule', fn ($query) => $query->where('status', 'published'))
+            ->get(['schedule_id']);
+
+        $conflict = $this->publishedReferenceConflict(
+            $request,
+            $published->pluck('schedule_id')->unique()->values()->all(),
+            ScheduleSession::where('room_id', $room->id)->count(),
+            $published->count()
+        );
+
+        if ($conflict) {
+            return $conflict;
+        }
+
         $room->delete();
 
         return response()->json(['message' => 'Room deleted successfully']);

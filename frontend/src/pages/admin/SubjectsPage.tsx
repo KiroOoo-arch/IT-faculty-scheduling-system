@@ -122,16 +122,27 @@ export default function SubjectsPage() {
 
   async function handleDelete(id: number) {
     if (!confirm('Delete this subject? Its schedule sessions, faculty assignments, and section links will also be removed.')) return
-    const res = await fetch(`${API_BASE_URL}/subjects/${id}`, {
+    const authHeaders = {
+      Authorization: `Bearer ${token}`,
+      'Accept': 'application/json',             // ← FIXED: for consistency
+    }
+    let res = await fetch(`${API_BASE_URL}/subjects/${id}`, {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Accept': 'application/json',             // ← FIXED: for consistency
-      },
+      headers: authHeaders,
     })
+    // A published schedule still uses this subject: surface what would be lost
+    // and only proceed after an explicit second confirmation.
+    if (res.status === 409) {
+      const data = await res.json()
+      if (!confirm(`${data.message}\n\nDelete anyway?`)) return
+      res = await fetch(`${API_BASE_URL}/subjects/${id}?force=1`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      })
+    }
     if (res.ok) fetchSubjects()
     else {
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       setError(data.message || 'Failed to delete')
     }
   }

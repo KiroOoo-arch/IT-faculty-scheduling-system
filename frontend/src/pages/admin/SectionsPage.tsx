@@ -141,13 +141,23 @@ export default function SectionsPage() {
 
   async function handleDelete(id: number) {
     if (!confirm('Delete this section? All of its schedules and schedule sessions will also be removed.')) return
-    const res = await fetch(`${API_BASE_URL}/sections/${id}`, {
+    let res = await fetch(`${API_BASE_URL}/sections/${id}`, {
       method: 'DELETE',
       headers: headers(),
     })
+    // A published schedule belongs to this section: name the loss and require a
+    // second confirmation before cascading it away.
+    if (res.status === 409) {
+      const data = await res.json()
+      if (!confirm(`${data.message}\n\nDelete anyway?`)) return
+      res = await fetch(`${API_BASE_URL}/sections/${id}?force=1`, {
+        method: 'DELETE',
+        headers: headers(),
+      })
+    }
     if (res.ok) fetchSections()
     else {
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       setError(data.message || 'Failed to delete')
     }
   }
