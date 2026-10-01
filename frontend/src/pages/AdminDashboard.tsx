@@ -45,7 +45,8 @@ type Schedule = {
 
 const ALL_DAYS = [
   { val: 1, label: 'Monday' }, { val: 2, label: 'Tuesday' }, { val: 3, label: 'Wednesday' },
-  { val: 4, label: 'Thursday' }, { val: 5, label: 'Friday' },
+  { val: 4, label: 'Thursday' }, { val: 5, label: 'Friday' }, { val: 6, label: 'Saturday' },
+  { val: 7, label: 'Sunday' },
 ]
 
 export default function AdminDashboard() {
@@ -145,7 +146,7 @@ export default function AdminDashboard() {
         method: 'POST', headers: headers(),
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.message || 'Generation failed')
+      if (!response.ok) throw new Error(data.message || data.error || 'Generation failed')
       setGenerateResult(`✅ Status: ${data.status} — ${data.sessions?.length ?? 0} sessions created.`)
       fetchSchedules()
     } catch (err) {
