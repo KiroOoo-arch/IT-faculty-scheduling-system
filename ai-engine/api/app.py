@@ -15,7 +15,8 @@ from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 from scheduler import generate_schedule
 
-load_dotenv()
+# Load .env from the ai-engine root, regardless of CWD
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 app = FastAPI(title="Faculty Scheduling AI Engine")
 
