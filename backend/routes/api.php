@@ -9,6 +9,7 @@ use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ScheduleApprovalController;
 use App\Http\Controllers\ScheduleSessionController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\SettingController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public routes ---
@@ -37,11 +38,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/schedules/sessions/{session}', [ScheduleSessionController::class, 'update']);
         Route::delete('/schedules/{schedule}', [ScheduleApprovalController::class, 'destroy']);
 
+        // Institutional settings the Department Head owns (the midday break).
+        Route::get('/settings', [SettingController::class, 'index']);
+        Route::put('/settings', [SettingController::class, 'update']);
+
         Route::get('/reports/faculty-workload', [ReportController::class, 'facultyWorkload']);
         Route::get('/reports/room-utilization', [ReportController::class, 'roomUtilization']);
         Route::get('/reports/conflicts', [ReportController::class, 'conflicts']);
         Route::get('/reports/schedule-status', [ReportController::class, 'scheduleStatusOverview']);
         Route::get('/reports/section-summary', [ReportController::class, 'sectionSummary']);
+        Route::get('/reports/faculty/{faculty}/schedule', [ReportController::class, 'facultySchedule']);
 
         Route::apiResource('users', \App\Http\Controllers\UserController::class);
         Route::post('/faculties/{faculty}/subjects', [FacultyController::class, 'attachSubjects']);

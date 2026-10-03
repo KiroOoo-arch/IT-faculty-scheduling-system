@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 import AdminDashboard from './pages/AdminDashboard'
 import PrintableSchedule from './pages/PrintableSchedule'
+import PrintableFacultySchedule from './pages/PrintableFacultySchedule'
 import RoomsPage from './pages/admin/RoomsPage'
 import UsersPage from './pages/admin/UsersPage'
 import FacultyPage from './pages/admin/FacultyPage'
@@ -36,6 +37,7 @@ function AppRoutes() {
       <Route path="/admin/sections" element={<ProtectedRoute><SectionsPage /></ProtectedRoute>} />
       <Route path="/admin/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />   {/* ← ADD THIS LINE */}
       <Route path="/print-schedule" element={<ProtectedRoute><PrintableSchedule /></ProtectedRoute>} />
+      <Route path="/print-faculty-schedule" element={<ProtectedRoute><PrintableFacultySchedule /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
     </Routes>
   )

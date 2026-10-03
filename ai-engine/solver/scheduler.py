@@ -6,9 +6,105 @@ reason for any session it couldn't.
 
 This module has no FastAPI/HTTP code in it on purpose — it's a pure function that
 takes structured data in and returns a structured result out.
+
+TIME UNIT
+---------
+The solver reasons in **minutes since midnight** and only ever starts a session on
+a `SLOT_MINUTES` (30-minute) boundary. This is what makes a half-hour offset
+possible at all: an earlier revision worked in whole hours, so a section window of
+07:30-20:30 was rounded down to 07:00-20:00 before the solver saw it, and 7:30 AM
+or 8:30 PM could never be produced. See solver/time_slots.py for the conversion
+helpers, which are the single place minutes are handled.
+
+THE LUNCH BREAK
+---------------
+When a break is supplied (see `_read_break`), it is a **hard constraint**: no
+session may overlap it. Because every session has a fixed duration, the starts
+that would collide with the break form one contiguous run, so the break is applied
+as a restriction on each session's start domain rather than as extra booleans.
 """
 
 from ortools.sat.python import cp_model
+
+from time_slots import (
+    SLOT_MINUTES,
+    allowed_starts,
+    exclude_break,
+    hhmm_to_minutes,
+    hours_to_minutes,
+    minutes_to_hhmm,
+)
+
+
+def _as_minutes(value, is_hours: bool):
+    """
+    Normalise one time value to minutes.
+
+    The unit has to be stated by the caller rather than sniffed from the value:
+    `450` is a legal minute count and `7` is a legal hour count, and an int alone
+    cannot tell them apart. Getting this wrong double-converts a value that was
+    already in minutes (450 became 27000), which is exactly the class of silent
+    time bug this refactor exists to remove.
+
+    Accepts an int/float in the stated unit, or an `'HH:MM'` string.
+    """
+    if value is None:
+        return None
+    if is_hours:
+        return hours_to_minutes(value)
+    if isinstance(value, str):
+        return hhmm_to_minutes(value)
+    return int(value)
+
+
+def _read_window(section: dict):
+    """Section's preferred window in minutes, tolerating the older hour-based keys."""
+    start = _as_minutes(section.get("preferred_start_minutes"), False)
+    if start is None:
+        start = _as_minutes(section.get("preferred_start_hour", 0), True)
+    end = _as_minutes(section.get("preferred_end_minutes"), False)
+    if end is None:
+        end = _as_minutes(section.get("preferred_end_hour", 24), True)
+
+    return start, end
+
+
+def _read_break(section: dict):
+    """
+    The break as `(start_minutes, end_minutes)` or `None`.
+
+    Accepts either a nested `lunch` mapping or flat `lunch_*` keys, so the API
+    layer can pass through whatever it read from the settings table. A missing or
+    inverted break is treated as "no break" rather than an error, so a bad setting
+    can never make every section unschedulable.
+    """
+    lunch = section.get("lunch")
+    if isinstance(lunch, dict):
+        if not lunch.get("enabled", True):
+            return None
+        start = _as_minutes(lunch.get("start_minutes"), False)
+        if start is None:
+            start = _as_minutes(lunch.get("start"), False)
+        end = _as_minutes(lunch.get("end_minutes"), False)
+        if end is None:
+            end = _as_minutes(lunch.get("end"), False)
+    else:
+        if not section.get("lunch_enabled", False):
+            return None
+        start = _as_minutes(section.get("lunch_start_minutes"), False)
+        if start is None:
+            start = _as_minutes(section.get("lunch_start"), False)
+        end = _as_minutes(section.get("lunch_end_minutes"), False)
+        if end is None:
+            end = _as_minutes(section.get("lunch_end"), False)
+
+    if start is None or end is None:
+        return None
+
+    if end <= start:
+        return None
+
+    return start, end
 
 
 def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
@@ -19,28 +115,29 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
          "message": str | None,
          "sessions": [
              {"subject_id", "session_type", "is_scheduled": True,
-              "day_of_week", "start_hour", "end_hour", "room_id", "faculty_id"},
+              "day_of_week", "start_time", "end_time", "room_id", "faculty_id"},
              {"subject_id", "session_type", "is_scheduled": False, "reason": str},
              ...
          ]}
     """
     existing_sessions = existing_sessions or []
     DAYS = section["preferred_days"]
-    START_HOUR = section["preferred_start_hour"]
-    END_HOUR = section["preferred_end_hour"]
+    START_MIN, END_MIN = _read_window(section)
+    BREAK = _read_break(section)
 
-    # Break each subject into sessions (lecture / lab)
+    # Break each subject into sessions (lecture / lab). Durations are minutes.
     sessions_meta = []
     for subj in subjects:
         if subj["lecture_hours"] > 0:
             sessions_meta.append({
                 "subject_id": subj["id"], "session_type": "lecture",
-                "duration": subj["lecture_hours"], "room_type": "lecture",
+                "duration": hours_to_minutes(subj["lecture_hours"]), "room_type": "lecture",
             })
         if subj["lab_hours"] > 0:
             sessions_meta.append({
                 "subject_id": subj["id"], "session_type": "laboratory",
-                "duration": subj["lab_hours"], "room_type": subj["lab_room_type"],
+                "duration": hours_to_minutes(subj["lab_hours"]),
+                "room_type": subj["lab_room_type"],
             })
 
     if not sessions_meta:
@@ -65,7 +162,14 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
         rooms_of_type = [r for r in rooms if r["type"] == room_type]
         eligible_rooms = [r["id"] for r in rooms_of_type if r["capacity"] >= student_count]
         eligible_faculty = [f["id"] for f in faculty if subject_id in f["can_teach_subject_ids"]]
-        max_start = END_HOUR - duration
+        max_start = END_MIN - duration
+
+        # Every legal start: inside the section window, on the 30-minute grid,
+        # and clear of the lunch break. The break is applied here, to the start
+        # domain, so it holds as a hard constraint without extra booleans.
+        starts = allowed_starts(START_MIN, max_start, SLOT_MINUTES)
+        if BREAK:
+            starts = exclude_break(starts, duration, BREAK[0], BREAK[1])
 
         if not rooms_of_type:
             unschedulable[idx] = (f"No room of type '{room_type}' exists for this "
@@ -77,12 +181,20 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
                                    f"{student_count} students.")
         elif not eligible_faculty:
             unschedulable[idx] = "No qualified faculty available to teach this subject."
-        elif max_start < START_HOUR:
-            unschedulable[idx] = (f"Session needs {duration}h but the section's preferred "
-                                   f"window ({START_HOUR}:00-{END_HOUR}:00) is too short.")
+        elif max_start < START_MIN:
+            unschedulable[idx] = (f"Session needs {duration // 60}h but the section's preferred "
+                                   f"window ({minutes_to_hhmm(START_MIN)}-{minutes_to_hhmm(END_MIN)}) "
+                                   f"is too short.")
+        elif not starts:
+            unschedulable[idx] = (f"Session needs {duration // 60}h and the section's preferred "
+                                   f"window ({minutes_to_hhmm(START_MIN)}-{minutes_to_hhmm(END_MIN)}) "
+                                   f"leaves no room outside the "
+                                   f"{minutes_to_hhmm(BREAK[0])}-{minutes_to_hhmm(BREAK[1])} break.")
         else:
             day_var = model.NewIntVarFromDomain(cp_model.Domain.FromValues(DAYS), f"s{idx}_day")
-            start_var = model.NewIntVar(START_HOUR, max_start, f"s{idx}_start")
+            start_var = model.NewIntVarFromDomain(
+                cp_model.Domain.FromValues(starts), f"s{idx}_start"
+            )
             room_var = model.NewIntVarFromDomain(
                 cp_model.Domain.FromValues([rooms.index(r) for r in rooms if r["id"] in eligible_rooms]),
                 f"s{idx}_room",
@@ -119,12 +231,23 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
             # declared window, so a window ends the session rather than merely
             # banning the day.
             if f.get("available_windows"):
-                allowed_slots = [
-                    [w["day_of_week"], start]
-                    for w in f["available_windows"]
-                    if w["day_of_week"] in DAYS
-                    for start in range(w["start_hour"], w["end_hour"] - v["duration"] + 1)
-                ]
+                allowed_slots = []
+                for w in f["available_windows"]:
+                    if w["day_of_week"] not in DAYS:
+                        continue
+                    w_start = _as_minutes(w.get("start_minutes"), False)
+                    if w_start is None:
+                        w_start = _as_minutes(w.get("start_hour"), True)
+                    w_end = _as_minutes(w.get("end_minutes"), False)
+                    if w_end is None:
+                        w_end = _as_minutes(w.get("end_hour"), True)
+                    for start in allowed_starts(w_start, w_end - v["duration"], SLOT_MINUTES):
+                        # A declared availability window is where the session may
+                        # sit; the break is still a hard constraint inside it, so
+                        # the session is never pushed into the lunch hour.
+                        if BREAK and not exclude_break([start], v["duration"], BREAK[0], BREAK[1]):
+                            continue
+                        allowed_slots.append([w["day_of_week"], start])
                 if allowed_slots:
                     model.AddAllowedAssignments(
                         [v["day"], v["start"]], allowed_slots
@@ -136,7 +259,9 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
     for f_idx, f in enumerate(faculty):
         existing_load = f.get("existing_load_hours", 0)
         max_load = f.get("max_teaching_load", 24)
-        remaining_capacity = max(0, int(round(max_load - existing_load)))
+        # `existing_load_hours` is hours, so this conversion is correct; the
+        # previous code compared it against hour-durations and is now minutes.
+        remaining_capacity = max(0, hours_to_minutes(max_load - existing_load))
 
         weighted_terms = []
         for idx, v in session_vars.items():
@@ -188,8 +313,19 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
     # --- Cross-schedule conflicts: only when THIS session is scheduled ---
     for ext in existing_sessions:
         ext_day = ext["day_of_week"]
-        ext_start = ext["start_hour"]
-        ext_end = ext["end_hour"]
+        ext_start = _as_minutes(ext.get("start_minutes"), False)
+        if ext_start is None:
+            ext_start = _as_minutes(ext.get("start_hour"), True)
+        ext_end = _as_minutes(ext.get("end_minutes"), False)
+        if ext_end is None:
+            ext_end = _as_minutes(ext.get("end_hour"), True)
+
+        # An existing session with no usable time cannot be reasoned about. Skip
+        # it rather than building a constraint with `None`, which CP-SAT rejects
+        # with a TypeError and which would fail the whole generation request over
+        # one malformed row.
+        if ext_start is None or ext_end is None:
+            continue
         ext_faculty_id = ext.get("faculty_id")
         ext_room_id = ext.get("room_id")
 
@@ -269,8 +405,14 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
                     "session_type": v["meta"]["session_type"],
                     "is_scheduled": True,
                     "day_of_week": day,
-                    "start_hour": start,
-                    "end_hour": end,
+                    # The authoritative form is wall-clock HH:MM, so Laravel can
+                    # store it verbatim and a half-hour start survives the trip.
+                    "start_time": minutes_to_hhmm(start),
+                    "end_time": minutes_to_hhmm(end),
+                    # start_hour/end_hour stay for any older reader; they are
+                    # whole-hour projections and lose the half hour by design.
+                    "start_hour": start // 60,
+                    "end_hour": -(-end // 60),
                     "room_id": room_id,
                     "faculty_id": faculty_id,
                 })

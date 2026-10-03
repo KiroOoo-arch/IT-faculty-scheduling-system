@@ -97,6 +97,66 @@ class ReportController extends Controller
     }
 
     /**
+     * Faculty Schedule — every PUBLISHED session taught by one faculty member,
+     * with the section, room and times needed to print a personal schedule.
+     *
+     * GET /api/reports/faculty/{faculty}/schedule
+     *
+     * Only published schedules are included: a draft is still editable and an
+     * approved one is not yet the timetable students and faculty are given, so
+     * handing either out would distribute something that can still change.
+     */
+    public function facultySchedule(Faculty $faculty)
+    {
+        $sessions = ScheduleSession::with(['subject', 'room', 'schedule.section'])
+            ->where('faculty_id', $faculty->id)
+            ->whereHas('schedule', fn ($q) => $q->where('status', 'published'))
+            ->get()
+            ->map(function ($session) {
+                $section = $session->schedule->section ?? null;
+
+                return [
+                    'id' => $session->id,
+                    'day_of_week' => $session->day_of_week,
+                    'start_time' => substr($session->start_time, 0, 5),
+                    'end_time' => substr($session->end_time, 0, 5),
+                    'session_type' => $session->session_type,
+                    'subject_code' => $session->subject->code ?? '—',
+                    'subject_title' => $session->subject->title ?? '',
+                    'room' => $session->room->name ?? '—',
+                    'section' => $section->name ?? '—',
+                    'section_year_level' => $section->year_level ?? null,
+                    'semester_name' => $section->semester_name ?? null,
+                    'academic_year' => $section->academic_year ?? null,
+                    'hours' => round((
+                        (strtotime($session->end_time) - strtotime($session->start_time)) / 3600
+                    ), 1),
+                ];
+            })
+            // Sort by day then start, so the printed sheet reads like a week.
+            ->sortBy([['day_of_week', 'asc'], ['start_time', 'asc']])
+            ->values();
+
+        $perDay = [];
+        foreach ($sessions as $s) {
+            $perDay[$s['day_of_week']] = ($perDay[$s['day_of_week']] ?? 0) + $s['hours'];
+        }
+
+        return response()->json([
+            'faculty' => [
+                'id' => $faculty->id,
+                'name' => $faculty->display_name,
+                'faculty_type' => $faculty->faculty_type,
+                'max_teaching_load' => $faculty->max_teaching_load,
+            ],
+            'sessions' => $sessions,
+            'total_hours' => round($sessions->sum('hours'), 1),
+            'hours_per_day' => $perDay,
+            'distinct_sections' => $sessions->pluck('section')->unique()->values(),
+        ]);
+    }
+
+    /**
      * Section Summary — total sessions, hours, and faculty count per section.
      */
     public function sectionSummary()
@@ -138,6 +198,7 @@ class ReportController extends Controller
  *
  * Provides reporting endpoints:
  * - facultyWorkload(): calculate published workload per faculty
+ * - facultySchedule(): one faculty member's published sessions, for printing
  * - roomUtilization(): calculate weekly booked hours per room
  * - conflicts(): list schedule generation logs and unscheduled session reasons
  */

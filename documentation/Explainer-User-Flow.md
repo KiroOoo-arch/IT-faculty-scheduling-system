@@ -150,6 +150,11 @@ The publish-conflict gate at step 8. It compares the schedule against **other** 
 **"What happens if an edit breaks a rule?"**
 The edit is rejected server-side with a 422, and the editor shows the **specific** reason — for example that a room is the wrong type, or that the faculty member is not available on that day within their declared window. It lists every conflict it finds, not just the first.
 
+**"What happens if the admin deletes a room that's used in a published schedule?"**
+The delete is refused first, with the exact cost. The API answers **409** with the number of sessions that would be destroyed *and* how many of those are in the published timetable, plus the published schedule ids — and nothing is mutated. The client then shows a **second** confirmation quoting that message, so the admin is agreeing to a specific, stated loss rather than a generic "are you sure?". If they decline, no request is sent at all; if they accept, it retries with `?force=1` and the delete proceeds.
+
+The point is not to forbid the operation — master data genuinely changes — it is that destroying a live timetable must be a **deliberate act, not a side effect** of tidying up records. Be precise about what confirming costs, though: the room and every session referencing it are removed, and the affected published schedule **keeps its published status** while quietly losing rows. There is no audit row and no automatic downgrade, so recovery is manual — unpublish, fix the data, regenerate. Full sequence in `System-Architecture.md` § 2.10.
+
 **"How does the admin fix a published schedule that needs a change?"**
 Unpublish it — step 11 — which returns it to draft and clears the approval record. Then edit, approve and publish again. Requiring that two-step is intentional: it stops silent changes to a schedule that has already been distributed.
 
@@ -174,6 +179,8 @@ The admin sets it on the faculty record at step 3. It is a **weekly** cap on tot
 5. **One faculty type is unreachable.** The figure says faculty records carry an employment type, which is true (`full_time`, `part_time`, `evening` in the database) — but the API and the UI only accept the first two. So `evening` cannot currently be set through the system.
 
 6. **No faculty or student account exists, and none is planned in the current scope.** If a panel asks for a faculty self-service portal, treat it as future work rather than something the current design supports.
+
+7. **The figure does not show master-data deletion, and deleting is not a step in the flow.** Deleting a faculty, subject, room or section record is an *interruption* rather than a stage of the journey — that is why it is absent from the diagram. But the guard around it is real and worth knowing: if a published schedule depends on the record, the API answers 409 with the exact scope and the client asks a second time before proceeding with `?force=1`. Do not let the figure's silence imply the operation is unprotected.
 
 ---
 

@@ -377,7 +377,7 @@ erDiagram
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
 | Testing | ✅ Complete | Backend: 90 feature tests (380 assertions) · AI engine: 46 solver unit tests · frontend typecheck + production build |
-| Published-Reference Guard | ✅ Complete | Deleting faculty/subject/room/section used by a published schedule returns 409; `?force=1` overrides |
+| Published-reference delete guard | ✅ Complete | 409 with the exact scope before deleting master data a published schedule depends on; explicit `?force=1` to proceed |
 
 ---
 
@@ -386,9 +386,10 @@ erDiagram
 1. **Mathematical proof, not ML** — The AI uses Google OR-Tools CP-SAT constraint programming to mathematically guarantee valid schedules
 2. **Best-effort scheduling** — If all sessions can't fit, the system places what it can and explains why each remaining session failed
 3. **Room capacity enforcement** — Sections are never assigned to overcrowded rooms
-4. **Cascade data integrity** — Deleting faculty/rooms/schedules auto-cleans their sessions
+4. **Cascade data integrity, without silent loss** — Deleting a faculty/room/subject record removes the sessions that reference it, but if a *published* schedule still depends on it the delete is refused with the exact scope first
 5. **Real-time conflict detection** — Prevents issues during manual edits
 6. **Publish conflict gate** — Prevents cross-section double-booking
+7. **Published-reference guard** — A four-layer protection model (solver constraints → manual-edit validation → publish gate → delete guard), where the fourth layer protects the timetable that has already been distributed rather than one still being built
 
 ---
 
@@ -530,6 +531,8 @@ This prevents "overbooking" faculty/rooms across different sections.
 
 This prevents orphaned data and maintains referential integrity automatically.
 
+**One deliberate exception, and it is the interesting part of this answer:** if the record is still referenced by a **published** schedule, the delete is refused with **409** and the exact scope of the loss before anything changes. Only an explicit `?force=1` proceeds, and on that path the affected published schedule keeps its `published` status while losing sessions — a known, bounded gap. See Q26 for the full behaviour. The cascade handles integrity; the guard handles *intent*.
+
 ---
 
 **Q10: Why use pivot tables (faculty_subjects, section_subjects)?**
@@ -552,20 +555,23 @@ Without pivot tables, we'd need to duplicate data or use denormalized structures
 
 **Q11: How does the system authenticate users?**
 
-**A:** Laravel Sanctum provides:
-1. **Token-based authentication**: Users login → receive bearer token
-2. **Middleware protection**: API routes require valid token
-3. **Admin-only access control**: login rejects non-admin roles; all management routes behind admin middleware
-4. **Session management**: Tokens can be revoked on logout
+**A:** Laravel Sanctum, in **API-token mode** (the `HasApiTokens` trait on the `User` model), not its cookie/CSRF mode:
+1. **Token-based authentication**: login returns a bearer token; Sanctum stores only a **SHA-256 hash** of it in `personal_access_tokens`, so the plaintext is shown once and can never be recovered — only compared
+2. **Middleware protection**: `auth:sanctum` resolves the bearer token; missing or invalid → **401**, and the controller is never constructed
+3. **Admin-only access control**: login rejects non-admin roles outright, *and* every management route sits behind the `EnsureUserIsAdmin` middleware → **403**
+4. **Session management**: logout deletes only the token used for that request
 
 Example flow:
 ```
 POST /api/login {email, password}
-→ Returns {token, user}
+→ 200 {token, user}          one token per account: login first deletes all previous tokens
+→ 422 for wrong credentials OR a non-admin role (a ValidationException, not a 401)
 
 GET /api/faculties (Header: Authorization: Bearer {token})
-→ Returns faculty list
+→ 200 faculty list            no token → 401; valid token but role != admin → 403
 ```
+
+**Three details worth volunteering:** login is the **only public route** — everything else is inside `auth:sanctum`; signing in on a second browser invalidates the first (deliberate for a single-admin system); and tokens do **not** expire on their own, because `config/sanctum.php` leaves `expiration` unset — a token lives until logout or until the user is deleted.
 
 ---
 
@@ -623,7 +629,9 @@ For university scale, architectural changes would be needed, but the core constr
 1. **Ad-hoc testing**: Throughout development
 2. **AI engine unit tests**: 46 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 46 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
-4. **Automated backend suite**: 90 Laravel feature tests (380 assertions) — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
+4. **Automated backend suite**: 90 Laravel feature tests (380 assertions) — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
+
+> Run them with `cd backend && php artisan test` (90 passed) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (46 passed). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
 
 Test coverage:
 - Authentication & RBAC ✅
@@ -641,7 +649,8 @@ Test coverage:
 **A:**
 - **Backend (Laravel)**: PHPUnit (built-in)
 - **Frontend (React)**: TypeScript typecheck + production build
-- **AI Engine**: Python standard-library `unittest` — 46 tests running the CP-SAT solver directly with controlled fixtures (no database needed)
+- **AI Engine**: Python standard-library `unittest` — 46 tests running the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests`; `pytest` is not installed
+- **Frontend**: no automated test suite — TypeScript typecheck and production build only, which is an honest gap to state if asked
 - **Integration**: Postman/curl for API testing
 
 We focused on practical testing that verifies real functionality rather than achieving 100% code coverage.
@@ -773,9 +782,30 @@ Status returned to user with:
 
 **Consistency mechanisms:**
 1. Foreign key constraints at database level
-2. Cascade delete rules
+2. Explicit `deleting` model hooks that clear referencing sessions (chosen over RESTRICT, so a legitimate delete does not surface as a 500)
 3. Laravel validation before writes
 4. FastAPI reads only (doesn't write schedule data directly)
+5. The published-reference guard, which intercepts a delete *before* those hooks run
+
+---
+
+**Q26: What happens if an admin deletes a room that's used in a published schedule?**
+
+**A:** They get a **409**, the record is not touched, and the admin has to decide twice.
+
+1. `RoomController::destroy()` counts every session referencing the room and how many of those sit in a **published** schedule.
+2. If any published schedule depends on it (and no force flag is present), `GuardsPublishedReferences` returns 409 with a message that states the exact scope — *"still used by published schedules #69, #102. Deleting it would remove 31 sessions in total, 3 of them from the published timetable."* — plus `requires_confirmation`, `published_schedule_ids`, `sessions_at_risk` and `published_sessions_at_risk`. **Nothing is mutated**; the record is still readable immediately afterwards.
+3. The client shows a **second** confirmation quoting that message verbatim. If the admin declines, no request is sent at all. If they accept, it retries with `?force=1` and the delete proceeds.
+
+The counts are deliberately split because they differ by an order of magnitude — 31 sessions total, only 3 of them published — and reporting the published subset alone would understate the loss.
+
+**Be precise about what confirming costs.** On `?force=1` the room and *every* session referencing it are removed, drafts, archives and published alike, and three things do **not** happen: the affected published schedule **keeps its `published` status** (nothing downgrades or flags it), **no audit row is written**, and there is no automatic repair. Recovery is manual — unpublish, correct the master data, regenerate. This is the one place where the system can leave a published schedule incomplete, so present it as a bounded, known gap rather than a solved problem.
+
+**Q27: Why does the system allow the delete at all instead of forbidding it?**
+
+**A:** Because master data genuinely changes — a laboratory gets decommissioned, a subject is retired, a faculty member leaves. Forbidding the delete would make the system unusable exactly when it needs to be maintained.
+
+So the guard is an **intention checkpoint, not a veto**. Its purpose is that destroying a live timetable must be a *deliberate act* rather than a side effect of tidying up records: the admin sees the exact scope, confirms a second time, and has to say `force` explicitly. Note also that `?force=1` is a plain request parameter rather than a server-issued acknowledgement token, so the server has no memory that this particular warning was shown — which is consistent with the intent (enforcing deliberateness, not reversibility), but is worth stating honestly if asked to tighten it.
 
 ---
 
@@ -787,7 +817,8 @@ Status returned to user with:
 3. **Constraint coverage** — 8 hard constraints cover real-world requirements
 4. **Best-effort approach** — Maximizes utility when perfect solution impossible
 5. **Conflict prevention** — Dual mechanism (solver + real-time detection)
-6. **Production-ready** — Authentication, RBAC, error handling, testing
+6. **Four protection layers** — Solver constraints, manual-edit validation, the publish conflict gate, and the published-reference delete guard
+7. **Production-ready** — Authentication, RBAC, error handling, testing
 
 ### Technical Contributions
 1. Integration of constraint programming with web application

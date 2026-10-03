@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\FormatsTimes;
 use App\Models\ScheduleSession;
 use App\Models\Faculty;
 use App\Models\Room;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 
 class ScheduleSessionController extends Controller
@@ -64,6 +65,7 @@ class ScheduleSessionController extends Controller
     /**
      * Check the proposed session state against everything it must not collide with:
      * - the room's type must match what the subject needs (lecture vs lab)
+     * - the midday break the solver keeps clear
      * - the faculty member's declared availability
      * - other sessions in the SAME schedule (same section can't be in 2 places)
      * - other sessions for the SAME faculty/room across approved/published schedules
@@ -80,12 +82,32 @@ class ScheduleSessionController extends Controller
             $conflicts[] = "Room '{$room->name}' is type '{$room->type}', but this session needs '{$neededType}'.";
         }
 
+        // Zero-padded HH:MM for every comparison below. These sort the same
+        // lexicographically as chronologically, so plain string comparison is
+        // safe here. Hoisted out of the faculty block so the midday-break check
+        // below can use them too.
+        $pStart = substr($proposed['start_time'], 0, 5);
+        $pEnd   = substr($proposed['end_time'], 0, 5);
+
+        // Midday break — the same hard constraint the solver enforces at
+        // generation time. Without this, a session could be dragged onto
+        // 12:00-1:00 PM by hand even though the generator would never place one
+        // there, leaving the two paths disagreeing about the same rule.
+        $lunch = Setting::lunch();
+        if ($lunch['enabled']) {
+            $bStart = substr($lunch['start'], 0, 5);
+            $bEnd   = substr($lunch['end'], 0, 5);
+
+            if ($bEnd > $bStart && $pStart < $bEnd && $bStart < $pEnd) {
+                $conflicts[] = 'Overlaps the ' . $this->twelveHour($bStart)
+                    . '–' . $this->twelveHour($bEnd)
+                    . ' break, which is kept clear for students.';
+            }
+        }
+
         // Faculty availability check — only enforce if they HAVE declared availability
         $faculty = Faculty::with('availabilities')->find($proposed['faculty_id']);
         if ($faculty && $faculty->availabilities->isNotEmpty()) {
-            $pStart = substr($proposed['start_time'], 0, 5);
-            $pEnd   = substr($proposed['end_time'], 0, 5);
-
             $available = $faculty->availabilities->contains(function ($a) use ($proposed, $pStart, $pEnd) {
                 $aStart = substr($a->start_time, 0, 5);
                 $aEnd   = substr($a->end_time, 0, 5);
@@ -155,6 +177,7 @@ class ScheduleSessionController extends Controller
  *
  * It validates input, checks schedule status, and prevents conflicts:
  * - room type mismatch
+ * - the midday break
  * - faculty availability
  * - overlapping sessions in the same schedule
  * - faculty/room double-booking in other approved/published schedules

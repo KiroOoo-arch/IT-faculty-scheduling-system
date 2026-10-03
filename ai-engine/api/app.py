@@ -14,6 +14,7 @@ import psycopg2.extras
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 from scheduler import generate_schedule
+from time_slots import hhmm_to_minutes
 
 # Load .env from the ai-engine root, regardless of CWD
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -33,15 +34,16 @@ def get_connection():
     return psycopg2.connect(**DB_CONFIG, cursor_factory=psycopg2.extras.RealDictCursor)
 
 
-def parse_hour(time_value):
-    """Safely extract hour from time — handles both datetime.time and string formats."""
-    if time_value is None:
-        return 0
-    if hasattr(time_value, 'hour'):
-        return time_value.hour
-    s = str(time_value).strip()
-    parts = s.split(":")
-    return int(parts[0])
+def parse_minutes(time_value):
+    """
+    Minutes since midnight from a TIME column or a string.
+
+    This replaced `parse_hour()`, which returned `int(value.split(":")[0])` and so
+    silently dropped the minutes: a section window of 07:30-20:30 became
+    07:00-20:00 before the solver saw it. Keeping the minutes is what makes a
+    7:30 AM start and an 8:30 PM end possible at all.
+    """
+    return hhmm_to_minutes(time_value)
 
 
 def parse_preferred_days(days_value):
@@ -56,6 +58,33 @@ def parse_preferred_days(days_value):
         except json.JSONDecodeError:
             return [1, 2, 3, 4, 5]
     return [1, 2, 3, 4, 5]
+
+
+def read_lunch_settings(cur):
+    """
+    The midday break from the `settings` table, as a dict the solver understands.
+
+    Missing rows fall back to the documented 12:00-1:00 PM break. A break that
+    fails to parse is reported as disabled rather than raising, so a bad settings
+    row can never make every section unschedulable.
+    """
+    defaults = {"enabled": True, "start": "12:00", "end": "13:00"}
+    try:
+        cur.execute("SELECT key, value FROM settings WHERE key IN ('lunch_start', 'lunch_end', 'lunch_enabled')")
+        stored = {row["key"]: row["value"] for row in cur.fetchall()}
+    except psycopg2.Error:
+        # The settings table may not exist yet (pre-migration database); the
+        # default break is still the intended behaviour.
+        return defaults
+
+    start = stored.get("lunch_start", defaults["start"])
+    end = stored.get("lunch_end", defaults["end"])
+    enabled = str(stored.get("lunch_enabled", "true")).strip().lower() not in ("false", "0", "no", "off", "")
+
+    if hhmm_to_minutes(end) <= hhmm_to_minutes(start):
+        return {"enabled": False, "start": start, "end": end}
+
+    return {"enabled": enabled, "start": start, "end": end}
 
 
 @app.get("/health")
@@ -88,9 +117,12 @@ def generate_schedule_for_section(section_id: int):
             "id": section_row["id"],
             "name": section_row["name"],
             "preferred_days": parse_preferred_days(section_row["preferred_days"]),
-            "preferred_start_hour": parse_hour(section_row["preferred_start_time"]),
-            "preferred_end_hour": parse_hour(section_row["preferred_end_time"]),
+            "preferred_start_minutes": parse_minutes(section_row["preferred_start_time"]),
+            "preferred_end_minutes": parse_minutes(section_row["preferred_end_time"]),
             "student_count": section_row.get("student_count", 30),
+            # A fixed midday break keeps 12:00-1:00 PM clear. Read per request so
+            # changing it in Settings takes effect on the next generation.
+            "lunch": read_lunch_settings(cur),
         }
 
         # --- Subjects assigned to this section ---
@@ -147,14 +179,14 @@ def generate_schedule_for_section(section_id: int):
             for row in availability_rows:
                 if row["start_time"] is None or row["end_time"] is None:
                     continue
-                window_start = parse_hour(row["start_time"])
-                window_end = parse_hour(row["end_time"])
+                window_start = parse_minutes(row["start_time"])
+                window_end = parse_minutes(row["end_time"])
                 if window_end <= window_start:
                     continue
                 available_windows.append({
                     "day_of_week": row["day_of_week"],
-                    "start_hour": window_start,
-                    "end_hour": window_end,
+                    "start_minutes": window_start,
+                    "end_minutes": window_end,
                 })
 
             # Only a faculty with no declared availability at all falls back to
@@ -220,8 +252,8 @@ def generate_schedule_for_section(section_id: int):
         cur.execute(
             """
             SELECT ss.day_of_week,
-                   EXTRACT(HOUR FROM ss.start_time)::int AS start_hour,
-                   EXTRACT(HOUR FROM ss.end_time)::int AS end_hour,
+                   to_char(ss.start_time, 'HH24:MI') AS start_time,
+                   to_char(ss.end_time, 'HH24:MI') AS end_time,
                    ss.faculty_id, ss.room_id
             FROM schedule_sessions ss
             JOIN schedules sch ON sch.id = ss.schedule_id
@@ -230,7 +262,19 @@ def generate_schedule_for_section(section_id: int):
             """,
             (section_id,),
         )
-        existing_sessions = [dict(row) for row in cur.fetchall()]
+        # Map the columns onto the solver's contract here rather than passing the
+        # raw rows through: the query returns wall-clock strings, while the solver
+        # needs `start_minutes`/`end_minutes`. Passing the rows verbatim silently
+        # produced `None` times, which CP-SAT rejects with a TypeError.
+        existing_sessions = []
+        for row in cur.fetchall():
+            existing_sessions.append({
+                "day_of_week": row["day_of_week"],
+                "start_minutes": parse_minutes(row["start_time"]),
+                "end_minutes": parse_minutes(row["end_time"]),
+                "faculty_id": row["faculty_id"],
+                "room_id": row["room_id"],
+            })
 
         cur.close()
         conn.close()

@@ -130,8 +130,12 @@ class ScheduleController extends Controller
                 'room_id' => $session['room_id'],
                 'session_type' => $session['session_type'],
                 'day_of_week' => $session['day_of_week'],
-                'start_time' => sprintf('%02d:00', $session['start_hour']),
-                'end_time' => sprintf('%02d:00', $session['end_hour']),
+                // The engine returns wall-clock HH:MM, which is the only form
+                // that preserves a half-hour start such as 07:30. The old
+                // sprintf('%02d:00', ...) rebuilt the time from whole hours and
+                // would have rounded a 7:30 AM session to 7:00 AM.
+                'start_time' => $session['start_time'] ?? sprintf('%02d:00', $session['start_hour']),
+                'end_time' => $session['end_time'] ?? sprintf('%02d:00', $session['end_hour']),
             ]);
         }
 
