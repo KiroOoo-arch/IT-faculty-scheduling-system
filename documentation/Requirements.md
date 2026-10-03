@@ -69,8 +69,9 @@
 | AI Schedule Generation | ✅ OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE |
 | Subject–Section Year/Semester Validation | ✅ Mismatched assignments rejected with 422; generation blocked (AI engine never called) |
 | Subject Lab Consistency Validation | ✅ Invalid lab_hours/lab_room_type combinations rejected with 422 on create and update |
-| AI Engine Unit Tests | ✅ 44 unit tests directly exercising the CP-SAT solver (`generate_schedule()`) via stdlib unittest — 44 tests OK, 0 failed, 0 skipped, 0 warnings/errors |
+| AI Engine Unit Tests | ✅ 46 unit tests directly exercising the CP-SAT solver (`generate_schedule()`) via stdlib unittest — 46 tests OK, 0 failed, 0 skipped, 0 warnings/errors |
 | Manual Edit Conflict Check | ✅ Real-time validation |
+| Published-Reference Delete Guard | ✅ Deleting faculty/subject/room/section still used by a published schedule returns HTTP 409; `?force=1` overrides after confirmation |
 | Schedule Approval Workflow | ✅ Draft → Approved → Published |
 | Unpublish Schedule | ✅ Published → Draft reversion |
 | Reports Dashboard | ✅ Faculty Load, Room Usage, Sections, Schedule Status, Conflicts |
@@ -106,10 +107,10 @@
 
 ## Notes
 
-This document reflects the current state of the system as of September 2026. Final regression verification (September 16, 2026): backend 43 tests passed (192 assertions), AI scheduler 44 unit tests passed (0 failed/skipped/warnings), frontend production build passed, and full live lifecycle verified (generate → review/edit → approve → publish → print → unpublish).
+This document reflects the current state of the system as of September 2026. Final regression verification (September 16, 2026): backend 90 tests passed (380 assertions), AI scheduler 46 unit tests passed (0 failed/skipped/warnings), frontend production build passed, and full live lifecycle verified (generate → review/edit → approve → publish → print → unpublish).
 
-**September 27, 2026 — defects found by live API verification and fixed:** a fully-placed `FEASIBLE` solver result is now accepted (it was previously reported to the Admin as "No feasible schedule found."), and an unreachable AI engine now answers `502` while still writing a `failure` generation-log row (it previously returned a raw `500` and logged nothing). Regression tests were added; the backend suite is now **43 tests / 192 assertions**, all passing.
+**September 27, 2026 — defects found by live API verification and fixed:** a fully-placed `FEASIBLE` solver result is now accepted (it was previously reported to the Admin as "No feasible schedule found."), and an unreachable AI engine now answers `502` while still writing a `failure` generation-log row (it previously returned a raw `500` and logged nothing). Regression tests were added; the backend suite is now **90 tests / 380 assertions**, all passing.
 
 **Design decision:** Faculty login accounts were removed at the instructor's direction. Faculty remain as data records (name, availability, qualifications, workload, employment type, subject assignments) used by the scheduling engine; only the Admin/Department Head authenticates. Published schedules are distributed as printed/PDF hard copies.
 
-**Last Updated:** September 16, 2026 (documentation synchronization)
+**Last Updated:** October 2, 2026 (documentation synchronization)

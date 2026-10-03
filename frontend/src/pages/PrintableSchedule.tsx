@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../context/AuthContext'
+import { formatTime12h, formatTimeRange } from '../utils/time'
 
 type Session = {
   id: number
@@ -20,17 +21,28 @@ type Schedule = {
   sessions?: Session[]
 }
 
-const DAYS = [
-  { val: 1, label: 'Monday' }, { val: 2, label: 'Tuesday' }, { val: 3, label: 'Wednesday' },
-  { val: 4, label: 'Thursday' }, { val: 5, label: 'Friday' }, { val: 6, label: 'Saturday' },
-]
+const DAY_LABELS: Record<number, string> = {
+  1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday',
+  5: 'Friday', 6: 'Saturday', 7: 'Sunday',
+}
 
-const TIME_SLOTS = [
+/** The normal teaching week. Extra days in the data get their own column. */
+const BASE_DAYS = [1, 2, 3, 4, 5, 6].map((val) => ({ val, label: DAY_LABELS[val] }))
+
+/** The usual teaching hours. Extra hours in the data get their own row. */
+const BASE_SLOTS = [
   '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
   '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00',
 ]
 
-function fmt(t: string) { return t?.substring(0, 5) ?? '' }
+/**
+ * The hour a session belongs to: `09:30:00` → `09:00`. Sessions are bucketed
+ * this way rather than matched exactly, so a manually edited start on the half
+ * hour still appears in the grid (it shows its true range inside the cell).
+ */
+function hourBucket(time: string): string {
+  return `${time.substring(0, 2)}:00`
+}
 
 export default function PrintableSchedule() {
   const { token } = useAuth()
@@ -58,13 +70,32 @@ export default function PrintableSchedule() {
     return <div className="p-8 text-gray-500">Loading schedule...</div>
   }
 
-  // Group sessions into day/time cells. Multiple sessions may share a slot.
+  const sessions = schedule.sessions ?? []
+
+  // Days, hours and cells are all derived from the sessions themselves, so a
+  // session can never fall outside the printed grid: a Sunday class, an early
+  // morning or a late evening slot gets its own column or row instead of
+  // silently disappearing from the handout.
   const grid = new Map<string, Session[]>()
-  for (const s of schedule.sessions ?? []) {
-    const key = `${s.day_of_week}-${s.start_time}`
+  for (const s of sessions) {
+    const key = `${s.day_of_week}-${hourBucket(s.start_time)}`
     if (!grid.has(key)) grid.set(key, [])
     grid.get(key)!.push(s)
   }
+
+  const days = [...BASE_DAYS]
+  for (const val of new Set(sessions.map((s) => s.day_of_week))) {
+    if (!days.some((d) => d.val === val)) {
+      days.push({ val, label: DAY_LABELS[val] ?? `Day ${val}` })
+    }
+  }
+  days.sort((a, b) => a.val - b.val)
+
+  const slots = [...BASE_SLOTS]
+  for (const slot of new Set(sessions.map((s) => hourBucket(s.start_time)))) {
+    if (!slots.includes(slot)) slots.push(slot)
+  }
+  slots.sort()
 
   const section = schedule.section
 
@@ -99,20 +130,19 @@ export default function PrintableSchedule() {
         <thead>
           <tr>
             <th className="border border-gray-400 bg-gray-100 p-1 w-20">Time</th>
-            {DAYS.map((d) => (
+            {days.map((d) => (
               <th key={d.val} className="border border-gray-400 bg-gray-100 p-1">{d.label}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {TIME_SLOTS.map((slot) => {
-            const hour = slot + ':00'
-            const rowHasContent = DAYS.some((d) => grid.has(`${d.val}-${hour}`))
+          {slots.map((slot) => {
+            const rowHasContent = days.some((d) => grid.has(`${d.val}-${slot}`))
             return (
               <tr key={slot} className={rowHasContent ? '' : 'empty-row'}>
-                <td className="border border-gray-400 p-1 text-center font-medium">{slot}</td>
-                {DAYS.map((d) => {
-                  const cell = grid.get(`${d.val}-${hour}`) ?? []
+                <td className="border border-gray-400 p-1 text-center font-medium">{formatTime12h(slot)}</td>
+                {days.map((d) => {
+                  const cell = grid.get(`${d.val}-${slot}`) ?? []
                   return (
                     <td key={d.val} className="border border-gray-400 p-1 align-top">
                       {cell.map((s) => (
@@ -121,7 +151,7 @@ export default function PrintableSchedule() {
                           <span className="text-gray-600"> ({s.session_type === 'laboratory' ? 'Lab' : 'Lec'})</span>
                           <br />
                           <span>{s.faculty?.name}</span><br />
-                          <span className="text-gray-600">{s.room?.name} · {fmt(s.start_time)}–{fmt(s.end_time)}</span>
+                          <span className="text-gray-600">{s.room?.name} · {formatTimeRange(s.start_time, s.end_time)}</span>
                         </div>
                       ))}
                     </td>

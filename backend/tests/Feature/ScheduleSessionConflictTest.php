@@ -145,11 +145,15 @@ class ScheduleSessionConflictTest extends TestCase
         $this->assertNotEmpty($conflicts);
 
         // The detail must name the faculty and the rejected hours, not just say
-        // "conflict" — this is exactly what the admin needs to read.
+        // "conflict" — this is exactly what the admin needs to read. Hours are
+        // written on a 12-hour clock, because this string is shown verbatim in
+        // the admin UI (and must not carry the stored `:00` seconds).
         $joined = implode(' ', $conflicts);
         $this->assertStringContainsString('Prof. Availability', $joined);
-        $this->assertStringContainsString('18:00', $joined);
-        $this->assertStringContainsString('20:00', $joined);
+        $this->assertStringContainsString('6:00 PM', $joined);
+        $this->assertStringContainsString('8:00 PM', $joined);
+        $this->assertStringNotContainsString('18:00', $joined);
+        $this->assertStringNotContainsString(':00:00', $joined);
     }
 
     #[Test]

@@ -86,6 +86,12 @@ Live API Verification & Scheduling Defect Fixes
 Files: ScheduleController.php, tests/Feature/ScheduleGenerationSectionTest.php
 Test Results: Backend 43 passed (192 assertions); AI engine 44 passed
 
+02/10/26
+Published-Reference Guard & Suite Re-baseline
+- New shared guard (GuardsPublishedReferences) blocks deleting faculty/subject/room/section still used by a published schedule with HTTP 409 {requires_confirmation, published_schedule_ids, sessions_at_risk, published_sessions_at_risk}; retry with ?force=1 to override
+- Wired into the Faculty/Subject/Room/Section destroy() endpoints; the frontend shows a second confirmation and retries with force=1
+- Test Results: Backend 90 passed (380 assertions); AI engine 46 passed, 0 failed, 0 skipped, 0 warnings/errors
+
 Authentication & RBAC       ✅
 CRUD Operations             ✅
 AI Schedule Generation      ✅  (OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE)

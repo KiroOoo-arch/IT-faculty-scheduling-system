@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\FormatsTimes;
 use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use Illuminate\Http\Request;
@@ -16,12 +17,14 @@ use Illuminate\Http\Request;
  * - publish(): publish an approved schedule
  * - unpublish(): revert published schedule to draft
  * - reject(): reject a draft schedule
- * - destroy(): delete draft or archived schedules
+ * - destroy(): delete any unpublished schedule (published must be unpublished first)
  *
  * Also checks for conflicts before publishing and restricts actions to admins.
  */
 class ScheduleApprovalController extends Controller
 {
+    use FormatsTimes;
+
     /**
      * List all schedules with their sessions, for review.
      * GET /api/schedules
@@ -150,16 +153,27 @@ class ScheduleApprovalController extends Controller
     }
 
     /**
-     * Delete a schedule. Admin only. Only drafts and archived can be deleted.
+     * Delete a schedule. Admin only.
      * DELETE /api/schedules/{schedule}
+     *
+     * The one protected state is `published` — the schedule being distributed —
+     * so it must be unpublished first, which keeps taking a live timetable off
+     * the screen an explicit two-step act.
+     *
+     * Every other state (draft, approved, rejected, archived) is a record
+     * nothing is relying on yet, so it is deletable. `approved` matters most in
+     * practice: an approved schedule is visible to publish-time conflict checks
+     * for other sections, so discarding a stale one is how an admin clears a
+     * clash without hand-editing sessions.
      */
     public function destroy(Request $request, Schedule $schedule)
     {
         $this->authorizeAdmin($request);
 
-        if (!in_array($schedule->status, ['draft', 'archived'])) {
+        if ($schedule->status === 'published') {
             return response()->json([
-                'message' => "Only draft or archived schedules can be deleted.",
+                'message' => "Only unpublished schedules can be deleted. "
+                    . "This schedule is currently 'published' — unpublish it first.",
             ], 422);
         }
 
@@ -192,11 +206,13 @@ class ScheduleApprovalController extends Controller
 
                 if ($a->room_id === $b->room_id) {
                     $conflicts[] = "Room '{$b->room->name}' is booked day {$a->day_of_week} "
-                        . "{$a->start_time}–{$a->end_time} (schedule #{$b->schedule_id}, section {$b->schedule->section->name}).";
+                        . "{$this->twelveHourRange($a->start_time, $a->end_time)} "
+                        . "(schedule #{$b->schedule_id}, section {$b->schedule->section->name}).";
                 }
                 if ($a->faculty_id === $b->faculty_id) {
                     $conflicts[] = "Faculty is already teaching day {$a->day_of_week} "
-                        . "{$a->start_time}–{$a->end_time} (schedule #{$b->schedule_id}).";
+                        . "{$this->twelveHourRange($a->start_time, $a->end_time)} "
+                        . "(schedule #{$b->schedule_id}).";
                 }
             }
         }
@@ -222,7 +238,7 @@ class ScheduleApprovalController extends Controller
  * - approve(): approve a draft schedule
  * - publish(): publish an approved schedule
  * - reject(): reject a draft schedule
- * - destroy(): delete draft or archived schedules
+ * - destroy(): delete any unpublished schedule (published must be unpublished first)
  *
  * Also checks for conflicts before publishing and restricts actions to admins.
  */

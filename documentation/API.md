@@ -20,7 +20,7 @@
 | GET | `/api/faculties/{id}` | ✅ Implemented | Get one faculty record with nested data |
 | POST | `/api/faculties` | ✅ Implemented | Create new faculty record (`name` required; no login account) |
 | PUT | `/api/faculties/{id}` | ✅ Implemented | Update faculty record |
-| DELETE | `/api/faculties/{id}` | ✅ Implemented | Delete faculty with cascade cleanup |
+| DELETE | `/api/faculties/{id}` | ✅ Implemented | Delete faculty with cascade cleanup. **409** if a published schedule still uses them; retry with `?force=1` |
 
 ### Subject Management
 
@@ -30,7 +30,7 @@
 | GET | `/api/subjects/{id}` | ✅ Implemented | Get one subject record |
 | POST | `/api/subjects` | ✅ Implemented | Create new subject. Validates lab consistency: `lab_hours > 0` requires `lab_room_type` of `computer_lab`, `science_lab`, or `electronics_lab`; `lab_hours = 0` requires `lab_room_type` null. Violations → HTTP 422 |
 | PUT | `/api/subjects/{id}` | ✅ Implemented | Update subject — same lab consistency validation as create |
-| DELETE | `/api/subjects/{id}` | ✅ Implemented | Delete subject |
+| DELETE | `/api/subjects/{id}` | ✅ Implemented | Delete subject. **409** if a published schedule still uses it; retry with `?force=1` |
 
 ### Room Management
 
@@ -40,7 +40,7 @@
 | GET | `/api/rooms/{id}` | ✅ Implemented | Get one room |
 | POST | `/api/rooms` | ✅ Implemented | Create new room |
 | PUT | `/api/rooms/{id}` | ✅ Implemented | Update room |
-| DELETE | `/api/rooms/{id}` | ✅ Implemented | Delete room with cascade cleanup |
+| DELETE | `/api/rooms/{id}` | ✅ Implemented | Delete room with cascade cleanup. **409** if a published schedule still uses it; retry with `?force=1` |
 
 ### Section Management
 
@@ -50,7 +50,9 @@
 | GET | `/api/sections/{id}` | ✅ Implemented | Get one section |
 | POST | `/api/sections` | ✅ Implemented | Create new section. Validates subject assignments: every `subject_ids` entry must match the section's year level and semester, otherwise HTTP 422 naming the offending subject codes |
 | PUT | `/api/sections/{id}` | ✅ Implemented | Update section with subject sync — same year/semester validation against the section's effective (post-update) values |
-| DELETE | `/api/sections/{id}` | ✅ Implemented | Delete section with cascade cleanup |
+| DELETE | `/api/sections/{id}` | ✅ Implemented | Delete section with cascade cleanup. **409** if a published schedule still uses it; retry with `?force=1` |
+
+> **Published-reference guard (409):** deleting a faculty, subject, room, or section still referenced by a **published** schedule returns **HTTP 409** `{requires_confirmation: true, published_schedule_ids, sessions_at_risk, published_sessions_at_risk}`. Re-send the same DELETE with `?force=1` to confirm and cascade.
 
 ### Schedule Management
 
@@ -62,7 +64,7 @@
 | PATCH | `/api/schedules/{id}/approve` | ✅ Implemented | Approve draft schedule |
 | PATCH | `/api/schedules/{id}/publish` | ✅ Implemented | Publish approved schedule (with conflict gate) |
 | PATCH | `/api/schedules/{id}/unpublish` | ✅ Implemented | Unpublish schedule (revert to draft) |
-| DELETE | `/api/schedules/{id}` | ✅ Implemented | Delete schedule |
+| DELETE | `/api/schedules/{id}` | ✅ Implemented | Delete a schedule and its sessions. Every state except **published** is deletable (draft, approved, rejected, archived). A **published** schedule answers **422** naming its status — unpublish it first |
 
 ### Schedule Session Management
 

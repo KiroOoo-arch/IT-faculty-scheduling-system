@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\FormatsTimes;
 use App\Models\ScheduleSession;
 use App\Models\Faculty;
 use App\Models\Room;
@@ -9,6 +10,8 @@ use Illuminate\Http\Request;
 
 class ScheduleSessionController extends Controller
 {
+    use FormatsTimes;
+
     /**
      * Manually update a session's day/time/room/faculty. Admin only.
      * Validates that the change doesn't create a new conflict.
@@ -94,7 +97,7 @@ class ScheduleSessionController extends Controller
 
             if (!$available) {
                 $conflicts[] = "{$faculty->name} is not available on day {$proposed['day_of_week']} "
-                    . "from {$pStart} to {$pEnd}.";
+                    . "from {$this->twelveHour($pStart)} to {$this->twelveHour($pEnd)}.";
             }
         }
 

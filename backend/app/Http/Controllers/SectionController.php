@@ -81,7 +81,12 @@ class SectionController extends Controller
             'year_level' => 'required|integer|min:1|max:4',
             'academic_year' => 'required|string',
             'semester_name' => 'required|string',
-            'preferred_days' => 'required|array',
+            // The days are fed straight into the solver as the variable domain
+            // for every session's day, so an empty list or a value outside
+            // 1–7 (Sunday) produces a section that either cannot be scheduled
+            // at all or is scheduled on a day no screen can render.
+            'preferred_days' => 'required|array|min:1',
+            'preferred_days.*' => 'integer|between:1,7|distinct',
             'preferred_start_time' => 'required|date_format:H:i',
             'preferred_end_time' => 'required|date_format:H:i|after:preferred_start_time',
             'student_count' => 'sometimes|integer|min:1|max:1000',
@@ -148,7 +153,8 @@ class SectionController extends Controller
             'year_level' => 'sometimes|integer|min:1|max:4',
             'academic_year' => 'sometimes|string',
             'semester_name' => 'sometimes|string',
-            'preferred_days' => 'sometimes|array',
+            'preferred_days' => 'sometimes|array|min:1',
+            'preferred_days.*' => 'integer|between:1,7|distinct',
             'preferred_start_time' => 'sometimes|date_format:H:i',
             'preferred_end_time' => 'sometimes|date_format:H:i',
             'student_count' => 'sometimes|integer|min:1|max:1000',
@@ -159,6 +165,23 @@ class SectionController extends Controller
         // Effective values: submitted changes merged over the section's current state
         $effectiveYearLevel = $validated['year_level'] ?? $section->year_level;
         $effectiveSemester = $validated['semester_name'] ?? $section->semester_name;
+
+        // The window is validated on the merged state, not on the payload: a
+        // partial update that moves only one end can still invert the window
+        // (send just an earlier `preferred_end_time`), and an inverted window
+        // makes every generation attempt for the section infeasible.
+        $effectiveStart = substr($validated['preferred_start_time'] ?? $section->preferred_start_time, 0, 5);
+        $effectiveEnd = substr($validated['preferred_end_time'] ?? $section->preferred_end_time, 0, 5);
+
+        if ($effectiveEnd <= $effectiveStart) {
+            return response()->json([
+                'message' => 'The preferred end time must be later than the preferred start time. '
+                    . "This section would run {$effectiveStart} to {$effectiveEnd}.",
+                'errors' => ['preferred_end_time' => [
+                    'The preferred end time must be later than the preferred start time.',
+                ]],
+            ], 422);
+        }
 
         if (isset($validated['subject_ids'])) {
             $mismatches = $this->subjectMismatches(

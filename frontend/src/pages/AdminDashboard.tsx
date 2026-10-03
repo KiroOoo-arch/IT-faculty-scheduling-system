@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../context/AuthContext'
+import { formatTimeRange } from '../utils/time'
 
 type Faculty = {
   id: number
@@ -286,7 +287,7 @@ export default function AdminDashboard() {
     }
   }
 
-  function formatTime(t: string) { return t?.substring(0, 5) ?? '' }
+
 
   const selectedSection = sections.find((s) => s.id === selectedSectionId)
 
@@ -389,7 +390,10 @@ export default function AdminDashboard() {
                           </button>
                         </>
                       )}
-                      {(schedule.status === 'draft' || schedule.status === 'archived') && (
+                      {/* Draft, approved and archived can all be discarded. Only a
+                          published schedule is protected: it is the live timetable,
+                          so it must be unpublished before it can be deleted. */}
+                      {schedule.status !== 'published' && (
                         <button onClick={() => handleDeleteSchedule(schedule.id)}
                           className="text-red-600 hover:underline text-sm">🗑 Delete</button>
                       )}
@@ -417,7 +421,7 @@ export default function AdminDashboard() {
                             <td className="py-1 pr-2">{session.subject?.code ?? '—'}</td>
                             <td className="py-1 px-2">{session.session_type ?? '—'}</td>
                             <td className="py-1 px-2">{ALL_DAYS[session.day_of_week - 1]?.label ?? '—'}</td>
-                            <td className="py-1 px-2">{formatTime(session.start_time)}–{formatTime(session.end_time)}</td>
+                            <td className="py-1 px-2">{formatTimeRange(session.start_time, session.end_time)}</td>
                             <td className="py-1 px-2">{session.room?.name ?? '—'}</td>
                             <td className="py-1 px-2">{session.faculty?.name ?? '—'}</td>
                             {(schedule.status === 'draft' || schedule.status === 'approved') && (

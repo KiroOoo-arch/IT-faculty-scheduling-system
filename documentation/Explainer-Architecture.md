@@ -137,7 +137,7 @@ Because the engine needs the current state of many tables — the section, its s
 It has **read-only** access in practice: there is no `INSERT`, `UPDATE`, `DELETE`, or commit anywhere in the engine's codebase. The connection is over loopback, server-to-server, and the service is never exposed to the browser or to the network. The figure states this on card 3 so the property is visible, not assumed.
 
 **"Why four components instead of one Laravel application that also solves the schedule?"**
-Because the solver is Python — OR-Tools' CP-SAT is the constraint-programming library the project is built on, and the alternative would be reimplementing it in PHP. Separating them also means the solver can be tested as a pure function: the engine's 44 tests call `generate_schedule()` directly with structured data and no HTTP or database involved.
+Because the solver is Python — OR-Tools' CP-SAT is the constraint-programming library the project is built on, and the alternative would be reimplementing it in PHP. Separating them also means the solver can be tested as a pure function: the engine's 46 tests call `generate_schedule()` directly with structured data and no HTTP or database involved.
 
 **"What happens if the AI engine is down?"**
 Laravel catches the connection failure, writes a failure row to the generation log, and returns HTTP 502. No draft is created, so the admin never sees a half-built schedule. This is covered in detail in the **System Flow** explainer.
