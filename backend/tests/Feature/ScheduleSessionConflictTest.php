@@ -8,6 +8,7 @@ use App\Models\Room;
 use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use App\Models\Section;
+use App\Models\Setting;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -154,6 +155,46 @@ class ScheduleSessionConflictTest extends TestCase
         $this->assertStringContainsString('8:00 PM', $joined);
         $this->assertStringNotContainsString('18:00', $joined);
         $this->assertStringNotContainsString(':00:00', $joined);
+    }
+
+    #[Test]
+    public function edit_onto_the_midday_break_returns_422(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '12:00',
+                'end_time' => '14:00',
+            ]);
+
+        $response->assertStatus(422);
+
+        // The reason must name the break, so the admin knows what to move it off.
+        $conflicts = $response->json('conflicts');
+        $this->assertIsArray($conflicts);
+        $this->assertStringContainsString('break', strtolower(implode(' ', $conflicts)));
+
+        // A rejected edit must leave the session untouched.
+        $this->session->refresh();
+        $this->assertSame('09:00:00', $this->session->start_time);
+        $this->assertSame('11:00:00', $this->session->end_time);
+    }
+
+    #[Test]
+    public function edit_onto_the_break_is_allowed_when_the_break_is_disabled(): void
+    {
+        Setting::put(Setting::LUNCH_ENABLED_KEY, 'false');
+
+        $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '12:00',
+                'end_time' => '14:00',
+            ])
+            ->assertOk();
+
+        $this->session->refresh();
+        $this->assertSame('12:00:00', $this->session->start_time);
     }
 
     #[Test]

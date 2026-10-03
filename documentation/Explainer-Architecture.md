@@ -151,6 +151,9 @@ The SRS lists Administrator and Department Head as two user classes, but the imp
 **"What technology is each part written in?"**
 Read from the four cards, or from the technology strip at the foot of the figure. Answer with versions — PHP 8.3, Laravel 13.8, React 19, FastAPI with OR-Tools CP-SAT 9.15, PostgreSQL 17 — it shows the stack is real and pinned.
 
+**"What stops bad data from getting into the system?"**
+Four layers, and the figure shows three of them. The solver enforces the scheduling constraints at generation time; the manual-edit checker re-validates every admin edit server-side; and the publish conflict gate runs a final cross-section check before a schedule goes live. The fourth is the **published-reference guard**, which is not drawn on this figure: deleting a faculty, subject, room or section record that a published schedule still depends on is refused with **409** and the exact scope of the loss, and only an explicit `?force=1` proceeds. Layers 1–3 protect a schedule while it is being built; layer 4 protects one that has already been distributed. The full sequence is in `System-Architecture.md` § 2.10.
+
 ---
 
 ## 7. Accuracy notes and honest caveats
@@ -168,6 +171,8 @@ Read these before the hearing so nothing on the figure surprises you.
 5. **One faculty type is unreachable.** The database enum accepts `full_time`, `part_time`, and `evening`, and the figure reports that accurately — but the API's validation only accepts the first two, and the UI only offers the first two. So `evening` cannot currently be set through the system. It is a harmless dead value, but know about it before someone asks "do you support evening classes?"
 
 6. **The engine's runtime dependencies are not pinned in `requirements.txt`.** FastAPI, Uvicorn, and psycopg2 are installed in the project's virtual environment but are missing from that file, so a fresh install following the documented steps would not start the engine. The versions printed on card 3 reflect the environment that actually runs, not the requirements file.
+
+7. **The published-reference guard is a fourth protection layer, and this figure shows only three.** Panel 8 maps the ten business rules that the solver and the API enforce; the guard is a *delete-time* rule rather than a scheduling rule, so it sits outside that panel's scope. It is real and tested (`PublishedReferenceGuardTest`), and it is documented in `System-Architecture.md` § 2.10 — but if you list "three protection layers" while presenting this figure, say the fourth one out loud rather than letting the count imply the guard does not exist. Note also that on `?force=1` the affected published schedule keeps its `published` status and the removal is not recorded anywhere — see § 2.10 for the exact consequences.
 
 ---
 

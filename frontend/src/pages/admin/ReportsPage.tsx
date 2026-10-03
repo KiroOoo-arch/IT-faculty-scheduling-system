@@ -241,6 +241,7 @@ export default function ReportsPage() {
                         <th className="p-3 text-center">Max Load</th>
                         <th className="p-3 text-center">Utilization</th>
                         <th className="p-3 text-left">Load Bar</th>
+                        <th className="p-3 text-center">Schedule</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -267,11 +268,21 @@ export default function ReportsPage() {
                                 <div className={`${barColor} h-2.5 rounded-full`} style={{ width: `${Math.min(pct, 100)}%` }} />
                               </div>
                             </td>
+                            <td className="p-3 text-center">
+                              {/* Opens the printable view; the admin uses the
+                                  browser's Print / Save as PDF to hand it out. */}
+                              <a
+                                href={`/print-faculty-schedule?faculty=${f.faculty_id}`}
+                                className="inline-block bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition whitespace-nowrap"
+                              >
+                                🖨 Printable
+                              </a>
+                            </td>
                           </tr>
                         )
                       })}
                       {facultyWorkload.length === 0 && (
-                        <tr><td colSpan={6} className="p-4 text-center text-gray-400">No faculty data</td></tr>
+                        <tr><td colSpan={7} className="p-4 text-center text-gray-400">No faculty data</td></tr>
                       )}
                     </tbody>
                   </table>

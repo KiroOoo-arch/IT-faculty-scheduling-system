@@ -4,11 +4,14 @@
 
 > **Role model:** The authorized **Admin / Department Head** is the only system user and operator. **Faculty are scheduling records/entities, not system users** — they never log in. Faculty data (name, employee number, employment type, qualifications, subject assignments, availability, max teaching load) feeds the scheduling engine, and published schedules reach faculty and students as **printed/PDF copies**.
 
-### The three protection layers (conflicts can never slip through)
+### The four protection layers (conflicts and silent data loss are both blocked)
 
 1. **AI generation constraints** — the CP-SAT solver mathematically enforces all constraint categories when producing a candidate schedule
 2. **Manual edit conflict detection** — every admin edit of a draft/approved session is re-checked server-side
 3. **Publish conflict gate** — a final cross-section conflict check runs before any schedule goes live
+4. **Published-reference guard** — deleting master data (faculty, room, subject, section, user) that a *published* schedule still depends on is refused with **409** and the exact scope of the loss; only an explicit `?force=1` proceeds (see §2.10)
+
+Layers 1–3 protect the *contents* of a schedule while it is being built. Layer 4 protects the timetable that has **already been distributed** — the one case where the data that is changing lives outside the schedule and the loss would otherwise be invisible.
 
 Plus a **pre-scheduling validation gate in Laravel** (application-layer business rules, not solver constraints): subject–section year/semester integrity (FR-018) and subject lab consistency (FR-019) are enforced when data is saved and re-checked before the AI engine is ever called — invalid assignments return HTTP 422 and cannot reach the solver.
 
@@ -61,20 +64,23 @@ sequenceDiagram
 
     U->>F: Click "Generate Schedule"
     F->>L: POST /api/schedules/generate/{section} (Bearer token)
-    L->>L: Archive old drafts for this section
+    L->>L: Validate the section's assigned subjects<br/>match its year level + semester
+    Note over L: Mismatch → 422, the AI engine is never called
     L->>A: POST http://127.0.0.1:8001/generate-schedule/{id}
     A->>DB: Query section, subjects, faculty + availabilities,<br/>available rooms, existing approved/published sessions
     DB-->>A: data
     A->>A: OR-Tools CP-SAT solver (8 constraints)
     A-->>L: {status: OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE, sessions[]}
     alt OPTIMAL, FEASIBLE or PARTIAL
+        L->>DB: Supersede the previous draft (archive) — only now that the result is real
         L->>DB: Create Schedule (draft) + ScheduleSession rows
         L->>DB: Write ScheduleGenerationLog
         L-->>F: 200 {schedule_id, sessions, unscheduled}
         F-->>U: "Status: OPTIMAL — N sessions created"
     else INFEASIBLE / failure
+        Note over L: The existing draft is left untouched —<br/>a failed attempt is retryable, not destructive
         L->>DB: Write ScheduleGenerationLog (failure)
-        L-->>F: 422 {message}
+        L-->>F: 422 {message} or 502 (engine unreachable)
         F-->>U: Error message
     end
 ```
@@ -211,6 +217,100 @@ When an admin needs to make changes to a published schedule:
 - Error: { message: "Only published schedules can be unpublished." }
 
 
+### 2.10 Published-Reference Guard (Destructive Master-Data Deletes)
+
+Master data genuinely changes over time — a laboratory gets decommissioned, a subject is retired, a faculty member leaves. Deleting a room, subject, section or faculty record also removes the `schedule_sessions` rows that reference it (an explicit `deleting` hook on the model, rather than a RESTRICT foreign key that would surface as a 500). That is correct for drafts and archives. It is **not** correct for a published schedule, because a published schedule is the timetable of record — quietly dropping one of its sessions produces a document that is simply wrong, and nothing in the system would say so.
+
+`GuardsPublishedReferences` is the trait that closes that gap. `RoomController`, `SubjectController`, `FacultyController` and `SectionController` all call `publishedReferenceConflict()` before deleting.
+
+> **User records are the exception.** Deleting a user does **not** go through this trait, because a user is never referenced by a `schedule_session` — only by `schedules.approved_by`. That column is *nullable*, and the `User` model's `deleting` hook nulls it rather than deleting the schedules: the approval genuinely happened and the timetable should survive, so the system keeps the schedule and simply stops being able to name who approved it. `UserController::destroy()` carries its own two guards instead — an admin cannot delete their own account, and cannot delete the last admin account (which would lock the system out permanently).
+
+```mermaid
+sequenceDiagram
+    participant U as Admin
+    participant L as Laravel (Controller + GuardsPublishedReferences)
+    participant DB as PostgreSQL
+
+    U->>L: DELETE /api/rooms/{id}
+    L->>DB: Count sessions referencing this room<br/>+ which of their schedules are published
+    alt referenced by a published schedule and no force flag
+        L-->>U: 409 {message, requires_confirmation true,<br/>published_schedule_ids[], sessions_at_risk,<br/>published_sessions_at_risk}
+        Note over U: Client shows a SECOND confirmation<br/>quoting the server's message verbatim
+        alt Admin declines
+            U->>U: Nothing is sent. No mutation of any kind.
+        else Admin confirms
+            U->>L: DELETE /api/rooms/{id}?force=1
+            L->>DB: Model deleting hook removes EVERY session<br/>referencing the room (drafts, archives and published)
+            L-->>U: 200 Room deleted successfully
+        end
+    else not referenced by a published schedule (or forced)
+        L->>DB: Model deleting hook removes referencing sessions
+        L-->>U: 200 Room deleted successfully
+    end
+```
+
+**What the 409 reports.** The counts are deliberately split: the message leads with the *total* sessions that would disappear and then states how many of those sit in the published timetable. Reporting only the published subset would understate the loss — deleting one room dropped **31** sessions in the verified run, of which only **3** were in published schedules. The payload also carries `published_schedule_ids`, so a client can name the affected schedules. Nothing is mutated on this path: the record is still readable immediately afterwards.
+
+**What `?force=1` actually does.** The guard steps aside (`$request->boolean('force')`), the record is deleted, and the model's `deleting` hook mass-deletes every session that referenced it — **including the ones inside published schedules**. Note three consequences, all deliberate and all verified:
+
+| After a forced delete | Observed |
+|---|---|
+| Sessions referencing the record | The full set is removed (31 → 0), across drafts, archives and published |
+| Status of the affected published schedule | **Unchanged — still `published`.** Nothing downgrades, archives or flags it |
+| Audit trail | **None written.** No generation log, no tombstone; the loss is not recorded anywhere |
+| Recovery | Manual: unpublish the schedule, correct the data, regenerate, re-approve, re-publish |
+
+> **Design intent.** The guard is a speed bump, not a veto. Refusing the delete outright would make the system unusable whenever master data legitimately changes. What it refuses is letting the loss happen *quietly*: the admin sees the exact scope, confirms a second time, and has to say `force` explicitly. The tradeoff accepted is that the consequence is **visible up front but not reversible afterwards** — there is no automatic downgrade of the affected schedule and no audit row. This is the one place in the system where an operation can leave a published schedule incomplete, and it should be presented as a known, bounded gap rather than as a solved problem.
+
+**Coverage.** Backend feature test `PublishedReferenceGuardTest` exercises the 409 and the force path.
+
+### 2.11 Authentication and Session Flow (Laravel Sanctum)
+
+The API uses Sanctum in **token mode** (`HasApiTokens` on the `User` model), not its cookie/CSRF mode. A token is a random string shown once; Sanctum stores only a SHA-256 hash of it in `personal_access_tokens`, so it can be compared but never recovered.
+
+```mermaid
+sequenceDiagram
+    participant U as Admin (browser)
+    participant F as AuthContext (React)
+    participant L as Laravel (AuthController)
+    participant DB as PostgreSQL
+
+    U->>F: Email + password
+    F->>L: POST /api/login — the ONLY public route
+    L->>DB: Look up user by email
+    alt unknown user, wrong password, or role != admin
+        L-->>F: 422 ValidationException (message on the email field)
+        Note over L: No token is ever issued to a non-admin
+    else valid admin
+        L->>DB: Delete all existing tokens for this user
+        L->>DB: createToken('api-token') — store SHA-256 hash
+        L-->>F: 200 {user, token}
+        F->>F: Store token + user in localStorage
+    end
+
+    Note over U,F: Every later request sends a Bearer token in the Authorization header
+    U->>L: Any other /api/* request
+    L->>L: middleware auth:sanctum — resolves the token to a user
+    Note over L: Missing or invalid → 401 (controller never constructed)
+    L->>L: middleware admin — EnsureUserIsAdmin
+    Note over L: Valid token but role != admin → 403
+    L-->>U: Controller response
+
+    U->>L: POST /api/logout
+    L->>DB: Delete ONLY $request->user()->currentAccessToken()
+    L-->>U: 200 Logged out successfully
+```
+
+**Middleware chain.** `routes/api.php` nests the entire admin surface inside `auth:sanctum` **and then** `admin`, so a request must first carry a valid token (401 otherwise) and then belong to an `admin` user (403 otherwise). Login is the only route outside that nest.
+
+**Session semantics worth stating out loud.**
+
+- **One session per account.** Login deletes all prior tokens before issuing a new one, so signing in on a second browser invalidates the first. This is deliberate for a single-admin system, not an accident.
+- **Logout is per-session.** It deletes only the token used for that request, so it does not sign the account out everywhere.
+- **Tokens do not expire on their own.** `config/sanctum.php` leaves `expiration` unset; a token lives until logout or until the user is deleted. The 401 path therefore fires when a token is *gone*, not when it is *old*.
+- **Client-side expiry handling.** A single `window.fetch` interceptor in `AuthContext.tsx` watches for any 401, clears `localStorage`, and hard-redirects to `/login`. It ignores `/api/login` itself so a failed sign-in cannot trigger a redirect loop. It is installed at module load, before React mounts, because child page effects run before the provider's effect and would otherwise miss the first fetch after a hard reload.
+- **JSON error rendering.** `bootstrap/app.php` sets `shouldRenderJsonWhen(...)` for `api/*`, without which Laravel would answer an unauthenticated browser-style request with a 302 to the login route (which itself sits behind auth) rather than a readable 401.
+
 ## 3. User Types and User Flows
 
 ### 3.1 System Users (Complete List)
@@ -231,6 +331,13 @@ flowchart TD
     B -- no / non-admin --> X[Rejected:<br/>Only administrator accounts can access this system]
     B -- yes --> C[Admin Dashboard]
     C --> D[Manage Scheduling Data<br/>Faculty records · Subjects · Rooms · Sections]
+    D --> DEL["Delete a master-data record<br/>Faculty · Subject · Room · Section"]
+    DEL -- "still used by a published schedule" --> DEL1[HTTP 409<br/>total sessions at risk + published count<br/>· nothing is mutated]
+    DEL1 -. admin declines .-> C
+    DEL1 -- admin confirms --> DEL2[Retry with ?force=1<br/>delete proceeds]
+    DEL2 --> C
+    DEL -- "no published reference" --> DEL3[Deleted]
+    DEL3 --> C
     D --> D1[Create/Edit Subject<br/>lab_hours > 0 requires computer_lab /<br/>science_lab / electronics_lab · else HTTP 422]
     D1 --> E[Create/Edit Section<br/>assign subjects]
     E --> E1{Subjects match section<br/>year level + semester?}
@@ -265,9 +372,11 @@ Login (admin-only) → Manage Data → Create/Edit Subjects (lab consistency val
   → OR-Tools CP-SAT candidate → DRAFT → Review / Manual Edit (conflict-checked)
   → Approve → Publish conflict gate → PUBLISHED → Print/Download PDF → Distribute
   → (Unpublish returns to DRAFT for re-editing)
+  → (Deleting a master-data record still used by a published schedule: 409 with the exact scope,
+     then an explicit ?force=1 to proceed — see §2.10)
 ```
 
-Every validation step above is enforced server-side (SectionController, SubjectController, ScheduleController) and mirrored in the UI — the subject checklist on the Sections page only lists subjects matching the section's year level and semester, with legacy mismatches flagged in place.
+Every validation step above is enforced server-side (SectionController, SubjectController, ScheduleController) and mirrored in the UI — the subject checklist on the Sections page only lists subjects matching the section's year level and semester, with legacy mismatches flagged in place. The published-reference guard is enforced by the controllers themselves via the `GuardsPublishedReferences` trait (§2.10) and surfaced in the UI as a second confirmation quoting the server's message.
 
 ### 3.3 User Flow — Faculty (Non-User)
 

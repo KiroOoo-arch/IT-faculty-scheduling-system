@@ -66,3 +66,6 @@ sched-ai.err
 # Local tooling caches and agent metadata
 .vite/
 .freebuff/
+
+# Local run scratch (service logs, DB backups, generated diagrams)
+.tmp-run/
