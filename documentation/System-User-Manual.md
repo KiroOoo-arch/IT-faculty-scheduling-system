@@ -34,6 +34,8 @@ The **Faculty Scheduling System** is a web application that uses AI-powered sche
 - Reports and Analytics (workload, utilization, status)
 - Print/Download published schedules for hard-copy distribution
 
+**How times are written:** every schedule, availability window and conflict message in the interface uses a **12-hour clock with AM/PM** — `2:00 PM`, not `14:00`; noon is `12:00 PM`. Time pickers use the same AM/PM form. The database and the AI engine continue to store and exchange times in 24-hour form, so nothing about generation or validation changes.
+
 **User Roles:**
 - **Admin / Department Head** - The only login account; full access to all features
 - **Faculty** - *(No system access)* — faculty are scheduling records (name, availability, qualifications, workload, subject assignments), not system users
@@ -201,7 +203,7 @@ Existing drafts are automatically archived. Click Show Archived to view them.
 - Click Unpublish to revert to Draft
 
 ### Deleting
-Draft and Archived schedules can be deleted. Published must be unpublished first.
+Every schedule except a Published one can be deleted — Draft, Approved, Rejected and Archived all show a Delete button. A Published schedule must be unpublished first, because it is the timetable currently being distributed.
 
 ---
 

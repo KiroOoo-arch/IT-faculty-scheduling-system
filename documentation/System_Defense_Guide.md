@@ -376,7 +376,8 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | Backend: 43 feature tests (192 assertions) · AI engine: 44 solver unit tests · frontend typecheck + production build |
+| Testing | ✅ Complete | Backend: 90 feature tests (380 assertions) · AI engine: 46 solver unit tests · frontend typecheck + production build |
+| Published-Reference Guard | ✅ Complete | Deleting faculty/subject/room/section used by a published schedule returns 409; `?force=1` overrides |
 
 ---
 
@@ -620,9 +621,9 @@ For university scale, architectural changes would be needed, but the core constr
 
 **A:** Testing approach:
 1. **Ad-hoc testing**: Throughout development
-2. **AI engine unit tests**: 44 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 44 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
+2. **AI engine unit tests**: 46 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 46 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
-4. **Automated backend suite**: 43 Laravel feature tests (192 assertions) — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
+4. **Automated backend suite**: 90 Laravel feature tests (380 assertions) — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
 
 Test coverage:
 - Authentication & RBAC ✅
@@ -640,7 +641,7 @@ Test coverage:
 **A:**
 - **Backend (Laravel)**: PHPUnit (built-in)
 - **Frontend (React)**: TypeScript typecheck + production build
-- **AI Engine**: Python standard-library `unittest` — 44 tests running the CP-SAT solver directly with controlled fixtures (no database needed)
+- **AI Engine**: Python standard-library `unittest` — 46 tests running the CP-SAT solver directly with controlled fixtures (no database needed)
 - **Integration**: Postman/curl for API testing
 
 We focused on practical testing that verifies real functionality rather than achieving 100% code coverage.
@@ -727,10 +728,10 @@ Hard constraints (must be satisfied) vs soft constraints (nice to have):
 
 **Q22: How does the system handle part-time faculty with limited availability?**
 
-**A:** Example: Prof. Cruz is part-time (Mon/Wed/Fri only)
+**A:** Example: a part-time faculty member declares limited availability
 1. **Availability stored**: `faculty_availabilities` table has Mon/Wed/Fri entries
 2. **Solver respects**: Constraint #2 prevents scheduling on unavailable days and outside the declared time window (day + time window; the section's preferred start/end window also applies)
-3. **Tested and verified**: System correctly schedules Prof. Cruz only on available days
+3. **Tested and verified**: System correctly schedules part-time faculty only within their declared days and time windows
 
 If availability is empty, system falls back to section's preferred days (best-effort approach).
 

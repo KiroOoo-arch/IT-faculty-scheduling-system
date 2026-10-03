@@ -88,7 +88,21 @@ export default function FacultyPage() {
       const res = await fetch(`${API_BASE_URL}/faculties/${facultyId}/availability`, { headers: headers() })
       if (res.ok) {
         const data = await res.json()
-        setAvailability(Array.isArray(data) ? data : [])
+        const rows: Availability[] = Array.isArray(data) ? data : []
+        setAvailability(rows)
+
+        // Mirror the stored window in the pickers. Without this the form always
+        // showed the page defaults (07:00–17:00), so a faculty member with, say,
+        // a 10:00–17:00 window appeared to have 07:00–17:00 and re-toggling any
+        // day silently wrote the default hours over it.
+        const stored = rows.find((a) => a.start_time && a.end_time)
+        if (stored?.start_time && stored.end_time) {
+          setAvailStartTime(stored.start_time.slice(0, 5))
+          setAvailEndTime(stored.end_time.slice(0, 5))
+        } else {
+          setAvailStartTime('07:00')
+          setAvailEndTime('17:00')
+        }
       }
     } catch { /* ignore */ }
   }

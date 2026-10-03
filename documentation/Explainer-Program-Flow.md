@@ -164,10 +164,10 @@ Yes. Gate 4 merges your change onto the session's current values and then valida
 The solver enforces the *scheduling* constraints — no double-booking, room type and capacity, qualification, availability, section preferences, maximum teaching load. The gates enforce *data-integrity* rules at the application layer — lab-hour consistency, subject/section matching, the publish conflict check. The gates never reach OR-Tools.
 
 **"How many tests do you have?"**
-Two suites. The AI engine has **44 unit tests** that call `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function. The Laravel side has **43 tests / 192 assertions** covering the feature endpoints, including the conflict payload and the 401 contract. Both suites pass.
+Two suites. The AI engine has **46 unit tests** that call `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function. The Laravel side has **90 tests / 380 assertions** covering the feature endpoints, including the conflict payload and the 401 contract. Both suites pass.
 
 **"Why does the engine's input reading live in `app.py` rather than in the solver?"**
-Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` contains no HTTP code at all and is a pure function — data in, data out. That is what makes the 44 solver tests fast and deterministic.
+Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` contains no HTTP code at all and is a pure function — data in, data out. That is what makes the 46 solver tests fast and deterministic.
 
 **"Show me how a login failure is handled."**
 `AuthController::login` throws a `ValidationException` for both wrong credentials and a non-admin role, so the program answers **422** with the message attached to the email field — not a 401. The 401 only comes from `auth:sanctum` on subsequent requests.

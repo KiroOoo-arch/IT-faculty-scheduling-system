@@ -89,14 +89,58 @@ class FacultyController extends Controller
 
         public function updateAvailability(Request $request, Faculty $faculty)
     {
-        $request->validate([
-            'availability' => 'required|array',
+        // Stored windows are `HH:MM` or `HH:MM:SS`; anything else (a stray
+        // "7:30 am", a bare "morning") reaches the engine's hour parser as
+        // garbage. Only the clock shape is enforced here, so both forms and
+        // nulls (an undeclared window) keep working.
+        $clock = '/^(?:[01]?[0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9])?$/';
+
+        $validated = $request->validate([
+            // `present`, not `required`: an empty list is meaningful — it is how
+            // the Faculty page clears every day and hands the faculty back to
+            // the section's own days ("No days selected — faculty will be
+            // available on all section days"). `required` treats [] as missing
+            // and made that documented state unreachable.
+            'availability' => 'present|array',
             'availability.*.day_of_week' => 'required|integer|min:1|max:7',
-            'availability.*.start_time' => 'nullable|string',
-            'availability.*.end_time' => 'nullable|string',
+            'availability.*.start_time' => ['nullable', 'regex:' . $clock],
+            'availability.*.end_time' => ['nullable', 'regex:' . $clock],
         ]);
 
-        // Delete old availability
+        // A window that ends before it starts is not a harmless typo: the
+        // engine drops it, leaves the day with no usable window, and then treats
+        // that faculty as unable to teach at all — so the section silently comes
+        // back PARTIAL or INFEASIBLE instead of reporting the bad data. Half a
+        // window is refused for the same reason: it reads as "no hours".
+        $errors = [];
+        foreach ($validated['availability'] as $index => $row) {
+            $start = $row['start_time'] ?? null;
+            $end = $row['end_time'] ?? null;
+
+            if (($start === null) !== ($end === null)) {
+                $errors["availability.{$index}.end_time"] = [
+                    'A window needs both a start and an end time, or neither.',
+                ];
+                continue;
+            }
+
+            if ($start !== null && substr($end, 0, 5) <= substr($start, 0, 5)) {
+                $errors["availability.{$index}.end_time"] = [
+                    'The end time must be later than the start time.',
+                ];
+            }
+        }
+
+        if (!empty($errors)) {
+            return response()->json([
+                'message' => 'Some availability windows are invalid: '
+                    . implode(' ', array_map(fn ($e) => $e[0], $errors)),
+                'errors' => $errors,
+            ], 422);
+        }
+
+        // Delete old availability only once every submitted row is known good,
+        // so a rejected save leaves the faculty's existing windows intact.
         $faculty->availabilities()->delete();
 
         // Insert new

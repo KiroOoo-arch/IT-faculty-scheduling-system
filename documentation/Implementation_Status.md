@@ -42,8 +42,8 @@ This document records what has actually been built, tested, and verified working
 
 ### Verified working
 - Full schema created via `php artisan migrate`, no errors
-- Seed data mirrors the original validated prototype dataset (Prof. Reyes, Santos, Cruz; PROG1/PROG2/MATH1; R101/LAB1)
-- Confirmed via direct query: Prof. Cruz's part-time availability (Mon/Wed/Fri only) is correctly stored and enforced
+- Seed/demo data has since been replaced with the IT department dataset (7 faculty, 11 subjects, 5 rooms, 9 sections)
+- Confirmed via direct query: part-time faculty availability (declared days plus time windows) is correctly stored and enforced
 
 ---
 
@@ -66,7 +66,7 @@ This document records what has actually been built, tested, and verified working
 
 ### Verified working
 - `/generate-schedule/1` (BSIT 1A) tested multiple times — confirmed the solver re-solves fresh each time rather than caching (different runs produced different valid arrangements)
-- No faculty double-booking, correct lab-room-type matching, and Prof. Cruz's day restriction all held on **real database data**, not just the fake prototype dataset
+- No faculty double-booking, correct lab-room-type matching, and part-time faculty day + time-window restrictions all held on **real database data**, not just the fake prototype dataset
 
 ---
 

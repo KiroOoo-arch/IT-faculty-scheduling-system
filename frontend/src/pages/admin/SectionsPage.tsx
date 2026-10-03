@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../../context/AuthContext'
+import { formatTimeRange } from '../../utils/time'
 
 type Subject = {
   id: number
@@ -100,6 +101,17 @@ export default function SectionsPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+
+    // Catch the two states the API also rejects, so the reason appears next to
+    // the form instead of coming back as a raw validation error.
+    if (form.preferred_days.length === 0) {
+      setError('Select at least one preferred day — the solver can only place classes on the days this section allows.')
+      return
+    }
+    if (form.preferred_end_time <= form.preferred_start_time) {
+      setError('The preferred end time must be later than the preferred start time.')
+      return
+    }
 
     const body = {
       ...form,
@@ -342,7 +354,7 @@ export default function SectionsPage() {
                     <td className="p-3">{s.name}</td><td className="p-3">{s.year_level}</td>
                     <td className="p-3">{s.semester_name}</td>
                     <td className="p-3">{s.preferred_days.map((d) => dayLabels[d]).join(', ')}</td>
-                    <td className="p-3">{s.preferred_start_time.slice(0, 5)} – {s.preferred_end_time.slice(0, 5)}</td>
+                    <td className="p-3">{formatTimeRange(s.preferred_start_time, s.preferred_end_time)}</td>
                     <td className="p-3">{s.student_count}</td>
                     <td className="p-3">{s.subjects?.map((sub) => sub.code).join(', ') || '—'}</td>
                     <td className="p-3">
