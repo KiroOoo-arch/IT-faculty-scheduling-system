@@ -61,6 +61,9 @@ export default function ReportsPage() {
   const [rooms, setRooms] = useState<RoomUtil[]>([])
   const [sectionSummary, setSectionSummary] = useState<SectionSummaryItem[]>([])
   const [conflicts, setConflicts] = useState<ConflictLog[]>([])
+  // Which generation-log entries have their raw JSON inspector open. Collapsed
+  // by default, so the log reads as prose until someone wants the exact payload.
+  const [rawOpen, setRawOpen] = useState<Record<number, boolean>>({})
 
   function headers() {
     return {
@@ -109,6 +112,21 @@ export default function ReportsPage() {
     }
     fetchAll()
   }, [token])
+
+  async function clearGenerationLogs() {
+    if (!confirm('Delete the entire schedule generation history? This cannot be undone.')) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/reports/conflicts`, {
+        method: 'DELETE',
+        headers: headers(),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.message || 'Failed to clear history')
+      setConflicts([])
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to clear history')
+    }
+  }
 
   function statusColor(status: string) {
     switch (status) {
@@ -404,8 +422,21 @@ export default function ReportsPage() {
             {/* ========== CONFLICTS / LOGS TAB ========== */}
             {activeTab === 'conflicts' && (
               <div className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">Schedule Generation Logs</h2>
-                <p className="text-sm text-gray-500 mb-4">History of all AI schedule generation attempts</p>
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-800">Schedule Generation Logs</h2>
+                    <p className="text-sm text-gray-500">History of all AI schedule generation attempts</p>
+                  </div>
+                  {conflicts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearGenerationLogs}
+                      className="shrink-0 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100"
+                    >
+                      🗑 Clear history
+                    </button>
+                  )}
+                </div>
                 {conflicts.length === 0 && (
                   <p className="text-gray-400 text-sm">No generation logs found.</p>
                 )}
@@ -428,12 +459,43 @@ export default function ReportsPage() {
                       )}
                       {log.unscheduled_sessions && Array.isArray(log.unscheduled_sessions) && log.unscheduled_sessions.length > 0 && (
                         <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-2">
-                          <p className="text-xs font-medium text-yellow-700 mb-1">Unscheduled Sessions:</p>
-                          <ul className="text-xs text-yellow-600 list-disc list-inside">
-                            {log.unscheduled_sessions.map((u: any, i: number) => (
-                              <li key={i}>{typeof u === 'string' ? u : JSON.stringify(u)}</li>
-                            ))}
+                          <p className="text-xs font-medium text-yellow-700 mb-2">
+                            Unscheduled sessions ({log.unscheduled_sessions.length})
+                          </p>
+                          <ul className="space-y-2">
+                            {log.unscheduled_sessions.map((u: any, i: number) => {
+                              if (typeof u === 'string') {
+                                return <li key={i} className="text-xs text-yellow-800">{u}</li>
+                              }
+                              const label = u?.subject_code
+                                ?? (u?.subject_id != null ? `Subject #${u.subject_id}` : 'Unknown subject')
+                              const type = u?.session_type
+                                ? u.session_type.charAt(0).toUpperCase() + u.session_type.slice(1)
+                                : 'Session'
+                              return (
+                                <li key={i} className="text-xs leading-relaxed text-yellow-800">
+                                  <span className="font-semibold">{label}</span>
+                                  {u?.subject_title && <span className="text-yellow-700"> — {u.subject_title}</span>}
+                                  <span className="ml-1 rounded bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-yellow-700">
+                                    {type}
+                                  </span>
+                                  <span className="mt-0.5 block">{u?.reason ?? 'No reason recorded.'}</span>
+                                </li>
+                              )
+                            })}
                           </ul>
+                          <button
+                            type="button"
+                            onClick={() => setRawOpen((prev) => ({ ...prev, [log.id]: !prev[log.id] }))}
+                            className="mt-3 text-[11px] font-medium text-yellow-800 underline underline-offset-2 hover:text-yellow-900"
+                          >
+                            {rawOpen[log.id] ? 'Hide full details' : 'View full details'}
+                          </button>
+                          {rawOpen[log.id] && (
+                            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded border border-yellow-200 bg-white/70 p-2 text-[11px] leading-relaxed text-yellow-900">
+                              {JSON.stringify(log.unscheduled_sessions, null, 2)}
+                            </pre>
+                          )}
                         </div>
                       )}
                       <p className="text-xs text-gray-400 mt-2">Requested by: {log.requested_by}</p>

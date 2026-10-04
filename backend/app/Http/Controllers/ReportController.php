@@ -8,6 +8,7 @@ use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use App\Models\ScheduleGenerationLog;
 use App\Models\Section;
+use App\Models\Subject;
 use Illuminate\Http\Request;
 
 class ReportController extends Controller
@@ -66,20 +67,66 @@ class ReportController extends Controller
     {
         $logs = ScheduleGenerationLog::with(['section', 'requestedBy'])
             ->orderByDesc('created_at')
-            ->get()
-            ->map(function ($log) {
+            ->get();
+
+        // Resolve every subject the logs refer to once, so the admin sees
+        // "GE 1 - Physics (Lecture)" instead of a bare subject_id. Done here
+        // rather than in the solver: naming subjects is presentation, and it
+        // also repairs logs written before this change.
+        $subjectIds = $logs
+            ->flatMap(fn ($log) => collect($log->unscheduled_sessions ?? [])->pluck('subject_id'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $subjects = Subject::whereIn('id', $subjectIds)->get()->keyBy('id');
+
+        return response()->json(
+            $logs->map(function ($log) use ($subjects) {
+                $unscheduled = collect($log->unscheduled_sessions ?? [])
+                    ->map(function ($session) use ($subjects) {
+                        // Legacy rows may hold a plain string; leave those alone.
+                        if (! is_array($session)) {
+                            return $session;
+                        }
+
+                        $subject = $subjects->get($session['subject_id'] ?? null);
+
+                        return array_merge($session, [
+                            'subject_code' => $subject->code ?? null,
+                            'subject_title' => $subject->title ?? null,
+                        ]);
+                    })
+                    ->values();
+
                 return [
                     'id' => $log->id,
                     'section' => $log->section->name ?? 'Unknown',
                     'status' => $log->status,
                     'message' => $log->message,
-                    'unscheduled_sessions' => $log->unscheduled_sessions,
+                    'unscheduled_sessions' => $unscheduled,
                     'requested_by' => $log->requestedBy->name ?? 'Unknown',
                     'created_at' => $log->created_at,
                 ];
-            });
+            })
+        );
+    }
 
-        return response()->json($logs);
+    /**
+     * Clear the generation-log history. Admin only (route middleware).
+     * DELETE /api/reports/conflicts
+     *
+     * The history is an audit convenience, not the timetable itself, so it can
+     * be wiped without touching any schedule, session, or master data.
+     */
+    public function clearGenerationLogs()
+    {
+        $deleted = ScheduleGenerationLog::query()->delete();
+
+        return response()->json([
+            'message' => "Cleared {$deleted} generation log(s).",
+            'deleted' => $deleted,
+        ]);
     }
 
     /**

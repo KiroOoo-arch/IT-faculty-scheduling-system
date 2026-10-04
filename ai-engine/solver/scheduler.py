@@ -421,8 +421,11 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
                     "subject_id": v["meta"]["subject_id"],
                     "session_type": v["meta"]["session_type"],
                     "is_scheduled": False,
-                    "reason": "Could not fit given room, faculty, or time conflicts with "
-                              "other sessions. Try widening availability or adding resources.",
+                    "reason": "No free slot: every day and time this session could use is "
+                              "already taken by the section's other classes, the faculty's "
+                              "availability, the midday break, or a room already in use. "
+                              "Widening the section window or faculty availability, or "
+                              "adding a room of the right type, may make room for it.",
                 })
     else:
         # Solver couldn't even run/find anything — treat every structurally-possible
@@ -432,7 +435,9 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
                 "subject_id": v["meta"]["subject_id"],
                 "session_type": v["meta"]["session_type"],
                 "is_scheduled": False,
-                "reason": "Solver could not find any valid placement within the time limit.",
+                "reason": "The scheduling engine ran out of time before it could place this "
+                          "session. Try generating again; if it persists, widen the section "
+                          "window or faculty availability.",
             })
 
     total = len(sessions_meta)

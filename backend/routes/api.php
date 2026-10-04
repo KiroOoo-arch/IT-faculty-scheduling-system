@@ -45,6 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reports/faculty-workload', [ReportController::class, 'facultyWorkload']);
         Route::get('/reports/room-utilization', [ReportController::class, 'roomUtilization']);
         Route::get('/reports/conflicts', [ReportController::class, 'conflicts']);
+        Route::delete('/reports/conflicts', [ReportController::class, 'clearGenerationLogs']);
         Route::get('/reports/schedule-status', [ReportController::class, 'scheduleStatusOverview']);
         Route::get('/reports/section-summary', [ReportController::class, 'sectionSummary']);
         Route::get('/reports/faculty/{faculty}/schedule', [ReportController::class, 'facultySchedule']);

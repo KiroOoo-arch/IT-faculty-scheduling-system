@@ -9,6 +9,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use App\Models\ScheduleGenerationLog;
+use App\Models\Subject;
 
 class ScheduleController extends Controller
 {
@@ -157,13 +158,30 @@ class ScheduleController extends Controller
             ]);
         }
 
+        // Name the affected subjects in the message so the log reads as a
+        // sentence ("GE 1, TPC 311") rather than an anonymous count. The
+        // per-session reasons are stored alongside and shown in Reports.
+        $message = 'All sessions scheduled successfully.';
+        if (count($unscheduled) > 0) {
+            $codes = collect($unscheduled)
+                ->pluck('subject_id')
+                ->filter()
+                ->unique()
+                ->values();
+            $names = Subject::whereIn('id', $codes)->pluck('code', 'id');
+            $labels = $codes
+                ->map(fn ($id) => $names[$id] ?? "Subject #{$id}")
+                ->unique()
+                ->implode(', ');
+
+            $message = count($unscheduled) . ' session(s) could not be scheduled: ' . $labels . '.';
+        }
+
         ScheduleGenerationLog::create([
             'section_id' => $section->id,
             'requested_by' => auth()->id(),
             'status' => strtolower($result['status']),
-            'message' => count($unscheduled) > 0
-                ? count($unscheduled) . ' session(s) could not be scheduled.'
-                : 'All sessions scheduled successfully.',
+            'message' => $message,
             'unscheduled_sessions' => array_values($unscheduled),
         ]);
 
