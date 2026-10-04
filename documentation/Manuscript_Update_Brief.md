@@ -61,20 +61,23 @@ Generate > Draft > Review/Edit > Approve > Publish Conflict Gate > Published > P
 - Room types are now four: lecture, computer_lab, science_lab, electronics_lab (unified dropdown list shared by Subjects and Rooms pages).
 - Subjects have save-blocking validation: lab hours > 0 requires a lab room type; lab hours = 0 requires type None. Mention this as a data-integrity feature.
 
-## 6. THREE protection layers (new section — strong defense material)
+## 6. FOUR protection layers (new section — strong defense material)
 
 1. CP-SAT generation constraints — constraints enforced in the solver model
 2. Manual-edit validation — every admin session edit (day/time/room/faculty) is re-checked server-side and rejected on conflict
 3. Publish conflict gate — final cross-section validation before going live
+4. Published-reference delete guard — deleting a faculty member, subject, room, or section still used by a published schedule is refused with HTTP 409 unless confirmed with `?force=1`
 
 ## 7. Reports — update endpoint names
 
 Current (use these): /api/reports/faculty-workload, /api/reports/room-utilization, /api/reports/conflicts, /api/reports/schedule-status, /api/reports/section-summary.
+
+Note: `/api/reports/conflicts` is **misnamed** — it returns schedule *generation logs*, not conflicts. The Reports UI tab consuming it is labelled "Generation Logs". Do not describe it as a conflict scan.
 Remove obsolete: overview, workload, sections, generation-logs.
 
 ## 8. Testing chapter — rewrite
 
-- Replace any "18/18 manual tests" claim with the automated suite: 90 backend feature tests (380 assertions) including section/year-level generation tests, the subject-validation rule tests (subject–section year/semester integrity, subject lab consistency), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` is rejected) and the unreachable-engine 502 path, run on an isolated scheduling_system_testing database, plus 46 AI-engine unit tests (Python stdlib unittest) that exercise the CP-SAT solver directly — 46 tests OK, 0 failed, 0 skipped, 0 warnings/errors.
+- Replace any "18/18 manual tests" claim with the automated suite: 111 backend feature tests (465 assertions) including section/year-level generation tests, the subject-validation rule tests (subject–section year/semester integrity, subject lab consistency), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` is rejected) and the unreachable-engine 502 path, run on an isolated scheduling_system_testing database, plus 53 AI-engine unit tests (Python stdlib unittest) that exercise the CP-SAT solver directly — 53 tests OK, 0 failed, 0 skipped, 0 warnings/errors.
 - Add the live end-to-end integration test (September 2026): admin login > AI generated BIT-3A's schedule OPTIMAL with all constraints verified (IAS lab correctly placed in a computer lab) > approve > publish through the gate > unpublish > all 5 reports — all passed.
 - Frontend TypeScript typecheck + production build pass.
 

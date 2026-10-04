@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
@@ -18,17 +17,24 @@ class AuthController extends Controller
 
         $user = User::where('email', $validated['email'])->first();
 
+        // A wrong password is an authentication failure, not a malformed
+        // request. Returning 422 (via ValidationException) told the client the
+        // request body was wrong and left it inspecting individual fields, when
+        // the actionable answer is "these credentials are incorrect" — which is
+        // what 401 means. The frontend reads `message`, so the copy is unchanged.
         if (!$user || !Hash::check($validated['password'], $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
-            ]);
+            return response()->json([
+                'message' => 'The provided credentials are incorrect.',
+            ], 401);
         }
 
         // Defense-in-depth: only Admin/Department Head accounts may log in.
+        // 403 rather than 401: the credentials were valid, so the account simply
+        // is not permitted in — a different problem with a different fix.
         if ($user->role !== 'admin') {
-            throw ValidationException::withMessages([
-                'email' => ['Only administrator accounts can access this system.'],
-            ]);
+            return response()->json([
+                'message' => 'Only administrator accounts can access this system.',
+            ], 403);
         }
 
         $user->tokens()->delete();

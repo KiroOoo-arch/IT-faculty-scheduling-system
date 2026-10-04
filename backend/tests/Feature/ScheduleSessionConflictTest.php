@@ -198,6 +198,134 @@ class ScheduleSessionConflictTest extends TestCase
     }
 
     #[Test]
+    public function the_configured_break_interval_is_enforced_rather_than_a_hard_coded_one(): void
+    {
+        // Move the break to the afternoon. Every assertion in the two tests
+        // above would also pass against a controller that hard-coded
+        // 12:00-1:00 PM, so the configured interval needs its own proof: only
+        // this test fails if `lunch_start`/`lunch_end` are never read.
+        Setting::put(Setting::LUNCH_START_KEY, '14:00');
+        Setting::put(Setting::LUNCH_END_KEY, '15:00');
+
+        $response = $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '14:00',
+                'end_time' => '16:00',
+            ]);
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('2:00 PM', implode(' ', $response->json('conflicts')));
+
+        // And the old midday window is no longer special, so this edit — the
+        // one the enabled-break test above rejects — now goes through.
+        $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '12:00',
+                'end_time' => '14:00',
+            ])
+            ->assertOk();
+
+        $this->session->refresh();
+        $this->assertSame('12:00:00', $this->session->start_time);
+    }
+
+    #[Test]
+    public function a_session_spanning_the_whole_break_is_rejected(): void
+    {
+        // The break sitting wholly inside the proposed session is a different
+        // shape of overlap from starting on the break, and must be caught too.
+        $response = $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '11:00',
+                'end_time' => '14:00',
+            ]);
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('break', strtolower(implode(' ', $response->json('conflicts'))));
+
+        $this->session->refresh();
+        $this->assertSame('09:00:00', $this->session->start_time);
+    }
+
+    #[Test]
+    public function a_session_ending_exactly_when_the_break_starts_is_allowed(): void
+    {
+        // 11:00-12:00 abuts the 12:00-1:00 PM break without overlapping it, so
+        // widening the rule to treat touching the break as a conflict would be
+        // a regression, not a fix.
+        $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '11:00',
+                'end_time' => '12:00',
+            ])
+            ->assertOk();
+
+        $this->session->refresh();
+        $this->assertSame('12:00:00', $this->session->end_time);
+    }
+
+    #[Test]
+    public function moving_a_session_into_a_room_too_small_for_the_section_is_rejected(): void
+    {
+        // The solver only ever places a session in a room that seats the whole
+        // section (scheduler.py: capacity >= student_count). This section has
+        // 30 students, so a 20-seat room must be refused by the manual path too —
+        // otherwise an admin could hand-build a timetable the generator itself
+        // would never produce.
+        $small = Room::create([
+            'name' => 'R-SMALL',
+            'type' => 'lecture',
+            'capacity' => 20,
+            'status' => 'available',
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'room_id' => $small->id,
+            ]);
+
+        $response->assertStatus(422);
+
+        // The reason must name the room and both numbers, so the admin can tell
+        // "too small" apart from "wrong type".
+        $conflicts = implode(' ', $response->json('conflicts'));
+        $this->assertStringContainsString('R-SMALL', $conflicts);
+        $this->assertStringContainsString('20', $conflicts);
+        $this->assertStringContainsString('30', $conflicts);
+
+        // A rejected edit must leave the session where it was.
+        $this->session->refresh();
+        $this->assertNotSame($small->id, $this->session->room_id);
+    }
+
+    #[Test]
+    public function a_room_that_exactly_seats_the_section_is_accepted(): void
+    {
+        // The boundary is >=, matching the solver. A room with exactly the
+        // section's headcount is eligible; an off-by-one here would reject rooms
+        // the generator happily uses.
+        $exact = Room::create([
+            'name' => 'R-EXACT',
+            'type' => 'lecture',
+            'capacity' => 30,
+            'status' => 'available',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'room_id' => $exact->id,
+            ])
+            ->assertOk();
+
+        $this->session->refresh();
+        $this->assertSame($exact->id, $this->session->room_id);
+    }
+
+    #[Test]
     public function rejected_edit_does_not_change_the_session(): void
     {
         $this->actingAs($this->admin)

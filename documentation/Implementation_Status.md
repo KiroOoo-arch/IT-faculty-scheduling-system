@@ -1,9 +1,16 @@
 # Implementation Status & Technical Documentation
 ## AI-Assisted Student-Centered Constraint-Based Faculty, Classroom, and Laboratory Scheduling System
 
-*Last updated: reflects work through the completion of Phase 3 (Backend CRUD) and core Phase 5 (AI Engine).*
+*Last updated: reflects work through the frontend, the schedule approval workflow, the full backend
+test suite (111 tests), and the AI engine test suite (53 tests).*
 
-This document records what has actually been built, tested, and verified working — as distinct from what was originally planned in `Capstone_Project_Summary` and `Requirements.md`. Use this alongside those files: they describe the *intended* system; this describes the *current, working* system.
+This document records what has actually been built, tested, and verified working — as distinct from
+what was originally planned in `Requirements.md` and `SRS.md`. Use this alongside those files: they
+describe the *intended* system; this describes the *current, working* system.
+
+> **Superseded sections:** earlier revisions recorded the backend as having no authentication and the
+> frontend as "not started". Both were true at the time and are no longer — Phases 3, 4 and 7 below
+> describe the shipped behaviour.
 
 ---
 
@@ -11,95 +18,205 @@ This document records what has actually been built, tested, and verified working
 
 | Phase | Status | Notes |
 |---|---|---|
-| Phase 1 — System Analysis | ✅ Mostly done | Requirements.md drafted; Modules.md/Constraints.md may still need updates to match actual implementation |
-| Phase 2 — Database Design | ✅ Done, tested | Schema + seed data validated with real queries |
-| Phase 3 — Backend (Laravel) | ✅ Core CRUD done, tested | Faculty/Subject/Room/Section full CRUD live; auth not yet implemented |
-| Phase 4 — Frontend (React) | ⬜ Not started | |
-| Phase 5 — AI Scheduling Engine | ✅ Core validated, connected to real data | Standalone CSP model proven, then wired to live Postgres data via FastAPI |
-| Phase 6 — Integration | ✅ Core path working | Laravel → FastAPI → Postgres write-back confirmed end-to-end |
-| Phase 7 — Testing | ⬜ Formal testing not started | Ad-hoc testing done throughout (see Section 5) |
+| Phase 1 — System Analysis | ✅ Done | `Requirements.md`, `SRS.md`, `Modules.md`, `Constraints.md` |
+| Phase 2 — Database Design | ✅ Done, tested | PostgreSQL schema via Laravel migrations; 12 domain tables |
+| Phase 3 — Backend (Laravel) | ✅ Done, tested | Full CRUD, Sanctum auth + admin RBAC, approval workflow, reports, settings |
+| Phase 4 — Frontend (React) | ✅ Done | 10 routes; master-data pages, dashboard, reports, two printable timetables |
+| Phase 5 — AI Scheduling Engine | ✅ Done, tested | CP-SAT solver wired to live PostgreSQL via FastAPI |
+| Phase 6 — Integration | ✅ Done | Laravel → FastAPI → Postgres write-back confirmed end-to-end |
+| Phase 7 — Testing | ✅ Automated suite | 111 backend tests (465 assertions), 53 engine tests |
 
 ---
 
 ## 2. Database (Phase 2)
 
-**Tech:** PostgreSQL 17.10, managed through Laravel migrations (not raw `schema.sql` — see Section 6 for why).
+**Tech:** PostgreSQL 17, managed through Laravel migrations (not raw `schema.sql` — see Section 8 for why).
 
-### Tables implemented (12 total)
+### Domain tables (12)
+
 | Table | Purpose |
 |---|---|
-| `users` | Login accounts — department head or faculty |
-| `faculties` | Faculty profile: employee number, type (full_time/part_time/evening), max teaching load |
-| `faculty_availability` | Which day-of-week + time ranges each faculty member can teach |
-| `subjects` | Subject catalog: code, title, lecture/lab hours, required lab room type |
+| `users` | Login accounts — Admin / Department Head |
+| `faculties` | Faculty record: name, employee number, type (full_time/part_time/evening), max teaching load, active flag |
+| `faculty_availabilities` | Per-day time windows each faculty member can teach |
 | `faculty_subjects` | Pivot: which faculty are qualified to teach which subjects |
-| `sections` | Student sections (e.g. BSIT 1A): year level, preferred days/time window |
-| `section_subjects` | Pivot: which subjects a section takes this semester |
-| `rooms` | Classrooms/labs: name, type, capacity, status |
-| `schedules` | A generated schedule for a section: status (draft/approved/published), who approved it |
-| `schedule_sessions` | Individual class blocks within a schedule: subject, faculty, room, day, start/end time |
-| `academic_years` / `semesters` | Academic calendar (from original `schema.sql`; not yet fully wired into Laravel migrations) |
+| `subjects` | Subject catalog: code, title, year level, semester, lecture/lab hours, required lab room type |
+| `sections` | Student sections: name, year level, academic year, semester, preferred days/window, student count |
+| `section_subjects` | Pivot: which subjects a section takes |
+| `rooms` | Classrooms/laboratories: name, type, capacity, status |
+| `schedules` | A generated timetable for a section: status, who approved it and when |
+| `schedule_sessions` | Individual class blocks: subject, faculty, room, day, start/end time |
+| `schedule_generation_logs` | Every generation attempt: outcome, message, unscheduled sessions, who requested it |
+| `settings` | Institutional settings the Department Head owns (the midday break) |
+
+Plus 9 Laravel framework tables (`migrations`, `sessions`, `cache`, `cache_locks`, `jobs`,
+`job_batches`, `failed_jobs`, `personal_access_tokens`, `password_reset_tokens`) — **21 public tables**
+and 36 indexes in total.
 
 ### Verified working
+
 - Full schema created via `php artisan migrate`, no errors
-- Seed/demo data has since been replaced with the IT department dataset (7 faculty, 11 subjects, 5 rooms, 9 sections)
-- Confirmed via direct query: part-time faculty availability (declared days plus time windows) is correctly stored and enforced
+- Current demo dataset (live counts): **16 sections, 30 subjects, 11 rooms, 23 faculty**
+- Part-time faculty availability (declared days plus time windows) is correctly stored and enforced
+
+> There is **no** `academic_years` or `semesters` table — earlier revisions listed them as pending
+> additions from the original `schema.sql`. The academic year and semester are stored as plain
+> columns on `sections` and `subjects`.
 
 ---
 
 ## 3. AI Scheduling Engine (Phase 5)
 
-**Tech:** Python, Google OR-Tools (CP-SAT solver), FastAPI, psycopg2
+**Tech:** Python, Google OR-Tools (CP-SAT), FastAPI, psycopg2
 
 ### Validation history (in order)
+
 1. **Standalone prototype** (`ai-engine/prototype/scheduler_prototype.py`) — hardcoded fake dataset, proved the core CSP model works: no faculty double-booking, no room double-booking, lab subjects correctly placed in lab rooms.
 2. **Stress tests** — added a `TEST_MODE` toggle to the same prototype:
    - `normal` — baseline, OPTIMAL result
    - `force_cruz` — forced the solver to use the part-time faculty member; confirmed his Mon/Wed/Fri restriction was respected (`CHECK PASSED`)
    - `broken` — deliberately removed the only computer lab; confirmed the solver fails *cleanly* with a human-readable explanation instead of crashing — this directly derisks Requirements.md Section H ("AI Recommendation" / failure explanation)
-3. **Real-data version** (`ai-engine/solver/scheduler.py`) — same CSP logic, rewritten as a reusable function (`generate_schedule()`) that accepts real data structures instead of hardcoded lists, making it callable from an API layer.
-4. **FastAPI service** (`ai-engine/api/app.py`) — exposes `POST /generate-schedule/{section_id}`. On each call, it:
-   - Queries PostgreSQL for the section's assigned subjects, qualified faculty (with their availability), and available rooms
-   - Runs the CSP solver against that real data
-   - Returns either a generated schedule or an explanation of infeasibility
-   - `/health` endpoint confirms DB connectivity independent of solving
+3. **Real-data version** (`ai-engine/solver/scheduler.py`) — the same CSP logic, rewritten as a reusable `generate_schedule()` that accepts real data structures instead of hardcoded lists, making it callable from an API layer.
+4. **FastAPI service** (`ai-engine/api/app.py`) — exposes `POST /generate-schedule/{section_id}`. On each call it queries PostgreSQL for the section, its subjects, qualified faculty (with availability windows), available rooms, the break setting, and hours already committed in other published sections; then solves and returns either placements or per-session reasons.
 
 ### Verified working
-- `/generate-schedule/1` (BSIT 1A) tested multiple times — confirmed the solver re-solves fresh each time rather than caching (different runs produced different valid arrangements)
-- No faculty double-booking, correct lab-room-type matching, and part-time faculty day + time-window restrictions all held on **real database data**, not just the fake prototype dataset
+
+- Solves on **real database data**, re-solving fresh each run rather than caching
+- No faculty double-booking, correct lab-room-type matching, and availability day + window restrictions all hold
+- Full demo sweep: **15 sections → OPTIMAL, 146 sessions placed, 0 unscheduled**, each solve well under the 15-second budget, with 0 overlapping pairs, 0 room clashes and 0 faculty clashes in the persisted rows
+- Reasons in **minutes since midnight** on a **30-minute** grid, so half-hour starts survive
+- The midday break is a hard constraint; a bad settings row is treated as "no break" rather than making every section unschedulable
+
+### Failure reporting
+
+| Engine result | Condition |
+|---|---|
+| `404` | Unknown section |
+| `400` | No subjects assigned / no qualified faculty / no available rooms |
+
+These are surfaced by the API as **422** with the engine's own message — they are data problems the
+admin can fix, not server faults.
 
 ---
 
 ## 4. Backend API (Phase 3)
 
-**Tech:** Laravel 13.21.1 (via `laravel/laravel` v13.8.0 installer), PHP 8.5.8, PostgreSQL driver (`pdo_pgsql`)
+**Tech:** Laravel 13, PHP 8.5, PostgreSQL (`pdo_pgsql`), Laravel Sanctum
 
-### Models
-- `User`, `Faculty`, `FacultyAvailability`, `Subject`, `Section`, `Room`, `Schedule`, `ScheduleSession`
-- Key relationships: `Faculty belongsToMany Subject` (via `faculty_subjects`), `Faculty hasMany FacultyAvailability`, `Section belongsToMany Subject` (via `section_subjects`), `Faculty belongsTo User`
+### Authorization
 
-### Controllers & Routes (all under `/api`)
+```php
+Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware('admin')->group(function () { /* everything else */ });
+});
+```
+
+Only `POST /api/login` is public. Everything else needs a token, and everything besides `/logout`
+and `/me` additionally requires the `admin` role. Faculty are records, not users.
+
+### Controllers & Routes (50 routes under `/api`)
+
 | Resource | Routes | Status |
 |---|---|---|
-| Faculty | full CRUD (`index`, `show`, `store`, `update`, `destroy`) | ✅ Tested |
-| Subject | full CRUD | ✅ Tested |
-| Room | full CRUD | ✅ Tested |
-| Section | full CRUD (includes syncing subjects via `subject_ids`) | ✅ Tested |
-| Schedule generation | `POST /schedules/generate/{section}` — calls the FastAPI engine, persists results into `schedules`/`schedule_sessions` | ✅ Tested |
+| Auth | `login`, `logout`, `me` | ✅ Tested |
+| Users | full CRUD (`index`, `show`, `store`, `update`, `destroy`) | ✅ Tested |
+| Faculty | full CRUD + `availability` (GET/POST) + `subjects` (attach/detach) | ✅ Tested |
+| Subject | full CRUD, with lab-consistency validation | ✅ Tested |
+| Room | full CRUD, with a canonical room-type vocabulary | ✅ Tested |
+| Section | full CRUD, with year/semester subject-match validation | ✅ Tested |
+| Schedule | `generate/{section}`, `index`, `show`, `approve`, `publish`, `unpublish`, `reject`, `destroy`, session `update` | ✅ Tested |
+| Reports | `faculty-workload`, `room-utilization`, `section-summary`, `schedule-status`, `conflicts`, `faculty/{faculty}/schedule` | ✅ Tested |
+| Settings | `index` (GET), `update` (PUT) — the midday break | ✅ Tested |
+
+### Error semantics
+
+- `POST /api/login` — **401** for bad credentials, **403** for a valid non-admin account, **422** for a malformed body
+- `generate/{section}` — **404** unknown section, **422** when the section's subjects mismatch its year/semester (engine never called), **422** for an engine `4xx` carrying the engine's reason, **502** only when the engine is unreachable or itself faults
+- `publish` — **422** when not approved, or when the cross-section conflict check finds a clash
+- `DELETE` on faculty/subject/room/section — **409** when a *published* schedule still references it, unless confirmed with `?force=1`
+- `DELETE /api/schedules/{id}` — **422** for a published schedule
 
 ### Verified working
-- `/api/faculties` returns nested `user`, `subjects`, `availabilities` data correctly
-- `/api/sections` returns nested `subjects` with pivot data
-- `/api/rooms` returns room list correctly
-- Schedule generation writes real, valid rows into `schedules` and `schedule_sessions` — confirmed across two separate generation runs with different (both valid) outcomes
 
-### Not yet implemented
-- Authentication/authorization (Sanctum) — all endpoints are currently open, no login required
-- Reports endpoints (faculty workload, room utilization, etc. — per Requirements.md Section I)
+- `/api/faculties` returns nested `user`, `subjects`, `availabilities`
+- `/api/sections` returns nested `subjects` with pivot data
+- Schedule generation persists real rows into `schedules` / `schedule_sessions`
+- Full sweep of every route with valid and invalid payloads: **82/82 checks pass**
+
+### Known naming defect
+
+`GET /api/reports/conflicts` returns **generation logs**, not conflicts — the Reports UI tab that
+consumes it is correctly labelled "Generation Logs". The endpoint name is misleading and should be
+renamed (`/reports/generation-logs`); it is left as-is because renaming changes the public API.
 
 ---
 
-## 5. Issues Encountered & How They Were Resolved
+## 5. Frontend (Phase 4)
+
+**Tech:** React 19, TypeScript, Tailwind CSS 4, Vite (port 5173). API base
+`http://127.0.0.1:8000/api`, Bearer token in `localStorage`.
+
+### Pages
+
+| Route | Purpose |
+|---|---|
+| `/login` | Admin login |
+| `/dashboard` | Generate-schedule card + schedule review/approval and delete |
+| `/admin/users`, `/admin/faculty`, `/admin/subjects`, `/admin/rooms`, `/admin/sections` | Master data |
+| `/admin/reports` | Overview / Faculty Load / Room Usage / Sections / Generation Logs |
+| `/print-schedule?schedule={id}` | Printable section timetable — subject list (default) or `&layout=grid` |
+| `/print-faculty-schedule?faculty={id}` | Printable per-faculty timetable |
+
+### Notable implementation details
+
+- `constants/system.ts` — organisation and system name used across login, dashboard and the tab title
+- `constants/roomTypes.ts` — the canonical room/lab vocabulary, mirroring `RoomController::ROOM_TYPES`
+  and `SubjectController::LAB_ROOM_TYPES` (the solver matches room type by exact string)
+- `components/PrintLetterhead.tsx` — the official letterhead (SVG stripe sweep, seals, wordmark)
+- `components/ScheduleListTable.tsx` — subject-list printable with an Instructor column
+- `AuthContext` re-validates the cached profile against `GET /me` on mount, so a renamed account
+  appears correctly without a re-login
+
+### Verified working
+
+- Every page renders with **0 console errors and 0 failed network requests**
+- All four Reports tabs render real data; invalid `?faculty=` / `?schedule=` IDs degrade to a clear
+  message instead of a blank screen or a crash
+- `npm run build` (`tsc -b && vite build`) passes with no type errors
+
+### Known debt
+
+`npm run lint` reports **11 errors / 9 warnings**, all `react-hooks/set-state-in-effect` from the
+`useEffect(() => { fetchX() }, [])` pattern across the admin pages. Pre-existing, no runtime impact.
+
+---
+
+## 6. Approval Workflow & Protection Layers
+
+```
+draft --approve--> approved --publish--> published --unpublish--> draft
+  |                    |
+  +-- reject --> rejected
+  +-- delete (any state except published)
+```
+
+**Four protection layers** — name all four when presenting:
+
+1. **Solver constraints** — room/faculty double-booking, section self-overlap, availability and load
+   ceilings, room type + capacity, break avoidance
+2. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` validates the full proposed state
+3. **Publish conflict gate** — cross-section cross-check before a timetable goes live
+4. **Published-reference delete guard** — a published timetable cannot be orphaned by deleting the
+   faculty/room/subject/section it depends on
+
+> **Generation is per-section.** A draft only avoids rooms and faculty already committed to
+> *approved/published* schedules, so drafts generated in one batch can overlap one another. The
+> publish gate is what prevents a clash from reaching students — generate and publish sequentially
+> for a fully clash-free set.
+
+---
+
+## 7. Issues Encountered & How They Were Resolved
 
 Keeping this section because it's genuinely useful for a capstone defense — it shows debugging process, not just final state.
 
@@ -116,7 +233,7 @@ Keeping this section because it's genuinely useful for a capstone defense — it
 
 ---
 
-## 6. Design Decision: Laravel Migrations as Source of Truth
+## 8. Design Decision: Laravel Migrations as Source of Truth
 
 Early on, the database was built two ways in parallel: once via raw `schema.sql`/`seed.sql` run directly through `psql`, and again via Laravel migrations once the backend was scaffolded. These conflicted (same table names, different column definitions).
 
@@ -124,10 +241,40 @@ Early on, the database was built two ways in parallel: once via raw `schema.sql`
 
 ---
 
-## 7. Suggested Next Steps
+## 9. Testing
+
+| Target | Command | Current result |
+|---|---|---|
+| Backend | `cd backend && php artisan test` | **111 passed, 465 assertions** |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **53 tests, OK** |
+| Frontend build / typecheck | `cd frontend && npm run build` | passes |
+| Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings (known debt) |
+
+The backend suite covers, among others: section/subject year-semester matching, subject lab
+consistency, room-type vocabulary, faculty availability windows, section window validation, session
+conflict detection, the published-reference delete guard, the schedule delete lifecycle, user
+approval attribution, schedule generation attribution, login failure codes, and the engine-error
+mapping (`4xx` → 422, `5xx` → 502).
+
+An end-to-end API sweep of every route (valid and invalid payloads, status guards, validation
+branches) passes 82/82.
+
+---
+
+## 10. Suggested Next Steps
 
 In rough priority order:
-1. **Authentication** (Laravel Sanctum) — needed before this can be considered a real multi-user system
-2. **React frontend** — currently the system is only testable via browser JSON responses or curl; no visual UI exists yet
-3. **Reports endpoints** — faculty workload, room/lab utilization, per Requirements.md Section I
-4. **Formal testing pass** — unit tests for the solver, feature tests for the API, matching Requirements.md's non-functional requirements (30-second generation target, etc.)
+
+1. **Harden login** — rate-limit failed attempts, and force a change of the demo password before any
+   networked deployment
+2. **Rename `/reports/conflicts`** to reflect that it returns generation logs
+3. **Clear the frontend lint debt** — rework the fetch-on-mount effects
+4. **Signature-before-approval** — designed and agreed, not built; see `Planned-Signature-Approval.md`
+5. **Multi-signatory support** (Department Head + Registrar), if the printed form requires it
+
+> **Reviewed and closed — intended behaviour, not a defect.** Generation deliberately reads only
+> *approved* and *published* schedules from other sections, so a new draft never considers another
+> section's draft. This is the documented rule (`Constraints.md` #8, `SRS.md` #8, `Requirements.md`
+> rule 8), and the publish gate is where a cross-section clash is caught. Making generation globally
+> draft-aware was considered and rejected: it would make results depend on generation order and
+> contradict the documented workflow.

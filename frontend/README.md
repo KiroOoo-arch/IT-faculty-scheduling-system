@@ -1,75 +1,71 @@
-# React + TypeScript + Vite
+# Frontend — React Admin UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The Department Head's interface for the IT Faculty Scheduling System.
 
-Currently, two official plugins are available:
+**Stack:** React 19, TypeScript, Tailwind CSS 4, Vite. Runs on **port 5173**.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Scripts
 
-## React Compiler
+| Script | Command | Notes |
+|---|---|---|
+| `npm run dev` | `vite` | dev server on 5173 |
+| `npm run build` | `tsc -b && vite build` | typecheck + production build |
+| `npm run lint` | `eslint .` | see "Lint debt" below |
+| `npm run preview` | `vite preview` | preview the production build |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## API
 
-## Expanding the ESLint configuration
+All requests go to the Laravel API at a hardcoded base URL in `src/context/AuthContext.tsx`:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```ts
+const API_BASE_URL = 'http://127.0.0.1:8000/api'
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Authentication is a Bearer token kept in `localStorage`. `AuthContext` re-validates the cached
+profile against `GET /me` on mount, so a renamed account shows correctly without a re-login.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Routes
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Route | Page |
+|---|---|
+| `/login` | `LoginPage` |
+| `/dashboard` | `AdminDashboard` — generate card + schedule review/approval |
+| `/admin/users` | `UsersPage` |
+| `/admin/faculty` | `FacultyPage` |
+| `/admin/subjects` | `SubjectsPage` |
+| `/admin/rooms` | `RoomsPage` |
+| `/admin/sections` | `SectionsPage` |
+| `/admin/reports` | `ReportsPage` — Overview / Faculty Load / Room Usage / Sections / Generation Logs |
+| `/print-schedule?schedule={id}` | `PrintableSchedule` — `&layout=list\|grid` |
+| `/print-faculty-schedule?faculty={id}` | `PrintableFacultySchedule` |
+
+## Structure
 
 ```
+src/
+  components/     PrintLetterhead (official letterhead), ScheduleListTable (subject-list template)
+  constants/      system.ts (org + system name), roomTypes.ts (canonical room/lab vocabulary)
+  context/        AuthContext (token, user, API_BASE_URL)
+  pages/          page components; pages/admin/ holds the master-data pages
+  utils/          time formatting
+```
+
+### Shared vocabulary
+
+`constants/roomTypes.ts` is the single frontend source for room and lab types
+(`lecture`, `computer_lab`, `science_lab`, `electronics_lab`). It mirrors
+`RoomController::ROOM_TYPES` and `SubjectController::LAB_ROOM_TYPES` deliberately — the solver
+matches a session to a room with an exact string comparison, so a free-text room type would
+silently make lab sessions unschedulable.
+
+### Printable output
+
+Both printables render through `PrintLetterhead` and carry print-specific CSS. The section printable
+defaults to a subject-list layout and can switch to the weekly grid via `&layout=grid`. Published
+schedules only.
+
+## Lint debt
+
+`npm run lint` currently reports **11 errors / 9 warnings**, all `react-hooks/set-state-in-effect`
+from the `useEffect(() => { fetchX() }, [])` pattern used across the admin pages. These are
+pre-existing and do not affect runtime behaviour; `npm run build` passes cleanly.

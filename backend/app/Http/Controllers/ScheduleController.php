@@ -74,13 +74,31 @@ class ScheduleController extends Controller
         }
 
         if ($response->failed()) {
+            // The engine's 4xx responses are data problems the Department Head
+            // can actually fix — a section with no subjects assigned, no
+            // qualified faculty, no available room. Reporting those as 502
+            // "AI engine request failed" claimed the server was broken and hid
+            // the one sentence that said what to do, so the engine's own reason
+            // is surfaced as 422. A genuine upstream fault still reads as 502.
+            $engineMessage = $response->json('detail') ?? $response->body();
+            $upstreamFault = $response->serverError();
+
             ScheduleGenerationLog::create([
                 'section_id' => $section->id,
                 'requested_by' => auth()->id(),
                 'status' => 'failure',
-                'message' => 'AI engine request failed: ' . $response->body(),
+                'message' => $upstreamFault
+                    ? 'AI engine request failed: ' . $response->body()
+                    : $engineMessage,
                 'unscheduled_sessions' => null,
             ]);
+
+            if (!$upstreamFault) {
+                return response()->json([
+                    'message' => $engineMessage,
+                    'error' => $engineMessage,
+                ], 422);
+            }
 
             return response()->json([
                 'error' => 'AI engine request failed',

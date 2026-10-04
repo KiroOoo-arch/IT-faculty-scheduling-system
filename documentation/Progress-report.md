@@ -73,7 +73,7 @@ Every documented status code and validation gate was exercised against the runni
 
 ### Phase 13 — Published-Reference Guard & Suite Re-baseline (October 2, 2026)
 Deleting master data previously cascaded into sessions that a **published** schedule still used, silently corrupting the live timetable. A shared **published-reference guard** (`backend/app/Http/Controllers/Concerns/GuardsPublishedReferences.php`) is now wired into the Faculty, Subject, Room, and Section `destroy()` endpoints: a delete that would remove sessions from a published schedule answers **HTTP 409** with the affected schedule IDs, the total sessions at risk, and how many come from the published timetable. The client re-confirms and retries with `?force=1`; eleven feature tests pin the behavior (`PublishedReferenceGuardTest.php`).
-- **Suite re-baseline**: backend **90 tests / 380 assertions**, AI engine **46 unit tests** — 136 automated tests total, all passing
+- **Suite re-baseline**: backend **111 tests / 465 assertions**, AI engine **53 unit tests** — 164 automated tests total, all passing
 
 ---
 
@@ -118,8 +118,8 @@ Admin Login → Manage Scheduling Data → Assign Valid Subjects
 Subject assignments are validated before generation (year/semester match + lab consistency, HTTP 422 on violation).
 
 ### Test Results
-- Backend feature tests: **90 passed (380 assertions)** — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (FEASIBLE accepted, INFEASIBLE rejected), unreachable-engine handling, and detailed session-edit conflict payloads
-- AI engine unit tests: **46 tests OK, 0 failed, 0 skipped, 0 warnings/errors** — solver exercised directly with controlled fixtures
+- Backend feature tests: **111 passed (465 assertions)** — authentication, subject/section validation rules, generation attribution, publish gate, solver-status acceptance (FEASIBLE accepted, INFEASIBLE rejected), unreachable-engine handling, and detailed session-edit conflict payloads
+- AI engine unit tests: **53 tests OK, 0 failed, 0 skipped, 0 warnings/errors** — solver exercised directly with controlled fixtures
 - TypeScript typecheck clean; production build passes
 - Live-verified: admin login, faculty records with names, reports, conflict detection, publish gate, print view, unpublish — plus the September 27 API pass that fixed and re-verified the `FEASIBLE` and unreachable-engine defects
 
@@ -152,6 +152,6 @@ Subject assignments are validated before generation (year/semester match + lab c
 ## 4. Remaining / Optional Enhancements
 
 - Excel/CSV export of published schedules
-- Soft constraints (lunch break, senior faculty priority, preference weighting)
+- Soft constraints (senior faculty priority, preference weighting) — the midday break is implemented as a **hard** constraint
 - Multi-semester planning; university-scale scalability
 - Email/SMS notifications

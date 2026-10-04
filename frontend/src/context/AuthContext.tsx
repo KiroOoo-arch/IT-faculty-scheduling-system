@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react'
@@ -85,6 +86,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem('user')
     return saved ? JSON.parse(saved) : null
   })
+
+  // The cached profile in localStorage is written once at login, so renaming an
+  // account (or changing its role) would not show up until the next sign-in —
+  // the header would keep greeting the old name. Re-read it once per load so it
+  // always reflects the account as it is now. Failures are ignored: the fetch
+  // interceptor already handles an expired token, and a transient error must
+  // not sign anyone out.
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    fetch(`${API_BASE_URL}/me`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((me) => {
+        if (cancelled || !me) return
+        setUser(me)
+        localStorage.setItem('user', JSON.stringify(me))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   // Used by the logout button: also clears the in-memory React state.
   const clearSession = useCallback(() => {

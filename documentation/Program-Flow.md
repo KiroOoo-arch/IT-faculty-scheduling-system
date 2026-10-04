@@ -123,8 +123,8 @@ sequenceDiagram
 |---|---|---|
 | 200 | controllers | Successful read/update/approve/publish/unpublish |
 | 201 | `SubjectController::store`, `SectionController::store` (the section create was observed on the wire) | Record created |
-| 401 | `auth:sanctum` | Missing or invalid Bearer token — observed; without an `Accept: application/json` header the same request answers **302** to the login route instead, which is why every frontend call sends the header |
-| 403 | `EnsureUserIsAdmin` — observed; the `authorizeAdmin()` / role checks inside the controllers sit behind that middleware and are not reachable through these routes | Authenticated but not an `admin` |
+| 401 | `auth:sanctum`; also `AuthController::login` — observed for both a wrong password and an unknown email | Missing or invalid Bearer token, or failed credentials — without an `Accept: application/json` header the same request answers **302** to the login route instead, which is why every frontend call sends the header |
+| 403 | `EnsureUserIsAdmin` — observed; also `AuthController::login` for a valid non-admin account (read from the controller, not exercised live — the demo data holds no non-admin account). The `authorizeAdmin()` / role checks inside the controllers sit behind that middleware and are not reachable through these routes | Authenticated but not an `admin`, or a non-admin attempting to sign in |
 | 404 | Route-model binding (`/schedules/{schedule}`, `/sections/{section}`, …) — observed, returning the framework's exception payload while `APP_DEBUG=true`; FastAPI answers its own 404 for an unknown section | Row does not exist |
 | 422 | `$request->validate(...)`, business-rule gates (Gates 1–5), wrong-status actions | Input rejected — the standard rejection code for this program |
 | 502 | `ScheduleController::generate` — two paths, both observed: a non-2xx engine response → `{"error":"AI engine request failed","details":"<engine response body>"}`, and an **unreachable** engine → `{"error":"AI engine unreachable","details":"<connection error>"}` | The AI engine answered with a non-2xx **response**, or could not be reached at all |
@@ -132,7 +132,11 @@ sequenceDiagram
 
 Every row above was exercised against the running stack (`php artisan serve` + `uvicorn`) on September 27, 2026, except the 500 row, which is read from the engine's exception handler; §7 lists the requests and what came back.
 
-**Note on login failures:** `AuthController::login` throws a `ValidationException` for both wrong credentials and a non-admin role, so the program answers **422 with an `email` error message** (not 401) — the frontend sends `Accept: application/json`, which is what makes Laravel render that as JSON instead of a redirect.
+**Note on login failures:** `AuthController::login` does not report a failed sign-in as a validation
+error. An unknown email or a wrong password answers **401** with
+`{"message":"The provided credentials are incorrect."}`; a valid non-admin account answers **403**.
+Only a malformed body is **422**, from `validate()`. The frontend sends `Accept: application/json`,
+which is what makes Laravel render these as JSON instead of a redirect.
 
 ---
 
@@ -146,9 +150,9 @@ flowchart TD
     B -- "invalid" --> B1["422 validation errors"]
     B -- "valid" --> C["User::where('email')->first()"]
     C --> D{"user found AND<br/>Hash::check(password)?"}
-    D -- "no" --> D1["422 — 'The provided credentials are incorrect.'"]
+    D -- "no" --> D1["401 — 'The provided credentials are incorrect.'"]
     D -- "yes" --> E{"user.role === 'admin'?"}
-    E -- "no" --> E1["422 — 'Only administrator accounts can access this system.'"]
+    E -- "no" --> E1["403 — 'Only administrator accounts can access this system.'"]
     E -- "yes" --> F["Delete all existing tokens for this user<br/>createToken('api-token')"]
     F --> G["200 { user, token } → localStorage<br/>AuthContext sets token + user"]
     G --> H["Further calls: auth:sanctum → admin"]
@@ -159,7 +163,13 @@ flowchart TD
 - Login is the **only public route**; everything else sits behind `auth:sanctum`.
 - Faculty have no accounts, so the role check is the program-level enforcement of the admin-only design (`FAC-AUTH-003`).
 - Frontend logout clears `localStorage` (`AuthContext.logout`); the server-side token is revoked by `POST /api/logout`.
-- **Observed live:** valid admin login → `200 {user, token}`; wrong password, unknown email and a missing field → 422 (`The provided credentials are incorrect.` / `The password field is required.`); a non-admin account → 422 `Only administrator accounts can access this system.`, so a non-admin can never obtain a token through the API — and a token minted for one directly still gets `403 Forbidden. Admin access required.` on admin routes while `/api/me` answers 200.
+- **Observed live:** valid admin login → `200 {user, token}`; a wrong password or an unknown email →
+  `401 {"message":"The provided credentials are incorrect."}`; a missing field → `422`
+  (`The password field is required.`). The non-admin branch is **read from the controller, not
+  exercised live** (the demo data holds no non-admin account): it answers
+  `403 Only administrator accounts can access this system.`, so a non-admin can never obtain a token
+  through the API — and a token minted for one directly still gets `403 Forbidden. Admin access
+  required.` on admin routes while `/api/me` answers 200.
 
 ### 3.2 Schedule generation (`ScheduleController::generate` → FastAPI → CP-SAT)
 
@@ -348,7 +358,7 @@ Session-level reasons are always preserved: structurally impossible sessions (no
 | Reports data | `backend/app/Http/Controllers/ReportController.php` | `facultyWorkload`, `roomUtilization`, `conflicts`, `scheduleStatusOverview`, `sectionSummary` |
 | AI engine endpoint | `ai-engine/api/app.py` | `generate_schedule_for_section`, `health`, `get_connection` |
 | Solver | `ai-engine/solver/scheduler.py` | `generate_schedule()` |
-| Solver test suite | `ai-engine/tests/test_scheduler.py` | 46 unittest cases against `generate_schedule()` |
+| Solver test suite | `ai-engine/tests/test_scheduler.py` | 53 unittest cases against `generate_schedule()` |
 
 ---
 
@@ -375,9 +385,10 @@ Every status code and branch in §2, §3 and §4 was driven against the running 
 | Probe | Request | Observed |
 |---|---|---|
 | Unauthenticated request | `GET /api/schedules`, no token | `401 {"message":"Unauthenticated."}` |
-| Login failures | `POST /api/login` wrong password / unknown email / missing field | `422` with `errors.email` / `errors.password` |
+| Login failures | `POST /api/login` wrong password / unknown email | `401 {"message":"The provided credentials are incorrect."}` — re-observed October 4, 2026; the September 27 pass recorded the then-correct `422` from the old `ValidationException` behaviour, which this row supersedes |
+| Malformed login | `POST /api/login` missing field | `422` with `errors.password` |
 | Login success | `POST /api/login` admin | `200 {user, token}` |
-| Non-admin rejection | `POST /api/login` as a non-admin account | `422 Only administrator accounts can access this system.` |
+| Non-admin rejection (read from source, not exercised live) | `POST /api/login` with valid credentials on a non-admin account | `403 {"message":"Only administrator accounts can access this system."}`; no token issued |
 | Middleware gate | admin-only route with a token minted for that non-admin | `403 {"message":"Forbidden. Admin access required."}`; the same token on `/api/me` → `200` |
 | Unknown row | `GET /api/schedules/999999` | `404`, framework exception payload |
 | Subject-less generation | scratch section with no subjects → `POST /schedules/generate/{id}` | engine `400` → Laravel `502 {"error":"AI engine request failed","details":"{\"detail\":\"Section N has no subjects assigned.\"}"}` + `failure` log row |
@@ -397,6 +408,6 @@ Every status code and branch in §2, §3 and §4 was driven against the running 
 | `INFEASIBLE` result | section given a lab subject and a student count above every room capacity, then generate | `422 {"status":"INFEASIBLE","message":"No sessions could be scheduled. See individual reasons."}` + `failure` row storing all three sessions with reasons (`No room of type 'lecture' exists for this lecture session.`, `No room of type 'computer_lab' exists for this laboratory session.`) |
 | `reject` transition | `PATCH /schedules/{id}/reject` on a draft | `200` → `status = rejected`; `DELETE` afterwards → `200` (every unpublished schedule is deletable); `approve` → `422 … currently 'rejected'.` |
 
-**Still read from source, not exercised here:** the engine's own `500` paths (`psycopg2.Error`, unexpected exception), FastAPI's `404` for a deleted section, and the five `GET /api/reports/*` endpoints (§3.6), plus the frontend-side behaviors described in §4.4 — those were traced in code and in the earlier UI walkthrough, not re-run in this pass. The 46-case AI-engine suite was re-run and passes (`Ran 46 tests … OK`), which is what makes `FEASIBLE` a real, reachable engine result.
+**Still read from source, not exercised here:** the engine's own `500` paths (`psycopg2.Error`, unexpected exception), FastAPI's `404` for a deleted section, and the five `GET /api/reports/*` endpoints (§3.6), plus the frontend-side behaviors described in §4.4 — those were traced in code and in the earlier UI walkthrough, not re-run in this pass. The 53-case AI-engine suite was re-run and passes (`Ran 53 tests … OK`), which is what makes `FEASIBLE` a real, reachable engine result.
 
 **State restored:** every row created for these probes (schedules, sessions, generation-log rows, the scratch section, the non-admin account) was deleted afterwards. After the later cleanup of the stale draft schedule #73 (and its out-of-window session #300), the demo database holds: 31 schedules (29 archived / 1 published / 1 draft), 86 sessions, 53 generation logs, with 0 remaining faculty-availability violations.

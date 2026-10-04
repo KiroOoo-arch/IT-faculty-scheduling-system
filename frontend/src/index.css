@@ -1,1 +1,233 @@
 @import "tailwindcss";
+
+/*
+ * Letterhead for the printable documents.
+ *
+ * The header is assembled from parts rather than one raster banner: a vector
+ * sweep of stripes, the official high-resolution seals, and real text. That
+ * keeps every element sharp when the page is scaled up for print, which a
+ * low-resolution screenshot of a letterhead could not.
+ *
+ * The colours are taken from the college banner: gold (#ffc000) and navy
+ * (#0a2f9c). Kept as plain CSS rather than Tailwind utilities because the same
+ * rules have to survive the print media query unchanged.
+ */
+
+/* The stripe sweep, the two marks and the wordmark sit on one line, with the
+ * wordmark pushed to the right. */
+.letterhead-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.5rem 0.75rem;
+  min-height: 100px;
+  overflow: hidden;
+}
+
+/* The stripes stretch to whatever box the banner ends up with, so the header
+ * looks the same whether it is a phone-width preview or a full A4 page. */
+.letterhead-stripes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+/* Everything above the stripes needs a stacking context of its own, or the
+ * absolutely-positioned stripes would paint over it. */
+.letterhead-seal,
+.letterhead-bp,
+.letterhead-wordmark {
+  position: relative;
+  z-index: 1;
+}
+
+.letterhead-seal {
+  height: 78px;
+  width: auto;
+  flex: none;
+}
+
+.letterhead-bp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: none;
+}
+
+.letterhead-bp img {
+  height: 54px;
+  width: auto;
+}
+
+.letterhead-bp span {
+  margin-top: 2px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #0a2f9c;
+}
+
+.letterhead-wordmark {
+  margin-left: auto;
+  text-align: right;
+  line-height: 1.15;
+  color: #12266b;
+}
+
+/* A serif face matches the wordmark on the printed letterhead this replaces.
+ * The stack is entirely generic, so nothing has to be downloaded to render it. */
+.letterhead-name {
+  display: block;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-weight: 700;
+  font-size: 27px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.letterhead-addr {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* The dashed rule that sits under the marks on the printed letterhead. */
+.letterhead-dashed {
+  border-bottom: 1px dashed #9aa4b5;
+}
+
+.letterhead-rule {
+  height: 4px;
+  margin-top: 2px;
+  border-top: 2px solid #f5c518;
+  border-bottom: 2px solid #1b2a6b;
+}
+
+/*
+ * Secondary actions: Log out and the back links.
+ *
+ * A navy outline keeps them identical on every admin page and keeps them
+ * quieter than the solid navy primary button. They had drifted apart — a mix of
+ * grey fills and plain blue underlined links — so the styling lives here once
+ * rather than being retyped (and diverging) at each call site.
+ */
+.btn-navy-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid #0a2f9c;
+  border-radius: 0.375rem;
+  background: #ffffff;
+  color: #0a2f9c;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-navy-outline:hover {
+  background: #0a2f9c;
+  color: #ffffff;
+}
+
+/*
+ * The sign-in screen.
+ *
+ * Same palette as the letterhead — gold (#ffc000) over navy (#0a2f9c) — so the
+ * page a user signs in on looks like the page they will later print. Plain CSS
+ * again, because the gradient, the sweep and the wordmark are easier to keep
+ * exact here than as a long pile of Tailwind utilities at the call site.
+ */
+.login-brand {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(115% 115% at 100% 0%, rgba(255, 192, 0, 0.22) 0%, rgba(255, 192, 0, 0) 55%),
+    linear-gradient(158deg, #12307f 0%, #0a2f9c 48%, #061b57 100%);
+  color: #ffffff;
+}
+
+/* The letterhead's stripe sweep, sitting along the bottom edge of the panel.
+ *
+ * The aspect ratio is the whole point. The letterhead's artwork is a wide, short
+ * box (325 x 67, about 4.85:1), so stretching it to fill a tall panel is what
+ * turned a thin ribbon into a wedge. Locking the element to that same ratio and
+ * letting its height follow the panel's width keeps the ribbon's thickness
+ * proportional at every size — the SVG is only ever scaled, never distorted,
+ * exactly as it is on paper. */
+.login-brand-stripes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 325 / 67;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.login-brand-inner {
+  position: relative;
+  z-index: 1;
+}
+
+/* A drop shadow keeps the seal legible where the sweep passes behind it. */
+.login-seal {
+  filter: drop-shadow(0 6px 14px rgba(3, 12, 40, 0.45));
+}
+
+.login-brand-wordmark {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+/* Short gold rule under the wordmark, echoing the gold-over-navy rule that
+ * closes the printed letterhead. */
+.login-brand-rule {
+  height: 4px;
+  width: 64px;
+  border-radius: 2px;
+  background: #ffc000;
+}
+
+/* Gold-over-navy hairline across the top of the card, so the card carries the
+ * same colours as the panel without shouting. */
+.login-card-accent {
+  height: 3px;
+  background: linear-gradient(90deg, #0a2f9c 0%, #0a2f9c 68%, #ffc000 68%, #ffc000 100%);
+}
+
+/* The form side of the page. A soft glow behind the card stops a plain grey
+ * field from looking like an unfinished page, and keeps the shadowed card
+ * from reading as a smudge. */
+.login-pane {
+  background: radial-gradient(80% 55% at 50% 0%, #f2f6fb 0%, rgba(242, 246, 251, 0) 65%),
+    #dde4ee;
+}
+
+@media print {
+  /* Keep the letterhead with the content that follows it rather than letting
+   * it strand alone at the bottom of a page. */
+  .letterhead {
+    break-after: avoid;
+  }
+
+  /* Shave the marks a little so a busy schedule still has room to print. */
+  .letterhead-seal {
+    height: 68px;
+  }
+  .letterhead-bp img {
+    height: 46px;
+  }
+  .letterhead-name {
+    font-size: 23px;
+  }
+}

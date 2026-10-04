@@ -111,7 +111,9 @@ The log vocabulary subsection states that the stored value is `strtolower(status
 
 Every code, its producer, and when it fires. Two entries deserve emphasis:
 
-- **422 is the standard rejection code for this program**, and it is also what a **failed login** returns — not a 401.
+- **422 is the standard rejection code for this program — but not for login.** A failed login answers
+  **401** for a wrong password or an unknown email, and **403** for a valid non-admin account; a 422
+  from this route means only a malformed body.
 - **401 vs 302 depends on the `Accept` header.** Same request, different answer. This is the kind of detail that signals the system was actually exercised.
 
 ### Section 8 — File and Function Index
@@ -164,13 +166,19 @@ Yes. Gate 4 merges your change onto the session's current values and then valida
 The solver enforces the *scheduling* constraints — no double-booking, room type and capacity, qualification, availability, section preferences, maximum teaching load. The gates enforce *data-integrity* rules at the application layer — lab-hour consistency, subject/section matching, the publish conflict check. The gates never reach OR-Tools.
 
 **"How many tests do you have?"**
-Two suites. The AI engine has **46 unit tests** that call `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function. The Laravel side has **90 tests / 380 assertions** covering the feature endpoints, including the conflict payload and the 401 contract. Both suites pass.
+Two suites. The AI engine has **53 unit tests** that call `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function. The Laravel side has **111 tests / 465 assertions** covering the feature endpoints, including the conflict payload and the 401 contract. Both suites pass.
 
 **"Why does the engine's input reading live in `app.py` rather than in the solver?"**
-Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` contains no HTTP code at all and is a pure function — data in, data out. That is what makes the 46 solver tests fast and deterministic.
+Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` contains no HTTP code at all and is a pure function — data in, data out. That is what makes the 53 solver tests fast and deterministic.
 
 **"Show me how a login failure is handled."**
-`AuthController::login` throws a `ValidationException` for both wrong credentials and a non-admin role, so the program answers **422** with the message attached to the email field — not a 401. The 401 only comes from `auth:sanctum` on subsequent requests.
+`AuthController::login` distinguishes the failures rather than reporting them all as validation
+errors. An unknown email or a wrong password answers **401** with
+`{"message":"The provided credentials are incorrect."}` — an authentication failure, not a bad
+field. Valid credentials on a non-admin account answer **403** with
+`Only administrator accounts can access this system.`, so no token is ever issued. Only a malformed
+body is still **422**, from `validate()`. The 401 that `auth:sanctum` produces on a later request is a
+separate path.
 
 **"What does the app do if someone tries an admin action without admin rights?"**
 `EnsureUserIsAdmin` returns **403** before any controller runs. In practice no non-admin accounts exist, so this is defence in depth — but it is enforced and tested.
@@ -187,7 +195,9 @@ Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` co
 
 4. **The in-controller role checks are unreachable via the routes.** `ScheduleSessionController` and `ScheduleApprovalController` both re-check the role, but the middleware already rejected non-admins. Frame this as defence in depth, not redundancy.
 
-5. **Login failures are 422, not 401** — worth stating before a panelist assumes otherwise.
+5. **Login failures are 401 or 403, not 422** — worth stating before a panelist assumes otherwise.
+   A wrong password and an unknown email answer **401**; a valid non-admin account answers **403**;
+   a 422 from this route means only a malformed body.
 
 6. **`schedules.status` is a plain string**, not a database enum. The accepted values are enforced by controller logic. A `rejected` value can exist in the column even though it appears in no documented lifecycle.
 

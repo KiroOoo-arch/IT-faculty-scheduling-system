@@ -278,8 +278,10 @@ sequenceDiagram
     U->>F: Email + password
     F->>L: POST /api/login — the ONLY public route
     L->>DB: Look up user by email
-    alt unknown user, wrong password, or role != admin
-        L-->>F: 422 ValidationException (message on the email field)
+    alt unknown user or wrong password
+        L-->>F: 401 {message: 'The provided credentials are incorrect.'}
+    else valid credentials, role != admin
+        L-->>F: 403 {message: 'Only administrator accounts can access this system.'}
         Note over L: No token is ever issued to a non-admin
     else valid admin
         L->>DB: Delete all existing tokens for this user

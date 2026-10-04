@@ -14,7 +14,9 @@ class ReportController extends Controller
 {
     public function facultyWorkload()
     {
-        $faculties = Faculty::all()->map(function ($faculty) {
+        // Eager-load subjects: without this, reading them per row would fire one
+        // query per faculty member.
+        $faculties = Faculty::with('subjects')->get()->map(function ($faculty) {
             $hours = ScheduleSession::where('faculty_id', $faculty->id)
                 ->whereHas('schedule', fn ($q) => $q->where('status', 'published'))
                 ->get()
@@ -31,6 +33,7 @@ class ReportController extends Controller
                 'utilization_percent' => $faculty->max_teaching_load > 0
                     ? round(($hours / $faculty->max_teaching_load) * 100, 1)
                     : null,
+                'subjects' => $faculty->subjects->pluck('code')->values(),
             ];
         });
 

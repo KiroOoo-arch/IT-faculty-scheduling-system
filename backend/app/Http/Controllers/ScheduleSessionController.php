@@ -65,6 +65,7 @@ class ScheduleSessionController extends Controller
     /**
      * Check the proposed session state against everything it must not collide with:
      * - the room's type must match what the subject needs (lecture vs lab)
+     * - the room must seat the whole section (capacity >= student count)
      * - the midday break the solver keeps clear
      * - the faculty member's declared availability
      * - other sessions in the SAME schedule (same section can't be in 2 places)
@@ -80,6 +81,20 @@ class ScheduleSessionController extends Controller
         $neededType = $session->session_type === 'laboratory' ? $subject->lab_room_type : 'lecture';
         if ($neededType && $room && $room->type !== $neededType) {
             $conflicts[] = "Room '{$room->name}' is type '{$room->type}', but this session needs '{$neededType}'.";
+        }
+
+        // Room capacity — the other half of the same room rule the solver
+        // enforces, where a room is eligible only if it seats the whole section
+        // (scheduler.py: `eligible_rooms = [... if r["capacity"] >= student_count]`).
+        // Validating the type alone let an admin hand-place a section into a
+        // room that is too small — something generation would never produce, and
+        // which it would instead report as "no room large enough" — leaving the
+        // two paths disagreeing about the same rule, exactly as the break check
+        // above exists to prevent.
+        $studentCount = (int) ($session->schedule?->section?->student_count ?? 0);
+        if ($studentCount > 0 && $room && $room->capacity < $studentCount) {
+            $conflicts[] = "Room '{$room->name}' seats {$room->capacity}, but this section has "
+                . "{$studentCount} students.";
         }
 
         // Zero-padded HH:MM for every comparison below. These sort the same
@@ -177,6 +192,7 @@ class ScheduleSessionController extends Controller
  *
  * It validates input, checks schedule status, and prevents conflicts:
  * - room type mismatch
+ * - room too small for the section
  * - the midday break
  * - faculty availability
  * - overlapping sessions in the same schedule

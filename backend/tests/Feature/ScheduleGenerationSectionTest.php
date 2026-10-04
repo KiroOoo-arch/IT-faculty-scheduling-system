@@ -336,4 +336,42 @@ class ScheduleGenerationSectionTest extends TestCase
         $this->assertSame('draft', $existing->status, 'The existing draft was archived by an infeasible run.');
         $this->assertSame(0, Schedule::where('status', 'archived')->count());
     }
+
+    #[Test]
+    public function an_engine_client_error_is_reported_as_422_not_502(): void
+    {
+        // The engine rejects the request with its own explanation — here, the
+        // section has no subjects. That is a data problem the Department Head
+        // can fix, so it must not be dressed up as an upstream 502 failure.
+        Http::fake([
+            '127.0.0.1:8001/generate-schedule/*' => Http::response([
+                'detail' => 'Section 1 has no subjects assigned.',
+            ], 400),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/schedules/generate/{$this->section->id}")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Section 1 has no subjects assigned.');
+
+        $this->assertSame(0, Schedule::count());
+
+        $log = ScheduleGenerationLog::firstOrFail();
+        $this->assertSame('failure', $log->status);
+        $this->assertSame('Section 1 has no subjects assigned.', $log->message);
+    }
+
+    #[Test]
+    public function an_engine_server_error_still_reports_502(): void
+    {
+        // A genuine upstream fault keeps its 502 "gateway" meaning.
+        Http::fake([
+            '127.0.0.1:8001/generate-schedule/*' => Http::response('boom', 500),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/schedules/generate/{$this->section->id}")
+            ->assertStatus(502)
+            ->assertJsonPath('error', 'AI engine request failed');
+    }
 }

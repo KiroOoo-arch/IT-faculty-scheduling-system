@@ -112,7 +112,7 @@ export default function RoomsPage() {
       <div className="max-w-3xl mx-auto">
         <Link
           to="/dashboard"
-          className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 mb-4"
+          className="btn-navy-outline mb-4"
         >
           ← Back to Dashboard
         </Link>

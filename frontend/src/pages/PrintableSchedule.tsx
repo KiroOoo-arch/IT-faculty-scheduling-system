@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../context/AuthContext'
 import { formatTime12h, formatTimeRange } from '../utils/time'
+import PrintLetterhead from '../components/PrintLetterhead'
+import ScheduleListTable from '../components/ScheduleListTable'
 
 type Session = {
   id: number
@@ -48,6 +50,21 @@ export default function PrintableSchedule() {
   const { token } = useAuth()
   const [schedule, setSchedule] = useState<Schedule | null>(null)
   const [error, setError] = useState('')
+  // 'list' is the subject-by-subject handout; 'grid' is the weekly grid. Both
+  // layouts are kept and switchable, so trying the new sheet is reversible
+  // rather than replacing the one that was there before.
+  const [layout, setLayout] = useState<'list' | 'grid'>(() =>
+    new URLSearchParams(window.location.search).get('layout') === 'grid' ? 'grid' : 'list',
+  )
+
+  // Keep the choice in the query string so a refresh, and the browser's print
+  // preview, keep whichever layout was picked.
+  function switchLayout(next: 'list' | 'grid') {
+    setLayout(next)
+    const params = new URLSearchParams(window.location.search)
+    params.set('layout', next)
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
+  }
 
   useEffect(() => {
     // ?schedule=ID  (query param keeps this page linkable from the dashboard)
@@ -102,30 +119,38 @@ export default function PrintableSchedule() {
   return (
     <div className="print-area bg-white min-h-screen p-6">
       {/* Screen-only controls — hidden when printing */}
-      <div className="no-print flex gap-3 justify-end mb-4 max-w-5xl mx-auto">
+      <div className="no-print flex flex-wrap gap-3 justify-end mb-4 max-w-5xl mx-auto">
         <button onClick={() => window.print()}
           className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
           🖨 Print / Save as PDF
         </button>
+        <button
+          onClick={() => switchLayout(layout === 'list' ? 'grid' : 'list')}
+          className="btn-navy-outline">
+          {layout === 'list' ? 'Switch to weekly grid' : 'Switch to subject list'}
+        </button>
         <a href="/dashboard"
-          className="border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-100 transition">
+          className="btn-navy-outline">
           ← Back to Dashboard
         </a>
       </div>
 
-      {/* Header */}
-      <div className="max-w-5xl mx-auto mb-4 text-center">
-        <h1 className="text-lg font-bold uppercase">IT Department</h1>
-        <h2 className="text-base font-semibold">Class Schedule</h2>
-        <p className="text-sm">
-          {section ? `${section.name} — Year ${section.year_level}` : `Schedule #${schedule.id}`}
-          {section?.semester_name ? ` · ${section.semester_name}` : ''}
+      {/* Header — the school letterhead, then the document title */}
+      <PrintLetterhead
+        title="Class Schedule"
+        subtitle={section ? `${section.name} — Year ${section.year_level}` : `Schedule #${schedule.id}`}
+      >
+        <p className="text-center text-xs text-gray-600" >
+          {section?.semester_name ? `${section.semester_name}` : ''}
           {section?.academic_year ? ` · A.Y. ${section.academic_year}` : ''}
         </p>
-        <p className="text-xs text-gray-500">Status: {schedule.status.toUpperCase()}</p>
-      </div>
+        <p className="text-center text-xs text-gray-600">Status: {schedule.status.toUpperCase()}</p>
+      </PrintLetterhead>
 
-      {/* Weekly grid */}
+      {/* Subject-by-subject list, or the weekly grid. */}
+      {layout === 'list' ? (
+        <ScheduleListTable sessions={sessions} />
+      ) : (
       <table className="schedule-grid w-full max-w-5xl mx-auto border-collapse text-[11px]">
         <thead>
           <tr>
@@ -162,6 +187,7 @@ export default function PrintableSchedule() {
           })}
         </tbody>
       </table>
+      )}
 
       {/* Print CSS */}
       <style>{`
@@ -172,6 +198,9 @@ export default function PrintableSchedule() {
           .empty-row { display: none; }
           .schedule-grid { width: 100% !important; font-size: 10px; }
           .session-cell { break-inside: avoid; }
+          /* Keep a subject's meetings together on the printed sheet. */
+          .schedule-list { width: 100% !important; font-size: 10px; }
+          .schedule-list-row { break-inside: avoid; }
         }
       `}</style>
     </div>

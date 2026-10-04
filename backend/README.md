@@ -1,58 +1,93 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Backend — Laravel API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+The API for the IT Faculty Scheduling System: authentication, master-data CRUD, the schedule
+approval workflow, and all database writes.
 
-## About Laravel
+**Stack:** Laravel 13, PHP 8.5, PostgreSQL, Laravel Sanctum (Bearer tokens). Runs on **port 8000**.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Responsibilities
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Token authentication and admin-only authorization
+- CRUD for users, faculty, subjects, rooms, sections
+- Calling the AI engine and **persisting** its result
+- The schedule lifecycle and its guards
+- Reports and printable-schedule data
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+The API is the only service that writes to the database. The engine reads for itself but never
+writes.
 
-## Learning Laravel
+## Authorization model
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```php
+Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware('admin')->group(function () {
+        // all management, schedule, settings and report routes
+    });
+});
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Every route except `POST /api/login` needs a valid token, and everything besides `/logout` and `/me`
+additionally requires the `admin` role. Faculty have no accounts — they are records.
 
-## Contributing
+Login answers `401` for bad credentials, `403` for a valid non-admin account, and `422` for a
+malformed body, so clients can tell a wrong password apart from a broken request.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## The schedule lifecycle
 
-## Code of Conduct
+```
+draft --approve--> approved --publish--> published --unpublish--> draft
+  |                    |
+  +-- reject --> rejected
+  +-- delete (any state except published)
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Notable rules:
 
-## Security Vulnerabilities
+- `approve` / `publish` / `reject` / `unpublish` each refuse a schedule in the wrong state with `422`
+- `publish` runs a cross-section conflict check first and refuses on a clash
+- A **published** schedule cannot be deleted — unpublish it first
+- Generating supersedes the previous *draft* only after a usable result exists, so a failed or
+  unreachable engine never destroys the admin's work
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## The four protection layers
 
-## License
+1. **Solver constraints** — no room/faculty double-booking, no section self-overlap, availability
+   and load ceilings, room type + capacity matching, break avoidance
+2. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` validates the full resulting state
+3. **Publish conflict gate** — cross-section cross-check at publish time
+4. **Published-reference delete guard** — faculty/subject/room/section used by a published schedule
+   returns `409` unless confirmed with `?force=1`
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+> Generation itself is per-section: a new draft only avoids rooms and faculty already committed to
+> *approved/published* schedules, so a batch of drafts can overlap each other. The publish gate is
+> what keeps a clash from reaching students.
+
+## Errors from the AI engine
+
+| Engine result | API answers | Why |
+|---|---|---|
+| Unreachable | `502` | genuine upstream fault |
+| `5xx` | `502` | genuine upstream fault |
+| `4xx` (e.g. "section has no subjects assigned") | `422` with the engine's own reason | a data problem the admin can fix, not a broken server |
+
+## Settings
+
+`GET/PUT /api/settings` owns the midday break (`lunch_start`, `lunch_end`, `lunch_enabled`). It is a
+hard constraint in the solver, so it is read on every generation.
+
+## Commands
+
+```bash
+composer install
+cp .env.example .env      # set DB_CONNECTION=pgsql and the DB_* values
+php artisan key:generate
+php artisan migrate --seed
+php artisan serve         # http://127.0.0.1:8000
+
+php artisan test          # 111 passed, 465 assertions
+
+# optional realistic demo dataset (idempotent)
+php artisan db:seed --class=DemoDataSeeder
+```
+
+See [`README.md`](../README.md) for full setup and the demo login.

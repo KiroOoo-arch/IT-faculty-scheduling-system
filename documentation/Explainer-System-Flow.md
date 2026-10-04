@@ -65,8 +65,8 @@ The rows worth knowing by heart:
 
 | Situation | Who detects it | Result |
 |---|---|---|
-| Wrong email or password | Laravel | **422** — a validation error, **not** a 401 |
-| Valid credentials, non-admin role | Laravel | **422**, no token issued |
+| Wrong email or password | Laravel | **401** — an authentication failure, **not** a 422 |
+| Valid credentials, non-admin role | Laravel | **403**, no token issued |
 | Missing or expired token | `auth:sanctum` | **401** → client clears session → `/login` |
 | Subject doesn't match the section | Laravel gate | **422** — engine never called, no draft, no log |
 | Engine not running | Laravel HTTP client | **502** + a failure log written |
@@ -81,7 +81,9 @@ If you only present one panel from this figure, present this one. It shows that 
 Login, token issuance, and the 401 path. Three points to make:
 
 1. **Login is the only public route.** Everything else sits behind `auth:sanctum`.
-2. **A failed login is a 422, not a 401.** Both wrong credentials and a non-admin role raise a Laravel validation error. The 401 only appears later, from the middleware, when a token is missing or invalid. Getting this right is a good sign you actually tested the system.
+2. **A failed login is a 401, not a 422.** A wrong password and an unknown email both answer **401**;
+   a valid non-admin account answers **403**. A 422 from this route means only a malformed body.
+   Getting this right is a good sign you actually tested the system.
 3. **A 401 anywhere is handled globally.** A single interceptor clears the stored session and redirects to the login page — so an expired token never leaves a page silently showing empty data.
 
 ### Section 4 — Review, Edit, Approve, Publish, Print
@@ -172,7 +174,9 @@ Not directly. A published schedule must be **unpublished** first, which returns 
 
 2. **The pre-flight gate writes no generation log.** Every engine-related failure writes a failure row, but a generation blocked by the subject/section mismatch writes **nothing**. That means a blocked generation is visible in the HTTP response but does **not** appear in Reports → Generation Logs. This asymmetry is called out on the figure.
 
-3. **Login failures are 422, not 401.** Expect a panelist to test this assumption. It is correct: both wrong credentials and a non-admin role raise a Laravel `ValidationException`.
+3. **Login failures are 401 or 403, not 422.** Expect a panelist to test this assumption. It is
+   correct: `AuthController::login` answers **401** for a wrong password or an unknown email, and
+   **403** for a valid non-admin account. Only a malformed body is still **422**.
 
 4. **The engine's direct database read is a genuine dependency.** It appears in this figure as steps 7–12 and in the architecture figure as boundary B3. Be ready to defend it, or to concede it if the panel's requirement forbids any direct database access by the AI service.
 

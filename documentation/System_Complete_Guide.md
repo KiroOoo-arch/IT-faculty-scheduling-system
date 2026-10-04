@@ -1,6 +1,6 @@
 # IT Faculty Scheduling System — Complete Guide
 
-*Updated: September 9, 2026 — synchronized with the verified architecture (commit 7cfe310): accurate solver terminology, three protection layers, room eligibility, and print/PDF distribution*
+*Updated: October 4, 2026 — synchronized with the verified architecture: accurate solver terminology, four protection layers, room eligibility, and print/PDF distribution*
 
 ---
 
@@ -127,7 +127,9 @@ Also directly enforced by the solver:
 
 **Objective:** the solver maximizes the number of successfully scheduled sessions (best-effort scheduling).
 
-*Future soft constraints (not implemented):* mandatory lunch break, senior faculty priority, preference weighting.
+*Future soft constraints (not implemented):* senior faculty priority, preference weighting.
+
+The **midday break is implemented and is a hard constraint**, not a future soft one — the solver excludes any start that would overlap it, and it is configurable from the Settings module (`lunch_start`, `lunch_end`, `lunch_enabled`).
 
 ---
 
@@ -158,15 +160,17 @@ A subject's lab requirement (`lab_room_type`) determines the required laboratory
 
 ---
 
-## 8. Three Protection Layers
+## 8. Four Protection Layers
 
-Conflicts are prevented at three independent points:
+Conflicts and silent data loss are prevented at four independent points:
 
 **Layer 1 — AI/CP-SAT generation.** The scheduler applies the modeled scheduling constraints while generating the candidate schedule.
 
 **Layer 2 — Manual edit validation.** When the Admin manually changes a session, backend validation checks the relevant scheduling rules and detects conflicts.
 
 **Layer 3 — Publish conflict gate.** Before publication, the backend performs the final conflict validation and blocks publication when conflicts exist.
+
+**Layer 4 — Published-reference delete guard.** Deleting a faculty member, subject, room, or section that a *published* schedule still references is refused with **HTTP 409** unless explicitly confirmed with `?force=1`, so a live timetable cannot be quietly orphaned. (This is a delete-time rule, not a scheduling rule — it is not part of the solver's constraint set.)
 
 > **"AI proposes; the Admin decides."** The AI is not the final authority.
 
@@ -189,8 +193,8 @@ Conflicts are prevented at three independent points:
 | Approval | Dashboard | Draft → Approved |
 | Publish Conflict Gate | Dashboard | Final cross-section validation before publication |
 | Unpublish | Dashboard | Published → Draft for corrections |
-| Print/Download | Dashboard (published schedules) | Print-friendly weekly grid → PDF / hard copy |
-| Reports | `/admin/reports` | Faculty Load, Room Usage, Sections, Status, Conflicts |
+| Print/Download | Dashboard (published schedules) | Print-friendly output → PDF / hard copy; the section timetable offers a subject-list layout (default) and a weekly grid |
+| Reports | `/admin/reports` | Faculty Load, Room Usage, Sections, Generation Logs |
 | Conflict Detection | Session editing + publish gate | Multiple protection layers |
 
 ---
@@ -225,8 +229,8 @@ Conflicts are prevented at three independent points:
 
 ## 13. Verification & Tests
 
-- **AI scheduler unit tests**: 46 automated tests (Python standard-library `unittest`) directly exercise `generate_schedule()` with controlled fixtures — no database required. They cover faculty qualification, day + time-window availability (a session must fit within a declared window on its day), room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, the preferred scheduling window, and partial/infeasible handling with per-session reasons. Final run: **46 tests OK, 0 failed, 0 skipped, 0 warnings/errors**. The suite respects all solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE)
-- **Backend feature tests** (`php artisan test`, 90 tests / 380 assertions, all passing) run against a dedicated `scheduling_system_testing` database — real data is never touched.
+- **AI scheduler unit tests**: 53 automated tests (Python standard-library `unittest`) directly exercise `generate_schedule()` with controlled fixtures — no database required. They cover faculty qualification, day + time-window availability (a session must fit within a declared window on its day), room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, the preferred scheduling window, and partial/infeasible handling with per-session reasons. Final run: **53 tests OK, 0 failed, 0 skipped, 0 warnings/errors**. The suite respects all solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE)
+- **Backend feature tests** (`php artisan test`, 111 tests / 465 assertions, all passing) run against a dedicated `scheduling_system_testing` database — real data is never touched.
 - **Published-reference guard tests** (`PublishedReferenceGuardTest.php`, 11 tests): deleting a faculty, subject, room, or section still used by a **published** schedule returns **409** with the affected schedule IDs and session counts; `?force=1` overrides after confirmation; drafts and archived schedules impose no restriction. The September 27 additions cover solver-status acceptance (a fully-placed `FEASIBLE` result is stored as a draft and logged as `feasible`; `INFEASIBLE` is still rejected) and the unreachable-engine path (502 plus a `failure` log row)
 - **Section/year-level generation tests** verify the AI-generated schedule is attributed to the correct section, year level, and semester, that other sections' schedules are untouched, and that regeneration archives only the target section's drafts
 - **Subject–section year/semester validation tests**: matching assignments accepted; wrong-semester and wrong-year assignments rejected (HTTP 422); generation blocked with the AI engine never called on legacy mismatches

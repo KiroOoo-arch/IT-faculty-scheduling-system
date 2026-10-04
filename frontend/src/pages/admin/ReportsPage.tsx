@@ -8,6 +8,7 @@ type FacultyWorkload = {
   assigned_hours: number
   max_teaching_load: number
   utilization_percent: number | null
+  subjects: string[]
 }
 
 type RoomUtil = {
@@ -140,10 +141,10 @@ export default function ReportsPage() {
             <p className="text-gray-500">Schedule analytics and summaries</p>
           </div>
           <div className="flex gap-3">
-            <a href="/admin" className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition text-sm">
+            <a href="/admin" className="btn-navy-outline">
               ← Dashboard
             </a>
-            <button onClick={logout} className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition text-sm">
+            <button onClick={logout} className="btn-navy-outline">
               Log out
             </button>
           </div>
@@ -199,29 +200,52 @@ export default function ReportsPage() {
                   <p className="text-sm text-gray-400">Total schedules: <span className="font-semibold text-gray-700">{totalSchedules}</span></p>
                 </div>
 
-                {/* Quick Stats */}
+                {/* Quick Stats — each card opens the tab that lists the records
+                    behind the number. A count that leads nowhere makes the data
+                    behind it look missing, which is exactly how the faculty
+                    roster (now on the Faculty Load tab) came across. */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-white rounded-lg shadow-md p-6">
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">👨‍🏫 Faculty Members</h3>
-                    <p className="text-3xl font-bold text-purple-600">{facultyWorkload.length}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {facultyWorkload.filter(f => f.assigned_hours > 0).length} with active load
-                    </p>
-                  </div>
-                  <div className="bg-white rounded-lg shadow-md p-6">
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">🏫 Rooms</h3>
-                    <p className="text-3xl font-bold text-blue-600">{rooms.length}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {rooms.filter(r => r.type === 'lecture').length} lecture, {rooms.filter(r => r.type === 'computer_lab').length} labs
-                    </p>
-                  </div>
-                  <div className="bg-white rounded-lg shadow-md p-6">
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">📋 Sections</h3>
-                    <p className="text-3xl font-bold text-teal-600">{sectionSummary.length}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {sectionSummary.reduce((sum, s) => sum + s.total_sessions, 0)} total sessions
-                    </p>
-                  </div>
+                  {[
+                    {
+                      tab: 'faculty' as Tab,
+                      icon: '👨‍🏫',
+                      label: 'Faculty Members',
+                      value: facultyWorkload.length,
+                      valueClass: 'text-purple-600',
+                      detail: `${facultyWorkload.filter((f) => f.assigned_hours > 0).length} with active load`,
+                      cta: 'View members and subjects',
+                    },
+                    {
+                      tab: 'rooms' as Tab,
+                      icon: '🏫',
+                      label: 'Rooms',
+                      value: rooms.length,
+                      valueClass: 'text-blue-600',
+                      detail: `${rooms.filter((r) => r.type === 'lecture').length} lecture, ${rooms.filter((r) => r.type === 'computer_lab').length} labs`,
+                      cta: 'View room usage',
+                    },
+                    {
+                      tab: 'sections' as Tab,
+                      icon: '📋',
+                      label: 'Sections',
+                      value: sectionSummary.length,
+                      valueClass: 'text-teal-600',
+                      detail: `${sectionSummary.reduce((sum, s) => sum + s.total_sessions, 0)} total sessions`,
+                      cta: 'View section summary',
+                    },
+                  ].map((stat) => (
+                    <button
+                      key={stat.label}
+                      type="button"
+                      onClick={() => setActiveTab(stat.tab)}
+                      className="rounded-lg border border-gray-200 bg-white p-6 text-left shadow-md transition hover:border-[#0a2f9c] hover:shadow-lg"
+                    >
+                      <h3 className="text-sm font-medium text-gray-500 mb-1">{stat.icon} {stat.label}</h3>
+                      <p className={`text-3xl font-bold ${stat.valueClass}`}>{stat.value}</p>
+                      <p className="text-xs text-gray-400 mt-1">{stat.detail}</p>
+                      <p className="mt-3 text-xs font-semibold text-[#0a2f9c]">{stat.cta} →</p>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -237,6 +261,7 @@ export default function ReportsPage() {
                       <tr className="bg-gray-800 text-white">
                         <th className="p-3 text-left">Name</th>
                         <th className="p-3 text-left">Type</th>
+                        <th className="p-3 text-left">Subjects</th>
                         <th className="p-3 text-center">Assigned Hours</th>
                         <th className="p-3 text-center">Max Load</th>
                         <th className="p-3 text-center">Utilization</th>
@@ -252,6 +277,7 @@ export default function ReportsPage() {
                           <tr key={f.faculty_id} className="border-t border-gray-200 hover:bg-gray-50">
                             <td className="p-3 font-medium">{f.name}</td>
                             <td className="p-3 capitalize">{f.faculty_type}</td>
+                            <td className="p-3">{f.subjects?.join(', ') || '—'}</td>
                             <td className="p-3 text-center font-semibold">{f.assigned_hours}h</td>
                             <td className="p-3 text-center">{f.max_teaching_load}h</td>
                             <td className="p-3 text-center">
@@ -269,10 +295,14 @@ export default function ReportsPage() {
                               </div>
                             </td>
                             <td className="p-3 text-center">
-                              {/* Opens the printable view; the admin uses the
-                                  browser's Print / Save as PDF to hand it out. */}
+                              {/* Opens in a new tab, matching the dashboard's
+                                  Print link: printing is a side trip, and the
+                                  reports table should still be here when the
+                                  admin closes the printed document. */}
                               <a
                                 href={`/print-faculty-schedule?faculty=${f.faculty_id}`}
+                                target="_blank"
+                                rel="noreferrer"
                                 className="inline-block bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition whitespace-nowrap"
                               >
                                 🖨 Printable
@@ -282,7 +312,7 @@ export default function ReportsPage() {
                         )
                       })}
                       {facultyWorkload.length === 0 && (
-                        <tr><td colSpan={7} className="p-4 text-center text-gray-400">No faculty data</td></tr>
+                        <tr><td colSpan={8} className="p-4 text-center text-gray-400">No faculty data</td></tr>
                       )}
                     </tbody>
                   </table>

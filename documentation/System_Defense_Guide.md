@@ -300,7 +300,6 @@ erDiagram
 
 | Constraint | Description |
 |------------|-------------|
-| Mandatory lunch break | No sessions during lunch hour |
 | Senior faculty priority | Preference weighting for senior faculty |
 | Faculty preferences | Soft preferences vs hard availability |
 
@@ -376,7 +375,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | Backend: 90 feature tests (380 assertions) · AI engine: 46 solver unit tests · frontend typecheck + production build |
+| Testing | ✅ Complete | Backend: 111 feature tests (465 assertions) · AI engine: 53 solver unit tests · frontend typecheck + production build |
 | Published-reference delete guard | ✅ Complete | 409 with the exact scope before deleting master data a published schedule depends on; explicit `?force=1` to proceed |
 
 ---
@@ -565,7 +564,8 @@ Example flow:
 ```
 POST /api/login {email, password}
 → 200 {token, user}          one token per account: login first deletes all previous tokens
-→ 422 for wrong credentials OR a non-admin role (a ValidationException, not a 401)
+→ 401 for wrong credentials or an unknown email, and 403 for a valid non-admin account
+→ not a 422: only a malformed body is a validation error
 
 GET /api/faculties (Header: Authorization: Bearer {token})
 → 200 faculty list            no token → 401; valid token but role != admin → 403
@@ -594,9 +594,9 @@ Admin-only operations (generate, approve, publish) check user role before execut
 **Q13: How long does schedule generation take?**
 
 **A:** Depends on complexity:
-- **Small dataset** (3 faculty, 3 subjects, 1 section): ~1-2 seconds
-- **Medium dataset** (10 faculty, 10 subjects, 3 sections): ~5-10 seconds
-- **Large dataset** (20+ faculty, 20+ subjects): Up to 30 seconds
+- **Typical section** (a Year 1 demo section, 5 subjects / 7 blocks): **~0.3 s**
+- **Complex section** (a Year 3 demo section, 9 subjects / 14 blocks): **~0.5 s**
+- **Whole-department sweep** (15 sections solved back to back, 23 faculty, 30 subjects): ~7 s total, every section OPTIMAL
 
 The solver has a `max_time_in_seconds = 15.0` limit. If no optimal solution found within timeout, it returns the best partial solution found so far.
 
@@ -627,11 +627,11 @@ For university scale, architectural changes would be needed, but the core constr
 
 **A:** Testing approach:
 1. **Ad-hoc testing**: Throughout development
-2. **AI engine unit tests**: 46 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 46 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
+2. **AI engine unit tests**: 53 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 53 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
-4. **Automated backend suite**: 90 Laravel feature tests (380 assertions) — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
+4. **Automated backend suite**: 111 Laravel feature tests (465 assertions) — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
 
-> Run them with `cd backend && php artisan test` (90 passed) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (46 passed). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
+> Run them with `cd backend && php artisan test` (111 passed) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (53 passed). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
 
 Test coverage:
 - Authentication & RBAC ✅
@@ -649,7 +649,7 @@ Test coverage:
 **A:**
 - **Backend (Laravel)**: PHPUnit (built-in)
 - **Frontend (React)**: TypeScript typecheck + production build
-- **AI Engine**: Python standard-library `unittest` — 46 tests running the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests`; `pytest` is not installed
+- **AI Engine**: Python standard-library `unittest` — 53 tests running the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests`; `pytest` is not installed
 - **Frontend**: no automated test suite — TypeScript typecheck and production build only, which is an honest gap to state if asked
 - **Integration**: Postman/curl for API testing
 
@@ -696,8 +696,8 @@ React provides the best balance of productivity, performance, and maintainabilit
 4. **Optimization goals**: Cross-section conflicts, teaching load
 
 Hard constraints (must be satisfied) vs soft constraints (nice to have):
-- **Hard**: Double-booking, availability, room type, capacity
-- **Soft**: Lunch break, seniority preference (not yet implemented)
+- **Hard**: Double-booking, availability, room type, capacity, midday break
+- **Soft**: Seniority preference (not yet implemented)
 
 ---
 

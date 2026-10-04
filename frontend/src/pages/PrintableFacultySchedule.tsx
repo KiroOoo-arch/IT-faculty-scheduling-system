@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../context/AuthContext'
 import { formatTime12h, formatTimeRange } from '../utils/time'
+import PrintLetterhead from '../components/PrintLetterhead'
 
 type Session = {
   id: number
@@ -106,26 +107,26 @@ export default function PrintableFacultySchedule() {
           🖨 Print / Save as PDF
         </button>
         <a href="/admin/reports"
-          className="border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-100 transition">
+          className="btn-navy-outline">
           ← Back to Reports
         </a>
       </div>
 
-      {/* Header */}
-      <div className="max-w-5xl mx-auto mb-4 text-center">
-        <h1 className="text-lg font-bold uppercase">IT Department</h1>
-        <h2 className="text-base font-semibold">Faculty Teaching Schedule</h2>
-        <p className="text-sm">{data.faculty.name}</p>
-        <p className="text-xs text-gray-500 capitalize">
+      {/* Header — the school letterhead, then the document title */}
+      <PrintLetterhead
+        title="Faculty Teaching Schedule"
+        subtitle={data.faculty.name}
+      >
+        <p className="text-center text-xs text-gray-600 capitalize">
           {data.faculty.faculty_type.replace('_', ' ')}
           {' · '}{data.total_hours}h of {data.faculty.max_teaching_load}h
         </p>
-        <p className="text-xs text-gray-500">
+        <p className="text-center text-xs text-gray-600">
           {data.distinct_sections.join(', ')}
           {term?.semester_name ? ` · ${term.semester_name}` : ''}
           {term?.academic_year ? ` · A.Y. ${term.academic_year}` : ''}
         </p>
-      </div>
+      </PrintLetterhead>
 
       {sessions.length === 0 ? (
         <p className="max-w-5xl mx-auto text-center text-gray-500 py-12">

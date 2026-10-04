@@ -231,7 +231,7 @@ export default function FacultyPage() {
       <div className="max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800">Faculty Management</h1>
-          <a href="/dashboard" className="text-blue-600 hover:underline">← Back to Dashboard</a>
+          <a href="/dashboard" className="btn-navy-outline">← Back to Dashboard</a>
         </div>
 
         {/* Create Form */}
