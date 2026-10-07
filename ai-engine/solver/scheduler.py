@@ -22,6 +22,24 @@ When a break is supplied (see `_read_break`), it is a **hard constraint**: no
 session may overlap it. Because every session has a fixed duration, the starts
 that would collide with the break form one contiguous run, so the break is applied
 as a restriction on each session's start domain rather than as extra booleans.
+
+OBJECTIVES
+----------
+Scheduling is **lexicographic**, so the primary objective is never traded away:
+
+  1. maximize the number of sessions scheduled;
+  2. among timetables that schedule that same maximum AND stay inside the total
+     daily span the stage-1 solution already used, minimize the number of
+     transitions between two DIFFERENT subjects that leave the students less than
+     `GAP_PREFERENCE_MINUTES` to move.
+
+Stage 2 is reached only by freezing the stage-1 count as a hard constraint (see
+`_gap_penalty_terms`), so the gap preference can only ever choose *between*
+equally complete timetables — it can never cost a session. The stage-1 total
+daily span is frozen the same way (see `_span_minutes` and `_daily_span_vars`),
+so the preference also can never *spread* a section's days to manufacture a gap:
+it may only rearrange classes inside the space stage 1 already used. A subject's
+own lab<->lecture block is exempt: that continuity is intentional.
 """
 
 from ortools.sat.python import cp_model
@@ -34,6 +52,140 @@ from time_slots import (
     hours_to_minutes,
     minutes_to_hhmm,
 )
+
+
+# Minimum transition gap the secondary objective prefers between two
+# consecutive classes of DIFFERENT subjects (minutes). This is a SOFT
+# preference, never a hard rule: see `_gap_penalty_terms` and the lexicographic
+# second stage at the end of `generate_schedule`.
+GAP_PREFERENCE_MINUTES = 30
+
+
+def _gap_penalty_terms(model, session_vars, sessions_meta, threshold):
+    """
+    One boolean term per undesirable transition between two DIFFERENT subjects
+    that leaves the students less than `threshold` minutes to move.
+
+    Soft by construction. The caller adds these to a *second* objective that is
+    only optimized after the number of scheduled sessions has been frozen, so
+    minimizing them can never cost a session.
+
+    Two sessions of the same subject are that subject's lab<->lecture block: the
+    back-to-back continuity is intentional, not a missing break, so those pairs
+    are exempt.
+
+    The section's no-overlap rule is already a hard constraint, so two sessions
+    sharing a day are ordered. Only the ordering in which the second one starts
+    at or after the first ends can hold, so each undesirable transition is
+    counted exactly once. A gap of `threshold` minutes or more is not counted.
+    """
+    terms = []
+    idxs = list(session_vars.keys())
+    for a in range(len(idxs)):
+        for b in range(a + 1, len(idxs)):
+            i, j = idxs[a], idxs[b]
+            if sessions_meta[i]["subject_id"] == sessions_meta[j]["subject_id"]:
+                continue  # one subject's lab<->lecture block: intentional
+
+            v1, v2 = session_vars[i], session_vars[j]
+            tag = "{}v{}".format(i, j)
+
+            same_day = model.NewBoolVar("gapsd_" + tag)
+            model.Add(v1["day"] == v2["day"]).OnlyEnforceIf(same_day)
+            model.Add(v1["day"] != v2["day"]).OnlyEnforceIf(same_day.Not())
+
+            for order, (first, second) in enumerate(((v1, v2), (v2, v1))):
+                end_first = first["start"] + first["duration"]
+
+                starts_after = model.NewBoolVar("gapafter_" + tag + "_" + str(order))
+                model.Add(second["start"] >= end_first).OnlyEnforceIf(starts_after)
+                model.Add(second["start"] < end_first).OnlyEnforceIf(starts_after.Not())
+
+                starts_soon = model.NewBoolVar("gapclose_" + tag + "_" + str(order))
+                model.Add(
+                    second["start"] < end_first + threshold
+                ).OnlyEnforceIf(starts_soon)
+                model.Add(
+                    second["start"] >= end_first + threshold
+                ).OnlyEnforceIf(starts_soon.Not())
+
+                penalty = model.NewBoolVar("gappen_" + tag + "_" + str(order))
+                model.AddMultiplicationEquality(
+                    penalty,
+                    [starts_after, starts_soon, same_day,
+                     first["is_scheduled"], second["is_scheduled"]],
+                )
+                terms.append(penalty)
+
+    return terms
+
+
+def _span_minutes(chosen, session_vars):
+    """
+    Total section-day span of a solved timetable, in minutes.
+
+    The sum over days of (latest end - earliest start). That is the scheduled
+    minutes PLUS every idle gap the timetable actually contains, so it grows by
+    exactly the size of any gap the solver decides to insert — which is the
+    quantity the compactness budget in `generate_schedule` needs to freeze.
+    """
+    by_day = {}
+    for idx, st in chosen.items():
+        if not st["is_scheduled"]:
+            continue
+        v = session_vars[idx]
+        by_day.setdefault(st["day"], []).append(
+            (st["start"], st["start"] + v["duration"])
+        )
+    return sum(max(e for _, e in items) - min(s for s, _ in items)
+               for items in by_day.values())
+
+
+def _daily_span_vars(model, session_vars, days):
+    """
+    One span variable per day, so the caller can bound how stretched a section's
+    days are: `span[d]` is the day's last end minus its first start, and 0 on a
+    day the section does not use. Summing them measures exactly the same
+    quantity `_span_minutes` does.
+
+    Only a SCHEDULED class stretches a day. An unscheduled session still has a
+    free `day` and `start`, so counting it would let this bound describe a
+    timetable other than the one actually reported.
+    """
+    span_vars = []
+    idxs = list(session_vars.keys())
+    for d in days:
+        on = {}
+        for idx in idxs:
+            v = session_vars[idx]
+            is_d = model.NewBoolVar("on_d{}_{}".format(d, idx))
+            model.Add(v["day"] == d).OnlyEnforceIf(is_d)
+            model.Add(v["day"] != d).OnlyEnforceIf(is_d.Not())
+
+            on_day = model.NewBoolVar("onused_d{}_{}".format(d, idx))
+            model.AddMultiplicationEquality(on_day, [is_d, v["is_scheduled"]])
+            on[idx] = on_day
+
+        used = model.NewBoolVar("dayused_{}".format(d))
+        model.AddBoolOr(list(on.values())).OnlyEnforceIf(used)
+        model.AddBoolOr([b.Not() for b in on.values()]).OnlyEnforceIf(used.Not())
+
+        start_min = model.NewIntVar(0, 24 * 60, "dmin_{}".format(d))
+        end_max = model.NewIntVar(0, 24 * 60, "dmax_{}".format(d))
+        for idx in idxs:
+            v = session_vars[idx]
+            model.Add(start_min <= v["start"]).OnlyEnforceIf(on[idx])
+            model.Add(end_max >= v["start"] + v["duration"]).OnlyEnforceIf(on[idx])
+
+        model.Add(end_max >= start_min)
+        # An unused day contributes no span.
+        model.Add(start_min == 0).OnlyEnforceIf(used.Not())
+        model.Add(end_max == 0).OnlyEnforceIf(used.Not())
+
+        span = model.NewIntVar(0, 24 * 60, "span_{}".format(d))
+        model.Add(span == end_max - start_min)
+        span_vars.append(span)
+    return span_vars
 
 
 def _as_minutes(value, is_hours: bool):
@@ -378,6 +530,57 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
     solver.parameters.max_time_in_seconds = 15.0
     status = solver.Solve(model)
 
+    def snapshot():
+        """The current solution, held outside the model so a later solve cannot
+        silently change what we report."""
+        return {
+            idx: {
+                "is_scheduled": solver.Value(v["is_scheduled"]),
+                "day": solver.Value(v["day"]),
+                "start": solver.Value(v["start"]),
+                "room": solver.Value(v["room"]),
+                "faculty": solver.Value(v["faculty"]),
+            }
+            for idx, v in session_vars.items()
+        }
+
+    # The solution that is actually reported. Everything below only ever replaces
+    # it with one that schedules exactly as many sessions.
+    chosen = snapshot() if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None
+
+    # --- Secondary (soft) objective, lexicographic --------------------------
+    # The primary objective (maximize scheduled sessions) stays strictly
+    # dominant: its achieved value is frozen as a hard constraint, so the gap
+    # preference is optimized only inside that plateau. It can therefore never
+    # trade a session away for a tidier-looking timetable.
+    if chosen is not None:
+        primary_scheduled_count = sum(1 for s in chosen.values() if s["is_scheduled"])
+        gap_terms = _gap_penalty_terms(
+            model, session_vars, sessions_meta, GAP_PREFERENCE_MINUTES
+        )
+        if gap_terms:
+            model.Add(
+                sum(v["is_scheduled"] for v in session_vars.values())
+                == primary_scheduled_count
+            )
+            # Compactness guard (allowance 0). The total daily span stage 1
+            # already used is frozen as a HARD budget, so the preference can
+            # never buy a tidier transition by stretching a section's day. The
+            # stage-1 solution satisfies this bound by construction, so the
+            # second solve cannot become infeasible because of it.
+            primary_span = _span_minutes(chosen, session_vars)
+            model.Add(
+                sum(_daily_span_vars(model, session_vars, DAYS)) <= primary_span
+            )
+            model.Maximize(-sum(gap_terms))
+            gap_status = solver.Solve(model)
+            if gap_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                chosen = snapshot()
+                status = gap_status
+            # Otherwise keep the primary solution and status. The equality above
+            # means any second-stage solution schedules exactly as many sessions
+            # anyway, so falling back cannot distort the primary outcome.
+
     result_sessions = []
 
     # Sessions that were never even possible (structural reasons, e.g. no room/faculty)
@@ -391,15 +594,15 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
 
     scheduled_count = 0
 
-    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+    if chosen is not None:
         for idx, v in session_vars.items():
-            if solver.Value(v["is_scheduled"]):
+            if chosen[idx]["is_scheduled"]:
                 scheduled_count += 1
-                day = solver.Value(v["day"])
-                start = solver.Value(v["start"])
+                day = chosen[idx]["day"]
+                start = chosen[idx]["start"]
                 end = start + v["duration"]
-                room_id = rooms[solver.Value(v["room"])]["id"]
-                faculty_id = faculty[solver.Value(v["faculty"])]["id"]
+                room_id = rooms[chosen[idx]["room"]]["id"]
+                faculty_id = faculty[chosen[idx]["faculty"]]["id"]
                 result_sessions.append({
                     "subject_id": v["meta"]["subject_id"],
                     "session_type": v["meta"]["session_type"],
