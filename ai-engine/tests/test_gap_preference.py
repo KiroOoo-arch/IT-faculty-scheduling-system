@@ -8,6 +8,11 @@ that schedule the same number of sessions, prefer at least
 classes of DIFFERENT subjects. A same-subject lab<->lecture block is exempt,
 because its back-to-back continuity is intentional.
 
+The separate same-subject-different-day preference (see
+`test_same_subject_days.py`) ranks ABOVE this gap preference, so a subject's own
+block is still exempt from the gap *count* but a subject's meeting components
+are spread across different days whenever the frozen span allows it.
+
 Two properties matter most, and each is tested twice: once directly on the
 penalty function with a fully pinned layout (exact, search-independent), and
 once end-to-end through `generate_schedule` on a scenario that a schedule
@@ -220,8 +225,11 @@ class TestGapPreferenceIsApplied(unittest.TestCase):
     effectively disabled. Without it the solver leaves zero-gap
     different-subject transitions in place; with it, the plateau is walked to a
     timetable that has none — as long as the required gaps fit inside the total
-    daily span stage 1 already used. `TestCompactnessGuard` covers the cases
-    where they do not. So these tests fail if the secondary stage is removed.
+    daily span stage 1 already used AND do not conflict with the same-subject-day
+    preference, which outranks the gap preference (see the split case below and
+    `test_same_subject_days.TestPriorityOrdering`). `TestCompactnessGuard` covers
+    the cases where the span does not allow it. So these tests fail if the
+    secondary stage is removed.
     """
 
     def test_zero_gap_transitions_are_removed_when_spare_time_exists(self):
@@ -241,13 +249,14 @@ class TestGapPreferenceIsApplied(unittest.TestCase):
         assert bad_transitions(result) == 0, \
             f"a legal gap layout existed but was not chosen: {scheduled(result)}"
 
-    def test_exempt_same_subject_block_wins_over_a_penalised_pair(self):
+    def test_same_subject_cluster_is_split_even_at_the_cost_of_a_penalised_pair(self):
         """
         One day, 07:00-11:00, and three 2h sessions: subject 1's lecture, subject
-        1's lab, and subject 2's lecture. Only two fit. Keeping subject 1's
-        lecture+lab side by side costs nothing (same subject, exempt); pairing
-        subject 1 with subject 2 back to back is penalised. The solver must keep
-        the exempt block.
+        1's lab, and subject 2's lecture. Only two fit, and every layout has the
+        same span. Keeping subject 1's lecture+lab together would cluster one
+        subject on one day, which the same-subject-day preference now ranks ABOVE
+        the transition gap: the solver instead splits the pair and accepts a
+        penalised (sub-threshold) different-subject transition.
         """
         result = generate_schedule(
             section=make_section(start="07:00", end="11:00", days=[1]),
@@ -261,11 +270,18 @@ class TestGapPreferenceIsApplied(unittest.TestCase):
 
         placed = scheduled(result)
         assert len(placed) == 2, f"expected exactly two sessions to fit, got {placed}"
-        assert {s["subject_id"] for s in placed} == {1}, (
-            "the exempt same-subject lab<->lecture block should have been kept "
-            f"instead of a penalised different-subject pairing: {placed}"
+        same_day_pairs = sum(
+            1 for i in range(len(placed)) for j in range(i + 1, len(placed))
+            if placed[i]["subject_id"] == placed[j]["subject_id"]
+            and placed[i]["day_of_week"] == placed[j]["day_of_week"]
         )
-        assert bad_transitions(result) == 0, placed
+        assert same_day_pairs == 0, (
+            "distribution outranks the gap preference, so no subject's own "
+            f"components should share a day here: {placed}"
+        )
+        assert bad_transitions(result) == 1, (
+            f"the cluster-free layout necessarily leaves one tight transition: {placed}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -485,8 +501,15 @@ def generate_uncapped(**kwargs):
 
 
 def generate_stage_one_only(**kwargs):
-    """Only the primary objective: the count plateau with no gap preference."""
-    with mock.patch.object(scheduler, "_gap_penalty_terms", lambda *a, **k: []):
+    """
+    Only the primary objective: the count plateau with neither soft preference.
+
+    Both the transition-gap terms and the same-subject-day terms are neutralised,
+    so this is the raw stage-1 solution — the reference the compactness guard is
+    compared against.
+    """
+    with mock.patch.object(scheduler, "_gap_penalty_terms", lambda *a, **k: []), \
+            mock.patch.object(scheduler, "_same_subject_day_terms", lambda *a, **k: []):
         return generate_schedule(**kwargs)
 
 
@@ -712,14 +735,15 @@ class TestCompactnessGuard(unittest.TestCase):
                             and a["subject_id"] != b["subject_id"])
         self.assertEqual(touching, 3)
 
-    def test_same_subject_lab_lecture_block_stays_exempt_under_the_guard(self):
+    def test_distribution_preference_outranks_gaps_under_the_guard(self):
         """
         (d)+(e) A window that fits exactly two of three sessions, one of them
         subject 1's own lecture+lab. Every two-session layout has the same span,
-        so the guard cannot interfere; the exempt same-subject block is still the
-        one chosen over the penalised different-subject pairing.
+        so the guard cannot interfere. The same-subject-day preference still
+        outranks the gap preference, so the two chosen sessions are NOT one
+        subject's own cluster, and the reported span still matches stage 1.
         """
-        result = generate_schedule(
+        kwargs = dict(
             section=make_section(start="07:00", end="11:00", days=[1]),
             subjects=[make_subject(1, "PAIR", lecture_hours=2, lab_hours=2,
                                    lab_room_type="computer_lab"),
@@ -728,13 +752,20 @@ class TestCompactnessGuard(unittest.TestCase):
             rooms=[make_room(room_id=1, room_type="lecture"),
                    make_room(room_id=2, name="LAB1", room_type="computer_lab")],
         )
+        stage_one = generate_stage_one_only(**kwargs)
+        result = generate_schedule(**kwargs)
 
         placed = scheduled(result)
         self.assertEqual(len(placed), 2)
-        self.assertEqual({s["subject_id"] for s in placed}, {1})
-        self.assertEqual({s["session_type"] for s in placed}, {"lecture", "laboratory"})
+        clustered = sum(
+            1 for i in range(len(placed)) for j in range(i + 1, len(placed))
+            if placed[i]["subject_id"] == placed[j]["subject_id"]
+            and placed[i]["day_of_week"] == placed[j]["day_of_week"]
+        )
+        self.assertEqual(clustered, 0)
         self.assertEqual(total_span(result), 240)
-        self.assertEqual(bad_transitions(result), 0)
+        self.assertLessEqual(total_span(result), total_span(stage_one))
+        self.assertEqual(bad_transitions(result), 1)
 
     def test_lunch_break_stays_hard_under_the_guard(self):
         """

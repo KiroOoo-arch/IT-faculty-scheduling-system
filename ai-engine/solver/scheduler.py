@@ -30,16 +30,34 @@ Scheduling is **lexicographic**, so the primary objective is never traded away:
   1. maximize the number of sessions scheduled;
   2. among timetables that schedule that same maximum AND stay inside the total
      daily span the stage-1 solution already used, minimize the number of
-     transitions between two DIFFERENT subjects that leave the students less than
-     `GAP_PREFERENCE_MINUTES` to move.
+     meeting blocks belonging to the SAME subject that share a day, so a
+     subject's multiple weekly meetings (e.g. a lecture and its laboratory)
+     are spread over different days (the same-subject-day preference, see
+     `_same_subject_day_terms`);
+  3. within those, minimize the number of transitions between two DIFFERENT
+     subjects that leave the students less than `GAP_PREFERENCE_MINUTES` to
+     move (the transition-gap preference).
 
 Stage 2 is reached only by freezing the stage-1 count as a hard constraint (see
-`_gap_penalty_terms`), so the gap preference can only ever choose *between*
-equally complete timetables — it can never cost a session. The stage-1 total
-daily span is frozen the same way (see `_span_minutes` and `_daily_span_vars`),
-so the preference also can never *spread* a section's days to manufacture a gap:
-it may only rearrange classes inside the space stage 1 already used. A subject's
-own lab<->lecture block is exempt: that continuity is intentional.
+`_gap_penalty_terms`), so neither preference can ever cost a session. The
+stage-1 total daily span is frozen the same way (see `_span_minutes` and
+`_daily_span_vars`), so neither preference can *spread* a section's days to
+manufacture a tidier timetable: they may only rearrange classes inside the
+space stage 1 already used.
+
+Both soft preferences are optimized in a single solve, lexicographically, by
+weighting the same-subject-day count up by more than the largest possible
+number of gap terms. Minimizing `W * same_subject_days + gaps` is then exactly
+equivalent to minimizing the same-subject-day count first and the gap count
+second, so distribution dominates while the gap preference still refines the
+remaining ties — and the guard needs no extra solve.
+
+A subject's own lab<->lecture pair is exempt from the transition-gap
+preference — that continuity is intentional — and it is exactly what the
+same-subject-day preference tries to avoid. When the two disagree the
+same-subject-day preference wins: a subject's meetings are spread over
+different days whenever the frozen span allows it, even at the cost of a
+less tidy different-subject transition.
 """
 
 from ortools.sat.python import cp_model
@@ -116,6 +134,57 @@ def _gap_penalty_terms(model, session_vars, sessions_meta, threshold):
                      first["is_scheduled"], second["is_scheduled"]],
                 )
                 terms.append(penalty)
+
+    return terms
+
+
+def _same_subject_day_terms(model, session_vars, sessions_meta):
+    """
+    One boolean term per pair of sessions belonging to the SAME subject that
+    share a day.
+
+    Soft by construction, exactly like `_gap_penalty_terms`: the caller only
+    minimizes these after the number of scheduled sessions and the total daily
+    span have been frozen, so the preference can never cost a session or stretch
+    a day.
+
+    A subject can have more than one weekly meeting component (typically a
+    lecture and its laboratory, which need different rooms and so stay separate
+    sessions with their own types). Spreading those components across different
+    days is what this objective buys: minimizing the count of same-subject
+    same-day pairs is the same as maximizing the count of same-subject
+    different-day pairs. A pair counts only when both sessions are actually
+    scheduled, so an unscheduled component is never mistaken for a placement.
+
+    Note the deliberate contrast with `_gap_penalty_terms`, which treats a
+    subject's own pair as exempt back-to-back continuity. The two preferences
+    can disagree there; the caller's weighting ranks this one ABOVE the gap
+    preference, so a subject's meetings are spread over different days even
+    when that costs a less tidy different-subject transition. It still cannot
+    cost a session or stretch a day: the count and the total daily span are
+    both frozen before either preference is optimized.
+    """
+    terms = []
+    idxs = list(session_vars.keys())
+    for a in range(len(idxs)):
+        for b in range(a + 1, len(idxs)):
+            i, j = idxs[a], idxs[b]
+            if sessions_meta[i]["subject_id"] != sessions_meta[j]["subject_id"]:
+                continue  # different subjects: the gap preference owns this pair
+
+            v1, v2 = session_vars[i], session_vars[j]
+            tag = "{}v{}".format(i, j)
+
+            same_day = model.NewBoolVar("ssday_" + tag)
+            model.Add(v1["day"] == v2["day"]).OnlyEnforceIf(same_day)
+            model.Add(v1["day"] != v2["day"]).OnlyEnforceIf(same_day.Not())
+
+            penalty = model.NewBoolVar("sspen_" + tag)
+            model.AddMultiplicationEquality(
+                penalty,
+                [same_day, v1["is_scheduled"], v2["is_scheduled"]],
+            )
+            terms.append(penalty)
 
     return terms
 
@@ -550,15 +619,18 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
 
     # --- Secondary (soft) objective, lexicographic --------------------------
     # The primary objective (maximize scheduled sessions) stays strictly
-    # dominant: its achieved value is frozen as a hard constraint, so the gap
-    # preference is optimized only inside that plateau. It can therefore never
-    # trade a session away for a tidier-looking timetable.
+    # dominant: its achieved value is frozen as a hard constraint, so the soft
+    # preferences are optimized only inside that plateau. They can therefore
+    # never trade a session away for a tidier-looking timetable.
     if chosen is not None:
         primary_scheduled_count = sum(1 for s in chosen.values() if s["is_scheduled"])
         gap_terms = _gap_penalty_terms(
             model, session_vars, sessions_meta, GAP_PREFERENCE_MINUTES
         )
-        if gap_terms:
+        same_subject_terms = _same_subject_day_terms(
+            model, session_vars, sessions_meta
+        )
+        if gap_terms or same_subject_terms:
             model.Add(
                 sum(v["is_scheduled"] for v in session_vars.values())
                 == primary_scheduled_count
@@ -572,7 +644,18 @@ def generate_schedule(section: dict, subjects: list, faculty: list, rooms: list,
             model.Add(
                 sum(_daily_span_vars(model, session_vars, DAYS)) <= primary_span
             )
-            model.Maximize(-sum(gap_terms))
+            # Both soft preferences in one objective, lexicographically, with
+            # the SAME-SUBJECT day distribution ranked ABOVE the transition
+            # gaps: the same-subject count is weighted by one more than the
+            # largest possible number of gap terms, so removing even a single
+            # same-subject same-day pair always beats removing every
+            # transition gap at once. Minimizing
+            # `W * same_subject_days + gaps` is then identical to minimizing
+            # the same-subject-day count first and the gap count second.
+            same_subject_weight = len(gap_terms) + 1
+            model.Maximize(
+                -(same_subject_weight * sum(same_subject_terms) + sum(gap_terms))
+            )
             gap_status = solver.Solve(model)
             if gap_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 chosen = snapshot()
