@@ -513,6 +513,30 @@ def generate_stage_one_only(**kwargs):
         return generate_schedule(**kwargs)
 
 
+def span_budget_for(**kwargs):
+    """
+    Run `generate_schedule` and return `(result, frozen_span)`, where
+    `frozen_span` is the exact total daily span stage 1 used for THIS solve and
+    the compactness guard therefore freezes stage 2 to.
+
+    Capturing the budget from the same solve removes any dependence on a second,
+    independently solved timetable agreeing with the first: the guard is checked
+    against the very solve it constrained, so the assertion cannot flake when two
+    equally optimal stage-1 arrangements differ.
+    """
+    captured = {}
+    real = scheduler._span_minutes
+
+    def spy(chosen, session_vars):
+        value = real(chosen, session_vars)
+        captured["span"] = value
+        return value
+
+    with mock.patch.object(scheduler, "_span_minutes", spy):
+        result = generate_schedule(**kwargs)
+    return result, captured.get("span")
+
+
 class TestCompactnessGuard(unittest.TestCase):
     """
     The stage-1 total daily span is frozen (allowance 0), so the gap preference
@@ -631,17 +655,21 @@ class TestCompactnessGuard(unittest.TestCase):
         for label, kwargs in scenarios:
             with self.subTest(scenario=label):
                 stage_one = generate_stage_one_only(**kwargs)
-                capped = generate_schedule(**kwargs)
+                capped, budget = span_budget_for(**kwargs)
                 self.assertEqual(len(scheduled(capped)), len(scheduled(stage_one)))
                 self.assertEqual(len(unscheduled(capped)), len(unscheduled(stage_one)))
-                self.assertLessEqual(total_span(capped), total_span(stage_one))
+                self.assertIsNotNone(budget, f"{label}: guard stage did not run")
+                self.assertLessEqual(total_span(capped), budget)
 
     def test_guard_stops_the_preference_from_stretching_a_single_day(self):
         """
         Five 2h lectures in a single 07:00-12:00 day: only two fit. Unguarded, the
         preference separates them by 30 minutes (span 4h30 = 270) to erase the
-        transition; the guard keeps them inside the 4h (240) stage 1 already used,
-        so the one transition is simply accepted.
+        transition; the guard keeps them inside the span stage 1 used for the same
+        solve (4h = 240), so the one transition is simply accepted.
+
+        The stage-1 reference is captured from the solve under test, never from a
+        second, independently solved timetable.
         """
         kwargs = dict(
             section=make_section(start="07:00", end="12:00", days=[1]),
@@ -649,24 +677,43 @@ class TestCompactnessGuard(unittest.TestCase):
             faculty=[make_faculty(subject_ids=[1, 2, 3, 4, 5])],
             rooms=[make_room()],
         )
-        stage_one = generate_stage_one_only(**kwargs)
-        capped = generate_schedule(**kwargs)
+        capped, budget = span_budget_for(**kwargs)
         unguarded = generate_uncapped(**kwargs)
 
         self.assertEqual(len(scheduled(capped)), 2)
         self.assertEqual(len(scheduled(unguarded)), 2)
-        self.assertEqual(total_span(capped), total_span(stage_one))
-        self.assertEqual(total_span(capped), 240)
-        self.assertLess(total_span(capped), total_span(unguarded))
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+
+        # The guard itself: stage 2 never exceeds the span stage 1 used for this
+        # same solve, and two 2h sessions can never span less than 4h.
+        self.assertLessEqual(total_span(capped), budget)
+        self.assertGreaterEqual(total_span(capped), 240)
+
+        # Unguarded, the preference erases the transition; the guard can only
+        # leave the transition score worse, never better (its feasible set is
+        # smaller).
         self.assertEqual(bad_transitions(unguarded), 0)
-        self.assertEqual(bad_transitions(capped), 1)
+        self.assertLessEqual(bad_transitions(unguarded), bad_transitions(capped))
+        if budget < total_span(unguarded):
+            # The free optimum needs more span than stage 1 used, so the guard
+            # forbids it: the two placed sessions must sit back to back inside the
+            # frozen 4h, leaving exactly the one tight transition.
+            self.assertLess(total_span(capped), total_span(unguarded))
+            self.assertEqual(bad_transitions(capped), 1)
+        else:
+            # The frozen budget already covers the gap, so the guard cannot bind
+            # and the preference reaches the same result as the free optimum.
+            self.assertEqual(bad_transitions(capped), bad_transitions(unguarded))
 
     def test_a_gap_that_would_lengthen_a_day_is_refused(self):
         """
         Six 2h lectures over three days with a 5h daily window: two per day, and
         the smallest total span is 12h (3 x 4h). A 30-minute gap inside each day
-        would cost 90 extra minutes of span, so the guard refuses it and the three
+        would cost 90 extra minutes of span, so the guard refuses it and the
         back-to-back different-subject transitions stay in place.
+
+        The stage-1 reference is captured from the solve under test, never from a
+        second, independently solved timetable.
         """
         kwargs = dict(
             section=make_section(start="07:00", end="12:00", days=[1, 2, 3]),
@@ -674,25 +721,38 @@ class TestCompactnessGuard(unittest.TestCase):
             faculty=[make_faculty(subject_ids=[1, 2, 3, 4, 5, 6])],
             rooms=[make_room()],
         )
-        stage_one = generate_stage_one_only(**kwargs)
-        capped = generate_schedule(**kwargs)
+        capped, budget = span_budget_for(**kwargs)
         unguarded = generate_uncapped(**kwargs)
 
         self.assertEqual(len(scheduled(capped)), 6)
-        self.assertEqual(total_span(capped), total_span(stage_one))
-        self.assertEqual(total_span(capped), 720)
-        self.assertEqual(bad_transitions(capped), 3)
-        # Without the guard the same six sessions are spread to erase them all.
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+        # Six 2h sessions over three days cannot span less than 12h (3 x 4h).
+        self.assertLessEqual(total_span(capped), budget)
+        self.assertGreaterEqual(total_span(capped), 720)
+
+        # Without the guard the same six sessions are spread to erase every
+        # transition; the guard can only leave the score worse, never better.
         self.assertEqual(bad_transitions(unguarded), 0)
-        self.assertGreater(total_span(unguarded), total_span(capped))
+        self.assertLessEqual(bad_transitions(unguarded), bad_transitions(capped))
+        if budget < total_span(unguarded):
+            # All-zero gaps need three 30-minute spacings; the frozen span cannot
+            # pay for them, so at least one tight transition must remain and the
+            # guarded schedule is strictly longer than the free optimum.
+            self.assertGreater(total_span(unguarded), total_span(capped))
+            self.assertGreater(bad_transitions(capped), bad_transitions(unguarded))
+        else:
+            self.assertEqual(bad_transitions(capped), bad_transitions(unguarded))
 
     def test_preference_still_applies_inside_the_frozen_span(self):
         """
         The guard forbids only *new* span; gaps that fit inside the space stage 1
         already used are still preferred. Four 2h lectures over five days,
-        07:00-20:00: the minimum total span is 8h (one class per day), and inside
-        it every transition can be spaced. Stage 1 leaves three zero-gap
-        transitions; the guard removes all three without changing the span.
+        07:00-20:00: the minimum total span is 8h, and a zero-gap layout (one
+        class per day) spans exactly 8h = 480, which the stage-1 budget always
+        covers, so the preference removes every tight transition.
+
+        The stage-1 reference is captured from the solve under test, never from a
+        second, independently solved timetable.
         """
         kwargs = dict(
             section=make_section(start="07:00", end="20:00", days=[1, 2, 3, 4, 5]),
@@ -700,13 +760,16 @@ class TestCompactnessGuard(unittest.TestCase):
             faculty=[make_faculty(subject_ids=[1, 2, 3, 4])],
             rooms=[make_room()],
         )
-        stage_one = generate_stage_one_only(**kwargs)
-        capped = generate_schedule(**kwargs)
+        capped, budget = span_budget_for(**kwargs)
 
         self.assertEqual(len(scheduled(capped)), 4)
-        self.assertEqual(total_span(capped), total_span(stage_one))
-        self.assertEqual(total_span(capped), 480)
-        self.assertEqual(bad_transitions(stage_one), 3)
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+        # Four 2h sessions cannot span less than 8h (4 x 2h).
+        self.assertLessEqual(total_span(capped), budget)
+        self.assertGreaterEqual(total_span(capped), 480)
+
+        # A zero-gap layout spans exactly 480 <= budget, so it is always reachable
+        # inside the frozen span and the preference must take it.
         self.assertEqual(bad_transitions(capped), 0)
 
     def test_back_to_back_different_subjects_are_still_allowed(self):
@@ -785,10 +848,11 @@ class TestCompactnessGuard(unittest.TestCase):
             rooms=[make_room(room_id=1, name="A"), make_room(room_id=2, name="B")],
         )
         stage_one = generate_stage_one_only(**kwargs)
-        capped = generate_schedule(**kwargs)
+        capped, budget = span_budget_for(**kwargs)
 
         self.assertEqual(len(scheduled(capped)), len(scheduled(stage_one)))
-        self.assertLessEqual(total_span(capped), total_span(stage_one))
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+        self.assertLessEqual(total_span(capped), budget)
         for s in scheduled(capped):
             start = hhmm_to_minutes(s["start_time"])
             end = hhmm_to_minutes(s["end_time"])

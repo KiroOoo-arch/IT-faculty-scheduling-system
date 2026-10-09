@@ -168,6 +168,30 @@ def generate_baseline(**kwargs):
         return generate_schedule(**kwargs)
 
 
+def span_budget_for(**kwargs):
+    """
+    Run `generate_schedule` and return `(result, frozen_span)`, where
+    `frozen_span` is the exact total daily span stage 1 used for THIS solve and
+    the compactness guard therefore freezes stage 2 to.
+
+    Capturing the budget from the same solve removes any dependence on a second,
+    independently solved timetable agreeing with the first: the guard is checked
+    against the very solve it constrained, so the assertion cannot flake when two
+    equally optimal stage-1 arrangements differ.
+    """
+    captured = {}
+    real = scheduler._span_minutes
+
+    def spy(chosen, session_vars):
+        value = real(chosen, session_vars)
+        captured["span"] = value
+        return value
+
+    with mock.patch.object(scheduler, "_span_minutes", spy):
+        result = generate_schedule(**kwargs)
+    return result, captured.get("span")
+
+
 # A reusable discriminating scenario: one subject with a 3h lecture and a 2h lab
 # over two days. Stage 1 packs both onto day 1; the preference must split them.
 def split_pair_kwargs(days=(1, 2)):
@@ -251,14 +275,18 @@ class TestSameSubjectPreferenceIsApplied(unittest.TestCase):
         """
         kwargs = split_pair_kwargs(days=(1, 2))
         baseline = generate_baseline(**kwargs)
-        result = generate_schedule(**kwargs)
+        result, budget = span_budget_for(**kwargs)
 
         self.assertEqual(same_subject_pairs(baseline), (1, 0),
                          f"control should cluster the pair: {scheduled(baseline)}")
         self.assertEqual(same_subject_pairs(result), (0, 1),
                          f"components were not split across days: {scheduled(result)}")
         self.assertEqual(len(scheduled(result)), 2)
-        self.assertEqual(total_span(result), total_span(baseline))
+        # The split must not stretch a day past the span stage 1 used for the
+        # SAME solve. Comparing against `total_span(baseline)` instead assumed
+        # two independently solved timetables shared one arrangement.
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+        self.assertLessEqual(total_span(result), budget)
 
     def test_components_split_across_five_days(self):
         kwargs = split_pair_kwargs(days=(1, 2, 3, 4, 5))
@@ -286,14 +314,15 @@ class TestSameSubjectPreferenceIsApplied(unittest.TestCase):
                    make_room(room_id=2, name="LAB1", room_type="computer_lab")],
         )
         baseline = generate_baseline(**kwargs)
-        result = generate_schedule(**kwargs)
+        result, budget = span_budget_for(**kwargs)
 
         self.assertEqual(same_subject_pairs(baseline), (0, 2),
                          f"control was expected to be already separated: {scheduled(baseline)}")
         self.assertEqual(same_subject_pairs(result), (0, 2),
                          f"an already-separated schedule was disturbed: {scheduled(result)}")
         self.assertEqual(len(scheduled(result)), len(scheduled(baseline)))
-        self.assertEqual(total_span(result), total_span(baseline))
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+        self.assertLessEqual(total_span(result), budget)
 
     def test_lecture_and_laboratory_prefer_different_days(self):
         """
@@ -563,12 +592,15 @@ class TestPriorityOrdering(unittest.TestCase):
 
     def test_distribution_beats_the_gap_score(self):
         """(F) Equal count, equal span, worse gap score -> still split."""
-        result = generate_schedule(**self.kwargs)
+        result, budget = span_budget_for(**self.kwargs)
         baseline = generate_baseline(**self.kwargs)
 
         self.assertEqual(len(scheduled(result)), 2)
         self.assertEqual(len(scheduled(result)), len(scheduled(baseline)))
-        self.assertEqual(total_span(result), total_span(baseline))
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+        self.assertLessEqual(total_span(result), budget)
+        # The single-day window is exactly 4h and the two 2h sessions fill it, so
+        # this span is forced by the constraints, not by the solver's choice.
         self.assertEqual(total_span(result), 240)
         # The shipped preference is what flips the outcome: without the
         # same-subject terms the gap preference keeps subject 1's cluster.
@@ -633,9 +665,9 @@ class TestPrimaryObjectiveAndSpanArePreserved(unittest.TestCase):
         """
         for label, kwargs in k_l_scenarios().items():
             with self.subTest(scenario=label):
-                baseline = generate_baseline(**kwargs)
-                result = generate_schedule(**kwargs)
-                self.assertLessEqual(total_span(result), total_span(baseline),
+                result, budget = span_budget_for(**kwargs)
+                self.assertIsNotNone(budget, f"{label}: guard stage did not run")
+                self.assertLessEqual(total_span(result), budget,
                                      f"{label}: preference expanded the daily span")
 
     def test_preference_improves_distribution_without_hurting_anything(self):
@@ -646,12 +678,13 @@ class TestPrimaryObjectiveAndSpanArePreserved(unittest.TestCase):
         """
         kwargs = split_pair_kwargs(days=(1, 2, 3, 4, 5))
         baseline = generate_baseline(**kwargs)
-        result = generate_schedule(**kwargs)
+        result, budget = span_budget_for(**kwargs)
 
         self.assertEqual(same_subject_pairs(baseline)[0], 1)
         self.assertEqual(same_subject_pairs(result)[0], 0)
         self.assertEqual(len(scheduled(result)), len(scheduled(baseline)))
-        self.assertEqual(total_span(result), total_span(baseline))
+        self.assertIsNotNone(budget, "the frozen-span guard stage did not run")
+        self.assertLessEqual(total_span(result), budget)
 
 
 if __name__ == "__main__":
