@@ -61,13 +61,14 @@ result; **Laravel persists it**. A failed or unreachable solver never destroys a
 - **Master data management** — faculty, subjects, rooms/laboratories, sections, users
 - **Faculty availability** — per-day windows, which the solver treats as hard boundaries
 - **Faculty–subject qualification mapping** — a session can only go to faculty who can teach it
-- **AI schedule generation** — `OPTIMAL` / `FEASIBLE` / `PARTIAL` / `INFEASIBLE`, with a per-session reason when a session cannot be placed; generation is serialized per academic term, and a plan that would clash with another section's timetable in that term is refused before it is written
+- **AI schedule generation** — `OPTIMAL` / `FEASIBLE` / `PARTIAL` / `INFEASIBLE`, with a per-session reason when a session cannot be placed
 - **Approval workflow** — `draft → approved → published`, plus `reject` and `unpublish → draft`
-- **Session editing with conflict detection** — manual changes are validated against the full resulting state, including other sections' sessions in the same academic term
+- **Session editing with conflict detection** — manual changes are validated against the full resulting state
 - **Publish conflict gate** — refuses to publish a timetable that clashes with another approved/published one
 - **Published-reference guard** — deleting faculty/subject/room/section still used by a *published* schedule returns `409` unless confirmed with `?force=1`
 - **Reports** — faculty workload, room utilization, section summary, schedule status, generation logs
 - **Printable output** — published section and faculty timetables, with a subject-list or weekly-grid layout, official letterhead, and print/PDF styling
+- **Privacy Policy and Terms of Use** — public pages with a discreet dashboard footer, plus a versioned Terms acceptance recorded per account and per version ([implementation note](documentation/Privacy-and-Terms.md))
 
 ### The five protection layers
 
@@ -158,8 +159,8 @@ existing subject links alone.
 
 | Target | Command | Current result |
 |---|---|---|
-| Backend | `cd backend && php artisan test` | **127 passed, 537 assertions** |
-| AI Engine | `cd ai-engine && python -m unittest discover -s tests -t tests` | **118 tests, OK** |
+| Backend | `cd backend && php artisan test` | **143 passed, 604 assertions** |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **118 tests, OK** |
 | Frontend build / typecheck | `cd frontend && npm run build` | passes (`tsc -b && vite build`) |
 | Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings — known debt (`react-hooks/set-state-in-effect` across the admin pages) |
 
@@ -179,9 +180,8 @@ The backend and AI-engine rows were re-run for this update; the frontend rows we
 
 - ✅ AI schedule generation verified live — 15 demo sections returned `OPTIMAL` with every session placed and zero conflicts
 - ✅ Approval → publish workflow, including the status guards (`422` when publishing anything not approved)
-- ✅ Generation refuses a plan that clashes with another section's draft, approved, or published timetable in the same academic year and semester (`422`), and a contended generation run answers `409`
 - ✅ Publish gate blocks cross-section double-booking at publish time
-- ✅ Manual session edits validated against conflicts, drafts in the same term included
+- ✅ Manual session edits validated against conflicts
 - ✅ Published-reference delete guard, and a published schedule cannot be deleted without unpublishing
 - ✅ Admin prints/downloads published schedules for hard-copy distribution
 
@@ -211,6 +211,7 @@ The backend and AI-engine rows were re-run for this update; the frontend rows we
 | [`documentation/Program-Flow.md`](documentation/Program-Flow.md) | End-to-end program flow |
 | [`documentation/User-Flow.md`](documentation/User-Flow.md) | User journeys through the system |
 | [`documentation/Data-Privacy-and-Security.md`](documentation/Data-Privacy-and-Security.md) | Data handling and security posture |
+| [`documentation/Privacy-and-Terms.md`](documentation/Privacy-and-Terms.md) | The Privacy Policy and Terms of Use pages, the acceptance workflow, and the details the college must still confirm |
 | [`documentation/Progress-report.md`](documentation/Progress-report.md) | Progress reporting |
 | [`documentation/Bug-Fix-Log.md`](documentation/Bug-Fix-Log.md) | Development history and notable fixes |
 | [`documentation/Planned-Signature-Approval.md`](documentation/Planned-Signature-Approval.md) | Agreed design (not built): a Department Head signature before approval |

@@ -2,8 +2,9 @@
 
 ## Laravel API (`http://127.0.0.1:8000/api`)
 
-All routes except `POST /login` require `Authorization: Bearer <token>`. Everything except
-`/logout` and `/me` additionally requires the `admin` role. 50 routes in total.
+All routes except `POST /login` and `GET /legal` require `Authorization: Bearer <token>`.
+Everything except `/logout` and `/me` additionally requires the `admin` role, and the
+acceptance status and record endpoints act only on the caller's own account. 55 routes in total.
 
 ### Authentication
 
@@ -84,7 +85,7 @@ All routes except `POST /login` require `Authorization: Bearer <token>`. Everyth
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| POST | `/api/schedules/generate/{section}` | ✅ Implemented | Generate a draft via the AI engine. **422** if any assigned subject mismatches the section's year level or semester (the engine is never called). **422** carrying the engine's reason when the engine answers 4xx (no subjects, no qualified faculty, no available rooms). **502** only when the engine is unreachable or faults |
+| POST | `/api/schedules/generate/{section}` | ✅ Implemented | Generate a draft via the AI engine. **422** if any assigned subject mismatches the section's year level or semester (the engine is never called). **422** carrying the engine's reason when the engine answers 4xx (no subjects, no qualified faculty, no available rooms). **502** only when the engine is unreachable or faults. **409** when another generation is already running for the same academic year and semester — runs are serialized per term by a cache lock (`ttl` 180 s / `wait` 30 s). **422** with a `conflicts` list when the generated plan clashes with another section's `draft`/`approved`/`published` session in that term; the check runs before anything is written |
 | GET | `/api/schedules` | ✅ Implemented | List schedules. `?show_archived=true` includes archived ones |
 | GET | `/api/schedules/{id}` | ✅ Implemented | Get one schedule with sessions |
 | PATCH | `/api/schedules/{id}/approve` | ✅ Implemented | Approve a draft. **422** for any other status |
@@ -115,6 +116,7 @@ All routes except `POST /login` require `Authorization: Bearer <token>`. Everyth
 | GET | `/api/reports/section-summary` | ✅ Implemented | Sessions, hours, faculty count per section |
 | GET | `/api/reports/schedule-status` | ✅ Implemented | Draft / approved / published / archived counts |
 | GET | `/api/reports/conflicts` | ⚠️ Misnamed | **Returns schedule generation logs**, not conflicts (section, status, message, unscheduled sessions, requester, timestamp). The UI tab consuming it is labelled "Generation Logs". Scheduled to be renamed `/reports/generation-logs` |
+| DELETE | `/api/reports/conflicts` | ✅ Implemented | **Clears the schedule generation-log history** (all rows in `schedule_generation_logs`). Returns `{message, deleted}`. Leaves every schedule, session, and master-data record untouched. Same naming caveat as the GET above |
 | GET | `/api/reports/faculty/{faculty}/schedule` | ✅ Implemented | A faculty member's published sessions (drives the faculty printable). **404** for an unknown faculty |
 
 ### Schedule Distribution (Print/PDF)
@@ -144,7 +146,7 @@ All routes except `POST /login` require `Authorization: Bearer <token>`. Everyth
 Laravel surfaces those `400`s as **422** carrying the engine's own message. An unreachable engine
 stays **502**.
 
-### Example response — `POST /generate-schedule/1`
+### Example response — `POST /api/schedules/generate/1`
 
 ```json
 {
@@ -177,23 +179,29 @@ stays **502**.
 survives); `start_hour`/`end_hour` are whole-hour projections kept for older readers. `status` is one
 of `OPTIMAL`, `FEASIBLE`, `PARTIAL`, `INFEASIBLE`, `ERROR`.
 
----
+### Privacy Policy and Terms of Use
 
-## Integration Flow
+The wording of both documents lives in the frontend
+(`frontend/src/constants/legal.ts`); the version, the effective dates and the acceptance
+record are served by the API. `GET /legal` is public so the documents can be read before
+signing in, and so the pages cannot disagree with the server about which revision is in force.
 
-1. **Frontend** calls the Laravel API with a Bearer token
-2. **Laravel** handles authentication, business logic, and CRUD operations
-3. **Laravel** calls the FastAPI AI engine for schedule generation
-4. **FastAPI** queries the database directly and runs the CP-SAT solver
-5. **FastAPI** returns placements (or per-session reasons) to Laravel
-6. **Laravel** persists the schedule and sessions — it is the only writer
-7. **Frontend** displays the result
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/legal` | ✅ Implemented | **Public.** Current version and effective date of each document, whether the acceptance prompt is on, the privacy contact (empty until the college designates one), and the list of facts the college still has to confirm |
+| GET | `/api/terms/acceptance` | ✅ Implemented | Whether the signed-in account has accepted the current Terms version, plus the version it accepted most recently |
+| POST | `/api/terms/acceptance` | ✅ Implemented | Record acceptance of the current version for the signed-in account. Body: `terms_version`. **422** when the version is not the published one; repeating the same version returns the original record rather than a second one |
+| GET | `/api/terms/acceptances` | ✅ Implemented | Admin only. Who has accepted the current version (`accepted`) and who has not (`pending`) |
+
+> **Note:** the account is always taken from the bearer token, never from the request body, so
+> nobody can record acceptance for someone else. Records are append-only — accepting a later
+> version adds a row instead of overwriting the earlier one.
 
 ---
 
 ## Notes
 
-- All endpoints require a Bearer token except `POST /api/login`
+- All endpoints require a Bearer token except `POST /api/login` and `GET /api/legal`
 - All endpoints are admin-only — faculty are records, not users; non-admin logins are rejected
 - Schedule generation uses the Google OR-Tools CP-SAT solver, budgeted at 15 seconds per section
 - Conflict detection runs in real time on manual session edits, against other sections' `draft`,
@@ -205,6 +213,5 @@ of `OPTIMAL`, `FEASIBLE`, `PARTIAL`, `INFEASIBLE`, `ERROR`.
   is refused with `422` before anything is written
 
 **Last Updated:** October 10, 2026 — synchronized with the cross-section conflict protection
-(term-scoped generation lock, pre-write conflict gate, draft-aware manual-edit checks), the
-50-route API, the corrected engine error mapping (`4xx` → 422), and the login failure codes
-(`401`/`403`/`422`).
+(term-scoped generation lock, pre-write conflict gate, draft-aware manual-edit checks), the 50-route
+API, the corrected engine error mapping (`4xx` → 422), and the login failure codes (`401`/`403`/`422`).
