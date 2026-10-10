@@ -146,16 +146,27 @@ class ScheduleSessionController extends Controller
             }
         }
 
-        // Overlap check: faculty/room double-booking across OTHER approved/published schedules
+        // Overlap check: faculty/room double-booking across OTHER live schedules
+        // in the SAME term. Drafts count — a sibling draft is a booking someone
+        // is actively planning, and the generator refuses to clash with it, so a
+        // hand edit must not be able to create the clash the generator forbids.
+        // The term scope matches generation: a schedule in another academic year
+        // or semester is a different timetable and cannot be a real clash.
+        $editingSection = $session->schedule?->section;
+
         $externalSessions = ScheduleSession::with('schedule')
             ->where('id', '!=', $session->id)
             ->where(function ($q) use ($proposed) {
                 $q->where('faculty_id', $proposed['faculty_id'])
                   ->orWhere('room_id', $proposed['room_id']);
             })
-            ->whereHas('schedule', function ($q) use ($session) {
+            ->whereHas('schedule', function ($q) use ($session, $editingSection) {
                 $q->where('section_id', '!=', $session->schedule->section_id)
-                  ->whereIn('status', ['approved', 'published']);
+                  ->whereIn('status', ['draft', 'approved', 'published'])
+                  ->whereHas('section', function ($s) use ($editingSection) {
+                      $s->where('academic_year', $editingSection?->academic_year)
+                        ->where('semester_name', $editingSection?->semester_name);
+                  });
             })
             ->get();
 
@@ -196,5 +207,6 @@ class ScheduleSessionController extends Controller
  * - the midday break
  * - faculty availability
  * - overlapping sessions in the same schedule
- * - faculty/room double-booking in other approved/published schedules
+ * - faculty/room double-booking in other draft/approved/published schedules in
+ *   the same academic year and semester
  */

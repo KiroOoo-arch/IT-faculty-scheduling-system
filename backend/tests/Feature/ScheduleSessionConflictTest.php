@@ -340,4 +340,170 @@ class ScheduleSessionConflictTest extends TestCase
         $this->assertSame('09:00:00', $this->session->start_time);
         $this->assertSame('11:00:00', $this->session->end_time);
     }
+
+    // -----------------------------------------------------------------------
+    // Conflicts with OTHER sections' draft/approved/published schedules
+    //
+    // The manual editor used to compare only against approved/published
+    // schedules, so it could hand-place a session onto a slot a sibling section
+    // had already claimed in its DRAFT — the very clash generation refuses to
+    // create. These tests pin the draft-aware, same-term rule. Term scoping is
+    // asserted too, so a timetable for another academic year or semester is not
+    // mistaken for a clash.
+    // -----------------------------------------------------------------------
+
+    private function makeRoom(string $name): Room
+    {
+        return Room::create([
+            'name' => $name,
+            'type' => 'lecture',
+            'capacity' => 40,
+            'status' => 'available',
+        ]);
+    }
+
+    private function makeFaculty(string $name): Faculty
+    {
+        return Faculty::create([
+            'name' => $name,
+            'faculty_type' => 'full_time',
+            'max_teaching_load' => 24,
+            'is_active' => true,
+        ]);
+    }
+
+    /**
+     * Another section with one session, so a clash can be constructed in its
+     * own term. The editing section is Year 1 / 2026-2027 / 1st Semester.
+     */
+    private function makeSiblingSession(
+        string $status,
+        Faculty $faculty,
+        Room $room,
+        int $day,
+        string $start,
+        string $end,
+        string $academicYear = '2026-2027',
+        string $semester = '1st Semester'
+    ): Schedule {
+        static $count = 0;
+        $count++;
+
+        $section = Section::create([
+            'name' => "Sibling {$count}",
+            'year_level' => 1,
+            'academic_year' => $academicYear,
+            'semester_name' => $semester,
+            'preferred_days' => [1, 2, 3, 4, 5],
+            'preferred_start_time' => '07:00',
+            'preferred_end_time' => '18:00',
+            'student_count' => 30,
+        ]);
+
+        $schedule = Schedule::create(['section_id' => $section->id, 'status' => $status]);
+
+        ScheduleSession::create([
+            'schedule_id' => $schedule->id,
+            'subject_id' => $this->session->subject_id,
+            'faculty_id' => $faculty->id,
+            'room_id' => $room->id,
+            'session_type' => 'lecture',
+            'day_of_week' => $day,
+            'start_time' => $start,
+            'end_time' => $end,
+        ]);
+
+        return $schedule;
+    }
+
+    #[Test]
+    public function editing_a_session_into_another_sections_draft_slot_is_rejected(): void
+    {
+        // A sibling section in the SAME term already holds this faculty member
+        // 1:00-3:00 PM in its draft (its own room, so only the faculty overlaps).
+        $this->makeSiblingSession('draft', $this->faculty, $this->makeRoom('SIB-R1'), 1, '13:00:00', '15:00:00');
+
+        $response = $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '13:00',
+                'end_time' => '15:00',
+            ]);
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('Faculty', implode(' ', $response->json('conflicts')));
+
+        // The edit was refused, so the session stays where it was.
+        $this->session->refresh();
+        $this->assertSame('09:00:00', $this->session->start_time);
+        $this->assertSame('11:00:00', $this->session->end_time);
+    }
+
+    #[Test]
+    public function conflicts_with_approved_and_published_sessions_are_still_rejected(): void
+    {
+        $otherFaculty = $this->makeFaculty('Prof. Other');
+
+        // Approved: shares this room with a different faculty -> room clash.
+        $this->makeSiblingSession('approved', $otherFaculty, $this->session->room, 2, '13:00:00', '15:00:00');
+        // Published: shares this faculty in another room -> faculty clash.
+        $this->makeSiblingSession('published', $this->faculty, $this->makeRoom('SIB-R2'), 2, '13:00:00', '15:00:00');
+
+        $response = $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 2,
+                'start_time' => '13:00',
+                'end_time' => '15:00',
+            ]);
+
+        $response->assertStatus(422);
+        $conflicts = implode(' ', $response->json('conflicts'));
+        $this->assertStringContainsString('Room', $conflicts);
+        $this->assertStringContainsString('Faculty', $conflicts);
+    }
+
+    #[Test]
+    public function a_non_overlapping_edit_beside_a_draft_succeeds(): void
+    {
+        // Same faculty, but the draft holds Monday; Tuesday is genuinely free.
+        $this->makeSiblingSession('draft', $this->faculty, $this->makeRoom('SIB-R3'), 1, '13:00:00', '15:00:00');
+
+        $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 2,
+                'start_time' => '09:00',
+                'end_time' => '11:00',
+            ])
+            ->assertOk();
+
+        $this->session->refresh();
+        $this->assertSame(2, $this->session->day_of_week);
+        $this->assertSame('09:00:00', $this->session->start_time);
+    }
+
+    #[Test]
+    public function a_schedule_from_another_term_does_not_cause_a_false_conflict(): void
+    {
+        // Same faculty/room/slot, but a different academic year...
+        $this->makeSiblingSession(
+            'draft', $this->faculty, $this->session->room, 1, '13:00:00', '15:00:00',
+            academicYear: '2025-2026'
+        );
+        // ...and the same year but a different semester.
+        $this->makeSiblingSession(
+            'draft', $this->faculty, $this->makeRoom('SIB-R4'), 1, '13:00:00', '15:00:00',
+            semester: '2nd Semester'
+        );
+
+        $this->actingAs($this->admin)
+            ->putJson("/api/schedules/sessions/{$this->session->id}", [
+                'day_of_week' => 1,
+                'start_time' => '13:00',
+                'end_time' => '15:00',
+            ])
+            ->assertOk();
+
+        $this->session->refresh();
+        $this->assertSame('13:00:00', $this->session->start_time);
+    }
 }

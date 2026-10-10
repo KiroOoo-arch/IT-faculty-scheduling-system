@@ -105,13 +105,20 @@ def generate_schedule_for_section(section_id: int):
 
         # --- Section ---
         cur.execute(
-            "SELECT id, name, preferred_days, preferred_start_time, preferred_end_time, student_count "
+            "SELECT id, name, preferred_days, preferred_start_time, preferred_end_time, student_count, "
+            "academic_year, semester_name "
             "FROM sections WHERE id = %s",
             (section_id,),
         )
         section_row = cur.fetchone()
         if not section_row:
             raise HTTPException(status_code=404, detail=f"Section {section_id} not found.")
+
+        # The term scopes every cross-section constraint below: a schedule for a
+        # different academic year or semester belongs to a different timetable
+        # and must not constrain this one.
+        academic_year = section_row["academic_year"]
+        semester_name = section_row["semester_name"]
 
         section = {
             "id": section_row["id"],
@@ -205,7 +212,12 @@ def generate_schedule_for_section(section_id: int):
             max_load_row = cur.fetchone()
             max_teaching_load = max_load_row["max_teaching_load"] if max_load_row else 24
 
-            # Hours already committed from OTHER sections
+            # Hours already committed by OTHER sections in the same term. Drafts
+            # are included: a sibling's draft is a live booking while it is being
+            # planned, so this section must not be handed the same faculty hours
+            # that another draft (or an approved/published schedule) already
+            # holds. The target section is always excluded, so its own previous
+            # draft never constrains its regeneration.
             cur.execute(
                 """
                 SELECT COALESCE(SUM(
@@ -213,11 +225,14 @@ def generate_schedule_for_section(section_id: int):
                 ), 0) AS total_hours
                 FROM schedule_sessions ss
                 JOIN schedules sch ON sch.id = ss.schedule_id
+                JOIN sections sec ON sec.id = sch.section_id
                 WHERE ss.faculty_id = %s
                   AND sch.section_id != %s
-                  AND sch.status IN ('approved', 'published')
+                  AND sch.status IN ('draft', 'approved', 'published')
+                  AND sec.academic_year = %s
+                  AND sec.semester_name = %s
                 """,
-                (f["id"], section_id),
+                (f["id"], section_id, academic_year, semester_name),
             )
             total_hours_result = cur.fetchone()
             existing_load_hours = float(total_hours_result["total_hours"] or 0)
@@ -248,7 +263,12 @@ def generate_schedule_for_section(section_id: int):
         if not rooms:
             raise HTTPException(status_code=400, detail="No available rooms found.")
 
-        # --- Existing committed sessions from OTHER sections ---
+        # --- Existing sessions from OTHER sections in the SAME term ---
+        # Drafts count: two sections planned in one sitting are both still
+        # drafts, so excluding them let the engine hand the same faculty member
+        # or room to both, and the clash only surfaced at publish time. Approved
+        # and published schedules stay included, and the target section is
+        # excluded so regenerating it is not blocked by its own old draft.
         cur.execute(
             """
             SELECT ss.day_of_week,
@@ -257,10 +277,13 @@ def generate_schedule_for_section(section_id: int):
                    ss.faculty_id, ss.room_id
             FROM schedule_sessions ss
             JOIN schedules sch ON sch.id = ss.schedule_id
+            JOIN sections sec ON sec.id = sch.section_id
             WHERE sch.section_id != %s
-              AND sch.status IN ('approved', 'published')
+              AND sch.status IN ('draft', 'approved', 'published')
+              AND sec.academic_year = %s
+              AND sec.semester_name = %s
             """,
-            (section_id,),
+            (section_id, academic_year, semester_name),
         )
         # Map the columns onto the solver's contract here rather than passing the
         # raw rows through: the query returns wall-clock strings, while the solver
