@@ -62,6 +62,9 @@ ai-engine/.env
 # Local service logs
 sched-ai.out
 sched-ai.err
+ai-service.log
+backend-serve.log
+frontend-dev.log
 
 # Local tooling caches and agent metadata
 .vite/
