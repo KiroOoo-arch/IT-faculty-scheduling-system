@@ -145,12 +145,12 @@ Generate → DRAFT → Review/Edit → APPROVED → Publish Gate → PUBLISHED �
 ## SLIDE 11 — Testing & Results (Speaker D) — 2:00
 
 **Slide content:**
-- 127 Laravel tests (537 assertions) across 17 files
+- 143 Laravel tests (604 assertions) across 18 files
 - 118 solver unit tests (Python, 5 modules)
 - Live-verified: BSIT 1A generates OPTIMAL (7 sessions); full workflow passes
 - tsc typecheck + production build clean
 
-> "Two automated suites: 127 backend feature tests with 537 assertions — covering generation correctness, cross-section conflict protection, section/subject year-and-semester validation, and lab-hour consistency rules — and 118 solver unit tests in Python covering every constraint category, including infeasible cases and part-time faculty availability windows. Beyond the suites, we live-verified the full workflow end to end: the live sections generate OPTIMAL, the draft-approve-publish-print flow runs clean, and the validation gates fire correctly with named error messages."
+> "Two automated suites: 143 backend feature tests with 604 assertions — covering generation correctness, cross-section conflict protection, section/subject year-and-semester validation, and lab-hour consistency rules — and 118 solver unit tests in Python covering every constraint category, including infeasible cases and part-time faculty availability windows. Beyond the suites, we live-verified the full workflow end to end: the live sections generate OPTIMAL, the draft-approve-publish-print flow runs clean, and the validation gates fire correctly with named error messages."
 
 ---
 
@@ -198,5 +198,5 @@ Generate → DRAFT → Review/Edit → APPROVED → Publish Gate → PUBLISHED �
 
 1. **Handoffs:** each speaker's last line names the next topic — use them; they prevent dead air and show coordination.
 2. **If a panelist interrupts with a question mid-slide:** answer briefly from the fact sheet, then "Happy to go deeper in the Q&A — continuing."
-3. **Numbers freeze:** 127 backend tests / 537 assertions / 118 solver tests / 245 total / 8 constraints / 4 room types / 4 statuses / 11 tables / 15 s solver cap / under 1 s actual. Nothing else.
+3. **Numbers freeze:** 143 backend tests / 604 assertions / 118 solver tests / 261 total / 8 constraints / 4 room types / 4 statuses / 11 tables / 15 s solver cap / under 1 s actual. Nothing else.
 4. **Never say:** ML, neural network, "always works", "faculty login". Say: constraint programming, CP-SAT, "proposes and explains", "records, not users", "availability is a day + a declared time window".

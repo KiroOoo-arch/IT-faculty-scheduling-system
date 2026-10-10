@@ -205,6 +205,35 @@
   background: linear-gradient(90deg, #0a2f9c 0%, #0a2f9c 68%, #ffc000 68%, #ffc000 100%);
 }
 
+/* The policy links under the sign-in card.
+ *
+ * Muted until pointed at or focused, then the college navy with a visible focus
+ * ring: they must stay out of the way of the form, but they also have to be
+ * found and used with a keyboard alone, so the focus state is not subtle. */
+.login-policy-link {
+  color: #64748b;
+  text-decoration: underline;
+  text-decoration-color: #cbd5e1;
+  text-underline-offset: 2px;
+  border-radius: 0.25rem;
+  transition: color 150ms ease, text-decoration-color 150ms ease;
+}
+
+.login-policy-link:hover {
+  color: #0a2f9c;
+  text-decoration-color: #0a2f9c;
+}
+
+.login-policy-link:focus-visible {
+  /* A real outline, not just a glow: if a browser does not match
+   * :focus-visible — some do not, depending on how focus arrived — the link
+   * still has to be visibly focused for a keyboard user. */
+  outline: 2px solid #0a2f9c;
+  outline-offset: 2px;
+  color: #0a2f9c;
+  box-shadow: 0 0 0 3px rgba(10, 47, 156, 0.25);
+}
+
 /* The form side of the page. A soft glow behind the card stops a plain grey
  * field from looking like an unfinished page, and keeps the shadowed card
  * from reading as a smudge. */

@@ -58,7 +58,7 @@ Our system solves all four with constraint-based AI generation, a five-layer con
 
 | Fact | Correct value | ❌ Do NOT say |
 |---|---|---|
-| Backend tests | **127 passing (537 assertions)** across 17 feature test files | "23 tests" (outdated) |
+| Backend tests | **143 passing (604 assertions)** across 18 feature test files | "23 tests" (outdated) |
 | Solver tests | **118 passing** (Python unittest, 5 modules) | "46" (the old test_scheduler.py-only size) |
 | Cross-section conflict tests | **25 passing (101 assertions)** — `ScheduleGenerationConflictTest`, `ScheduleSessionConflictTest` | — |
 | Total automated tests | **245 passing** | — |
@@ -177,7 +177,7 @@ These were demonstrated in the running system today:
 
 | Old claim | Correct now |
 |---|---|
-| "6/6 backend tests" | 127 backend tests (537 assertions) + 118 solver tests = 245 total |
+| "6/6 backend tests" | 143 backend tests (604 assertions) + 118 solver tests = 261 total |
 | Faculty Dashboard exists | Removed Sept 2026 — faculty are records, not users |
 | Print/PDF "planned" | Implemented (`PrintableSchedule.tsx`) and demo-verified |
 | "Not enforced" max load | IS enforced (constraint #7, verified in `scheduler.py`) |
@@ -199,7 +199,7 @@ These were demonstrated in the running system today:
 | 11 domain tables | `backend/database/migrations/` (17 files total incl. framework tables) |
 | Frontend pages (9) | `frontend/src/pages/` |
 | Constraint documentation | `documentation/Constraints.md` |
-| Test counts | `backend/tests/Feature/` (127 tests / 537 assertions across 17 files), `ai-engine/tests/` (118 tests across 5 modules; `test_scheduler.py` holds 46) |
+| Test counts | `backend/tests/Feature/` (143 tests / 604 assertions across 18 files), `ai-engine/tests/` (118 tests across 5 modules; `test_scheduler.py` holds 46) |
 
 ---
 

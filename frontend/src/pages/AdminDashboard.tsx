@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth, API_BASE_URL } from '../context/AuthContext'
 import { formatTimeRange } from '../utils/time'
 import { SYSTEM_NAME, SYSTEM_ORG } from '../constants/system'
+import DashboardFooter from '../components/DashboardFooter'
 
 type Faculty = {
   id: number
@@ -575,6 +576,11 @@ export default function AdminDashboard() {
             </p>
           </div>
         </div>
+
+        {/* College name and the policy links, in small type at the foot of the
+            page: read occasionally, so they stay out of the way of the work
+            without being hidden. */}
+        <DashboardFooter />
 
       </div>
     </div>

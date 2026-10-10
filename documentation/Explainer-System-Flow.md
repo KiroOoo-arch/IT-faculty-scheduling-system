@@ -1,7 +1,7 @@
 # Explainer — System Flow
 
-**Figure:** [`screenshots/16-system-flow.png`](screenshots/16-system-flow.png) — 1900 × 3264 px, 514 KB
-**Editable source:** `.tmp-run/diagram/system-flow-v2.html` (not committed — a scratch file)
+**Figure:** [`screenshots/16-system-flow.png`](screenshots/16-system-flow.png) — 2531 × 6600 px, 604 KB
+**Editable source:** [`screenshots/system-flow.mmd`](screenshots/system-flow.mmd) — committed Mermaid, rendered with the Mermaid CLI (§8)
 **Companion documents:** [`Program-Flow.md`](Program-Flow.md), [`API.md`](API.md), [`Explainer-Architecture.md`](Explainer-Architecture.md)
 
 *This file explains the system flow figure so you can present it and defend it. Steps, status codes, and every failure branch were traced through the code and exercised against the running stack.*
@@ -27,56 +27,63 @@ Where the architecture figure shows *parts*, this one shows **movement**. Every 
 - The sequence of steps for the system's core operation (generating a schedule)
 - Which component performs each step
 - What data moves at each hand-off
-- Every way the flow can end early, and what the system returns
-- How authentication works end to end
-- How a draft becomes a published, printed schedule
-- The schedule's state transitions
+- Every way the generation flow can end early, and what the system returns
+- Where the term lock sits, and what it protects
+- When the previous draft is archived, and why that cannot destroy the admin's work
 
 **It does not answer:**
 
 - What the system is made of, statically (that is the **System Architecture** figure)
 - Which file or function implements a step (that is the **Program Flow** figure)
 - What the human sees on screen (that is the **User Flow** figure)
+- How a draft becomes a published, printed schedule — that path is *not drawn in this figure*; it is in §3.4 below, and it is the subject of the **User Flow** figure
 
 ---
 
 ## 3. How to read it — section by section
 
-### Section 1 — Primary Flow: Generating a Draft Schedule (17 steps)
+### Section 1 — Primary flow: generating and replacing a draft (15 numbered steps)
 
-This is the heart of the figure. The steps are colour-coded by actor, which lets you show the hand-offs at a glance:
+This is the heart of the figure. Steps are colour-coded by actor, which lets you show the hand-offs at a glance:
 
 | Actor | Steps | What it does |
 |---|---|---|
-| **Browser** (blue) | 1, 2, 17 | Starts the request; renders the result |
-| **Laravel** (purple) | 3, 4, 5, 6, 15, 16 | Guards, validates, takes the term lock, calls the engine, cross-checks the plan, persists (archiving the previous draft in the same transaction) |
-| **PostgreSQL** (green) | 7–12 | Supplies six separate read sets to the engine |
-| **FastAPI** (amber) | 13, 14 | Builds the model, solves it, returns the result |
+| **Browser** (blue) | 1, 2, 15 | Starts the request; renders the result |
+| **Laravel** (purple) | 3, 4, 5, 10, 11, 12, 13, 14 | Guards and validates, takes the term lock, calls the engine, cross-checks the plan, persists the replacement inside one transaction, releases the lock |
+| **Engine** (amber — FastAPI + OR-Tools CP-SAT) | 6, 7, 8, 9 | Reads PostgreSQL itself, solves under a 15 s budget, reports a reason for every session it could not place |
+| **PostgreSQL** (green) | inside 7 and 12 | Supplies the six read sets the engine performs, and the rows Laravel commits |
 
-The shape to narrate: **Laravel hands off, the engine reads for itself, and the result comes back to Laravel.** Notice that steps 7–12 are labelled *PostgreSQL* rather than *FastAPI* — this is deliberate, because the engine is performing those reads itself rather than receiving the data from Laravel. That distinction is the figure's most important structural claim.
+The shape to narrate: **Laravel hands off, the engine reads for itself, and the result comes back to Laravel.** Notice that the engine's reads are the engine reading PostgreSQL **directly**, server-to-server, rather than receiving the data from Laravel. That distinction is the figure's most important structural claim.
 
-Step 4 is the pre-flight integrity gate, and step 6 is where the 30-second HTTP timeout lives.
+**The execution order is the point of this figure — four details are easy to get wrong, and all four are drawn correctly here:**
 
-### Section 2 — Decision Points and Failure Branches (17 rows)
+1. **Gate 3 runs before the lock.** A subject/section mismatch is refused with 422 without ever taking the lock and without calling the engine.
+2. **The lock is held across the whole run** — the engine call, the conflict check and the write — so two sections in one academic term cannot both read the pre-run snapshot.
+3. **The returned plan is cross-checked before anything is written.** `findGeneratedConflicts` measures it against every *other* section's draft, approved and published sessions in the same term; a clash is a 422 and the section's existing draft is left exactly as it was.
+4. **The previous draft is archived inside the same transaction that creates its replacement.** Archiving up front (the older behaviour) let a failed or clashing run destroy the admin's work; the archive, the new draft and its sessions now commit or roll back together.
 
-The most defensible part of the figure. Each row names a condition, the component that detects it, the response code, and the side effect.
+Step 6 is where the 30 s HTTP timeout lives; step 8 is where the 15 s solver budget lives. The amber timing strip at the foot of the chain states both, plus the two invariants: **one writer** (Laravel) and **zero retries**.
+
+### Section 2 — Every way this flow ends early (8 branches)
+
+Each failure branch is drawn beside the step that can produce it, so you can read the condition, the component that detects it, the response code, and the side effect in one glance.
 
 The rows worth knowing by heart:
 
-| Situation | Who detects it | Result |
-|---|---|---|
-| Wrong email or password | Laravel | **401** — an authentication failure, **not** a 422 |
-| Valid credentials, non-admin role | Laravel | **403**, no token issued |
-| Missing or expired token | `auth:sanctum` | **401** → client clears session → `/login` |
-| Subject doesn't match the section | Laravel gate | **422** — engine never called, no draft, no log |
-| Engine not running | Laravel HTTP client | **502** + a failure log written |
-| Engine places nothing (INFEASIBLE) | Solver | **422** + a failure log **is still written** |
-| Engine places some (PARTIAL) | Solver | **200** — a draft **is** saved, the rest reported |
-| Engine places all but hits 15 s (FEASIBLE) | Solver | **200** — treated exactly like OPTIMAL |
+| Situation | Who detects it | Result | Side effect |
+|---|---|---|---|
+| Subject does not match the section's year/semester | Laravel (Gate 3) | **422** naming the subjects | The engine is **never called** and **no log row** is written |
+| Another run already holds this term's lock | Laravel (cache lock) | **409** | The run in flight is untouched |
+| Engine not running / port closed | Laravel HTTP client | **502** | `failure` log row written; **no draft**; the existing draft survives |
+| Engine answers 4xx (no subjects, no qualified faculty, no available room) | Engine → Laravel | **422** with the engine's own reason | `failure` log row written |
+| Engine answers 5xx, or the 30 s timeout fires | Laravel HTTP client | **502** | `failure` log row written either way |
+| Engine places nothing (INFEASIBLE) or errors | Solver → Laravel | **422** with the engine's message | `failure` log row carrying the per-session reasons |
+| Plan clashes with another section in the same term | Laravel (`findGeneratedConflicts`) | **422** with the conflict list | Nothing is written; the existing draft is left as it was |
+| A write inside the transaction fails | PostgreSQL / Laravel | rollback | No half-written schedule; the previous draft survives |
 
-If you only present one panel from this figure, present this one. It shows that failures were designed for rather than discovered.
+If you only present one part of this figure, present these branches: they show that failures were designed for rather than discovered.
 
-### Section 3 — Authentication Flow
+### Authentication flow — *prose only; not drawn in the figure*
 
 Login, token issuance, and the 401 path. Three points to make:
 
@@ -86,20 +93,20 @@ Login, token issuance, and the 401 path. Three points to make:
    Getting this right is a good sign you actually tested the system.
 3. **A 401 anywhere is handled globally.** A single interceptor clears the stored session and redirects to the login page — so an expired token never leaves a page silently showing empty data.
 
-### Section 4 — Review, Edit, Approve, Publish, Print
+### Review, edit, approve, publish, print — *prose only; not drawn in the figure*
 
 What happens to a draft between generation and paper. The manual-edit subsection matters most, because it describes **four sequential conflict checks** and notes that the change is merged onto the session's existing values and the *whole resulting state* is re-validated — not just the fields that were sent. That is why a partial edit cannot smuggle in an invalid combination.
 
 The print subsection states plainly that PDF is produced by the **browser's own print dialog** — there is no PDF library and no external service.
 
-### Section 5 — Schedule Lifecycle
+### Schedule lifecycle — *prose only; not drawn in the figure*
 
 State chips with the real triggering events. Two things here are more accurate than a typical student diagram:
 
 - **`ARCHIVED` is not the step after `PUBLISHED`.** Archiving happens two ways: regenerating a section archives its old drafts, and publishing a *new* schedule archives the previously published one for that section. A schedule does not archive itself.
-- The figure explicitly records that **`rejected` is a dead end**. More on that in §7.
+- The status list explicitly records that **`rejected` is a dead end**. More on that in §7.
 
-### Section 6 — Faculty Availability Flow and Concurrency
+### Faculty availability and concurrency — *prose only; not drawn in the figure*
 
 How availability is authored, and what happens when two things run at once. Key facts:
 
@@ -109,10 +116,6 @@ How availability is authored, and what happens when two things run at once. Key 
 - Generation is **synchronous**. There is no queue, no worker, and no retry. The admin waits.
 - A run affects other sections as soon as it is a **draft**: `draft`, `approved` and `published` sessions in the same academic year and semester all count as live bookings for the next run. Generation for one term is serialized by a cache lock, so a run cannot read a pre-run snapshot that another in-flight run is about to change.
 
-### Timing strip
-
-**15 s** solver budget inside a **30 s** HTTP timeout (deliberately double, so a slow solve is not cut off mid-search), **one writer**, and **zero retries**.
-
 ---
 
 ## 4. Where it goes
@@ -120,10 +123,10 @@ How availability is authored, and what happens when two things run at once. Key 
 | Destination | How to use it |
 |---|---|
 | [`API.md`](API.md) | The endpoint-level reference. This figure is the behaviour those endpoints produce. |
-| [`Program-Flow.md`](Program-Flow.md) | The prose companion — the same behaviour described file by file. Reference this figure as the visual summary. |
+| [`Program-Flow.md`](Program-Flow.md) | The prose companion — the same behaviour described file by file, with the identical generation flowchart in §3.2. Reference this figure as the visual summary. |
 | Manuscript | The chapter on **system operation / methodology**. This is the figure that shows the pipeline actually working. |
-| [`System_Defense_Guide.md`](System_Defense_Guide.md) | Present it **second**, immediately after the architecture figure. Architecture establishes the parts; this shows them moving. |
-| Hearing order | **Second.** Walk steps 1–17 along the top, then drop to the failure panel and pick two or three branches to highlight. |
+| [`System_Defense_Guide.md`](System_Defense_Guide.md) | Present it **second**, immediately after the architecture figure. Architecture establishes the parts; this shows them moving. The guide carries its own copy of the generation flow in §Flow 1. |
+| Hearing order | **Second.** Walk steps 1–15 down the chain, then pick two or three of the failure branches to highlight. |
 
 > **Superseded figure:** `screenshots/12-system-flow.png` (1860 × 1829) is an earlier rendering of the same view in a different style. This figure is the print-quality one. `12` is not cited by any markdown document, so there is no broken reference either way — but avoid using both in the same document.
 
@@ -133,20 +136,22 @@ How availability is authored, and what happens when two things run at once. Key 
 
 > "This is what happens when the admin generates a schedule.
 >
-> It starts at the browser — step 1 — where the admin picks a section and clicks generate. The request goes to Laravel, which first checks the token, then the role. Step 4 is a data-integrity gate: every subject assigned to that section must match the section's year level and semester. If not, Laravel answers 422 and **never calls the AI engine at all** — so bad data can't waste a solve.
+> It starts at the browser — step 1 — where the admin picks a section and clicks generate. The request goes to Laravel, which first checks the token, then the role. Step 4 is a data-integrity gate: every subject assigned to that section must match the section's year level and semester. If not, Laravel answers 422 and **never calls the AI engine at all** — so bad data can't waste a solve, and it doesn't even take the lock.
 >
-> On the ordering: Laravel archives the section's previous draft **only after** the engine returns a usable result and the finished plan clears the cross-section conflict check — archiving up front would let a failed or clashing run destroy the admin's work, so the whole replacement (archive, new draft, sessions) is one transaction. Step 6 is where Laravel calls the engine. Notice steps 7 to 12 — those reads are the engine reading PostgreSQL **itself**, server-to-server. Then it solves, and returns the result to Laravel, which saves the draft — Laravel is the only writer in the system.
+> Step 5 is the term lock. Generation for one academic year and semester runs one section at a time; a second request for the same term waits, and answers 409 if its wait expires. That lock is what stops two runs from each reading the database before the other's draft existed — which is how two sections used to be handed the same faculty member.
 >
-> The middle panel is the one I'd draw your attention to. Every failure path is enumerated with its status code and its side effect. An unreachable engine is a 502 with a failure log. A solver that can't place everything is a **partial success** — we save the draft and report the sessions it couldn't place, rather than throwing the whole run away.
+> Step 6 is the engine call. Notice steps 7 to 9 — those reads are the engine reading PostgreSQL **itself**, server-to-server. It solves under a 15-second budget and returns every session it could not place with a plain-language reason. It writes nothing; Laravel is the only writer in the system.
 >
-> The bottom panels cover authentication, the review-and-publish path, the schedule lifecycle, and how faculty availability is authored and enforced."
+> Then step 11: the returned plan is cross-checked against every other section's draft, approved and published sessions in the same term. A clash is a 422 and **nothing is written** — the section's previous draft is left exactly as it was. Only after that does step 12 open one transaction that archives the old draft, creates the replacement and inserts its sessions, so a failed write rolls the whole thing back instead of leaving a half-written schedule.
+>
+> The branches beside the chain are the failure paths. Every one is enumerated with its status code and its side effect. An unreachable engine is a 502 with a failure log. A solver that can't place everything is a **partial success** — we save the draft and report the sessions it couldn't place, rather than throwing the whole run away."
 
 ---
 
 ## 6. Likely panelist questions
 
 **"What happens if the AI engine crashes mid-request?"**
-Laravel catches the connection failure, writes a failure row to the generation log with the connection error, and returns HTTP 502. No draft is created, so the admin never sees a partial schedule.
+Laravel catches the connection failure, writes a failure row to the generation log with the connection error, and returns HTTP 502. No draft is created, and the section's previous draft is left untouched.
 
 **"What if the solver can't find a complete schedule?"**
 It never fails silently. It maximises the number of sessions it can place, returns `PARTIAL`, and supplies a **plain-language reason for every session it could not place** — for example, "no room of type 'computer_lab' exists for this laboratory session." That is saved as a draft and shown to the admin, who fixes the data and regenerates.
@@ -170,39 +175,44 @@ Not directly. A published schedule must be **unpublished** first, which returns 
 
 ## 7. Accuracy notes and honest caveats
 
-1. **`rejected` is a dead-end status.** `reject` sets a draft's status to `rejected`, but the delete rule accepts only `draft` and `archived`, and approve/publish require their own prior states. So a rejected schedule **cannot be approved, published, or deleted through the API** — it can only be cleared by editing the database. This is recorded on the figure rather than hidden. If asked, say it is a known gap and that the fix is to accept `rejected` in the delete path.
+1. **`rejected` is a dead-end status in practice.** `reject` sets a draft's status to `rejected`; approve and publish require their own prior states, so a rejected schedule cannot be approved or published. It can be deleted (the delete rule is "anything except `published`"), but it cannot be reactivated — it can only be discarded. If asked, say it is a known gap and that the fix is a reactivation path.
 
-2. **The pre-flight gate writes no generation log.** Every engine-related failure writes a failure row, but a generation blocked by the subject/section mismatch writes **nothing**. That means a blocked generation is visible in the HTTP response but does **not** appear in Reports → Generation Logs. This asymmetry is called out on the figure.
+2. **The pre-flight gate writes no generation log.** Every engine-related failure writes a failure row, but a generation blocked by the subject/section mismatch writes **nothing**. That means a blocked generation is visible in the HTTP response but does **not** appear in Reports → Generation Logs. This asymmetry is drawn on the figure.
 
 3. **Login failures are 401 or 403, not 422.** Expect a panelist to test this assumption. It is
    correct: `AuthController::login` answers **401** for a wrong password or an unknown email, and
    **403** for a valid non-admin account. Only a malformed body is still **422**.
 
-4. **The engine's direct database read is a genuine dependency.** It appears in this figure as steps 7–12 and in the architecture figure as boundary B3. Be ready to defend it, or to concede it if the panel's requirement forbids any direct database access by the AI service.
+4. **The engine's direct database read is a genuine dependency.** It appears in this figure as step 7 and in the architecture figure as boundary B3. Be ready to defend it, or to concede it if the panel's requirement forbids any direct database access by the AI service.
 
 5. **Generation is one section per request, run sequentially.** Generating for many sections means many sequential calls, each with its own 30-second ceiling. There is no batch endpoint and no queue — runs for the same academic term are serialized by a cache lock, so a second request for that term waits for the first and answers **409** if its wait expires.
 
 6. **`FEASIBLE` is a success, not a failure.** This looks counter-intuitive on a status list, so state it explicitly: the solver hit its 15-second budget but placed every session. It is accepted and stored identically to `OPTIMAL`.
 
-7. **The figure's step boxes predate the archiving fix.** Archiving now happens *after* the engine returns a usable result (and after the pre-write conflict check), inside one transaction — the fix that stopped a failed run from destroying the section's previous draft landed after this figure was rendered, so the step-5/step-6 boxes still read in the older order. Narrate the order as the script above does. Refreshing the image needs its editable source, `.tmp-run/diagram/system-flow-v2.html`, which is not committed and is no longer present in the working tree — so the image could not be re-rendered here.
+7. **The figure is drawn from the committed Mermaid source, not from a scratch file.** Earlier revisions of this figure were captured from an uncommitted HTML file (`.tmp-run/diagram/system-flow-v2.html`), which is why its step-5/step-6 boxes showed the pre-fix order — archiving before the engine was called — and why it could not be re-rendered. That file is no longer the source: `screenshots/system-flow.mmd` is, and the order it draws (gate → lock → engine → conflict check → transaction) matches the code today. The old HTML is left in place as a scratch artifact only, and nothing in the repository depends on it.
 
 ---
 
 ## 8. Regenerating the figure
 
 ```bash
-# 1. Edit .tmp-run/diagram/system-flow-v2.html
-# 2. Open it in a browser and read document.body.scrollWidth / scrollHeight
-# 3. Screenshot at exactly that size:
-"/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
-  --headless=new --disable-gpu --no-first-run --hide-scrollbars \
-  --user-data-dir="$(mktemp -d)" \
-  --window-size=1900,3264 \
-  --screenshot="documentation/screenshots/16-system-flow.png" \
-  "file:///<repo>/.tmp-run/diagram/system-flow-v2.html"
+# from the repository root — fetches the Mermaid CLI on demand, no repo install needed
+npx -y @mermaid-js/mermaid-cli \
+  -i documentation/screenshots/system-flow.mmd \
+  -o documentation/screenshots/16-system-flow.png \
+  -b white --size 6600
 ```
 
-`--window-size` must equal the measured page size or the capture clips. The current figure is 1900 × 3264.
+- `--size` caps the diagram's **largest** dimension, so 6600 px yields the committed **2531 × 6600** PNG — a 1.6× scale of the layout, which keeps the labels crisp at print size. On older CLI releases the flag was `-w` / `--width`; if you pass `-w`, the CLI rejects it with `error: unknown option '-w'` and writes nothing.
+- Re-rendering the same source reproduces the **same figure at the same size** — a fresh render was compared against the committed PNG and the two agree on dimensions (2531 × 6600), on layout and on every label; the only differences are a few hundred anti-aliased edge pixels, so file *bytes* still depend on which Chromium build the CLI downloads (or is pointed at with `PUPPETEER_EXECUTABLE_PATH`). Verifying this figure therefore means checking its dimensions and content against the `.mmd`, not comparing hashes.
+- If the CLI cannot find its Chromium download, point it at a browser that is already installed:
+  ```bash
+  PUPPETEER_EXECUTABLE_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
+  npx -y @mermaid-js/mermaid-cli -i documentation/screenshots/system-flow.mmd \
+    -o documentation/screenshots/16-system-flow.png -b white --size 6600
+  ```
+- Keep the source free of `%%` comment lines. A comment placed immediately after the `flowchart TB` declaration is parsed as an extra node and renders as an empty box.
+- Editing the diagram: change the numbered steps in `system-flow.mmd`, re-render, and update the actor table and step numbers above to match. `Program-Flow.md` §3.2 carries the same flow as a flowchart — keep the two consistent.
 
 ---
 

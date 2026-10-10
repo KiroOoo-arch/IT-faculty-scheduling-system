@@ -78,7 +78,7 @@ The centrepiece. Each gate with its file, its method, its rule, and its rejectio
 | **1** | `SubjectController::labConsistencyErrors` | Lab hours above 0 require a canonical lab room type; lab hours of 0 require none | 422 |
 | **2** | `SectionController::subjectMismatches` | Assigned subjects must match the section's year level and semester | 422 |
 | **3** | `ScheduleController::generate` (pre-flight) | Re-checks the same rule **before the engine is called** | 422 — engine never reached |
-| **4** | `ScheduleSessionController::findConflicts` | Room type · faculty availability window · same-schedule overlap · cross-section faculty/room clash (this term's draft/approved/published sessions included) | 422 + `conflicts[]` |
+| **4** | `ScheduleSessionController::findConflicts` | Room type · faculty availability window · same-schedule overlap · cross-section faculty/room clash | 422 + `conflicts[]` |
 | **5** | `ScheduleApprovalController::findPublishConflicts` | Cross-section clash on room or faculty | 422 + conflict list |
 
 The dashed callout box under the table is the sentence to deliver: **Gates 1, 2, 4 and 5 are application-layer rules in Laravel, not solver constraints — they all answer 422 and never reach OR-Tools.** That distinction (what the solver enforces versus what the application enforces) is exactly the sort of thing a panel probes.
@@ -94,8 +94,6 @@ Seven numbered steps followed by both branch outcomes. Two things to point at. *
 That ordering is worth volunteering as a fixed defect. Archiving up front (the earlier behaviour) meant a failed or infeasible run replaced the draft with *nothing*, so a transient engine outage silently destroyed the admin's work. Now a **422** or **502** leaves the existing draft untouched — a failed attempt is retryable rather than destructive.
 
 The blue callout under it records an asymmetry worth volunteering: **the pre-flight gate writes no generation log at all, while every engine-related failure does.** A blocked generation is visible in the response but absent from Reports → Generation Logs.
-
-Two further guards sit in this same path. The run takes the **term's generation lock** first, so two sections for one academic year and semester cannot read the database before each other's draft exists — a contested run answers **409**. And after the engine returns, `findGeneratedConflicts` cross-checks the plan against every other section's `draft`/`approved`/`published` session in that term; a clash answers **422** (with a `failure` log row) and the section's existing draft is left exactly as it was, because archiving, recreating and re-inserting happen in **one transaction**.
 
 ### Section 5 — Manual Edit, Approve, Publish, Unpublish
 
@@ -124,7 +122,7 @@ The map from each step back to the source. This is the panel-ready answer to *"w
 
 ### Bounds strip
 
-**15 s** solver budget · **30 s** HTTP timeout · **5** validation gates (plus the term-scoped generation lock) · **1 section per request**, run sequentially with no batch endpoint.
+**15 s** solver budget · **30 s** HTTP timeout · **5** validation gates · **1 section per request**, run sequentially with no batch endpoint.
 
 ---
 
@@ -168,7 +166,7 @@ Yes. Gate 4 merges your change onto the session's current values and then valida
 The solver enforces the *scheduling* constraints — no double-booking, room type and capacity, qualification, availability, section preferences, maximum teaching load. The gates enforce *data-integrity* rules at the application layer — lab-hour consistency, subject/section matching, the publish conflict check. The gates never reach OR-Tools.
 
 **"How many tests do you have?"**
-Two suites. The AI engine has **118 unit tests** that call `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function. The Laravel side has **127 tests / 537 assertions** covering the feature endpoints, including the conflict payload, the term-scoped generation lock (`409`) and the 401 contract. Both suites pass.
+Two suites. The AI engine has **118 unit tests** across five modules that call `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function. The Laravel side has **143 tests / 604 assertions** covering the feature endpoints, including the conflict payload, the term lock and pre-write conflict gate, and the 401 contract. Both suites pass.
 
 **"Why does the engine's input reading live in `app.py` rather than in the solver?"**
 Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` contains no HTTP code at all and is a pure function — data in, data out. That is what makes the 118 solver tests fast and deterministic.

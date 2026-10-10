@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FacultyController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\SectionController;
@@ -15,10 +16,21 @@ use Illuminate\Support\Facades\Route;
 // --- Public routes ---
 Route::post('/login', [AuthController::class, 'login']);
 
+// The Privacy Policy and Terms of Use are readable without an account, and the
+// pages read which version is current from here, so a client can never decide
+// for itself which revision is in force.
+Route::get('/legal', [LegalController::class, 'show']);
+
 // --- Protected routes: require a valid Sanctum token ---
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+
+    // Versioned Terms of Use acceptance. A signed-in account can read and record
+    // its own acceptance and nothing else — the account always comes from the
+    // bearer token, never from the request body.
+    Route::get('/terms/acceptance', [LegalController::class, 'status']);
+    Route::post('/terms/acceptance', [LegalController::class, 'accept']);
 
     // All routes below are admin-only (EnsureUserIsAdmin middleware).
     // Faculty are records, not users — no faculty accounts exist.
@@ -49,6 +61,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reports/schedule-status', [ReportController::class, 'scheduleStatusOverview']);
         Route::get('/reports/section-summary', [ReportController::class, 'sectionSummary']);
         Route::get('/reports/faculty/{faculty}/schedule', [ReportController::class, 'facultySchedule']);
+
+        // Who still has to accept the current Terms of Use — the list to work
+        // from after a material revision. Admin only.
+        Route::get('/terms/acceptances', [LegalController::class, 'index']);
 
         Route::apiResource('users', \App\Http\Controllers\UserController::class);
         Route::post('/faculties/{faculty}/subjects', [FacultyController::class, 'attachSubjects']);

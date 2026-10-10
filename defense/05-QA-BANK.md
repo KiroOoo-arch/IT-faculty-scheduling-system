@@ -121,7 +121,7 @@ Organized by theme. ⭐ = highest-probability questions.
 ## F. Testing
 
 **Q32. ⭐ How did you test the system?**
-> Three levels: (1) **118 Python unit tests** on the solver (five modules) — every constraint category, part-time faculty restrictions, infeasible cases, the disjointness reification; (2) **127 Laravel feature tests (537 assertions)** — generation correctness (right section/year/semester), cross-section conflict protection (term lock 409, pre-write gate 422, atomic draft replacement, draft-aware manual edits), subject-section matching gate, lab consistency rules, regeneration archiving; (3) **live end-to-end verification** — the live sections generating OPTIMAL, the full approve→publish→print workflow, validation gates firing, zero console/network errors. Frontend TypeScript compile + production build pass.
+> Three levels: (1) **118 Python unit tests** on the solver (five modules) — every constraint category, part-time faculty restrictions, infeasible cases, the disjointness reification; (2) **143 Laravel feature tests (604 assertions)** — generation correctness (right section/year/semester), cross-section conflict protection (term lock 409, pre-write gate 422, atomic draft replacement, draft-aware manual edits), subject-section matching gate, lab consistency rules, regeneration archiving; (3) **live end-to-end verification** — the live sections generating OPTIMAL, the full approve→publish→print workflow, validation gates firing, zero console/network errors. Frontend TypeScript compile + production build pass.
 
 **Q33. Do tests touch real data?**
 > No — the backend suite runs on an isolated `scheduling_system_testing` database; dev data is never touched.

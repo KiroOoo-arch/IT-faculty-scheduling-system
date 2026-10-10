@@ -1,0 +1,47 @@
+flowchart TB
+    S1["1 · Browser<br/>the admin picks a section and clicks Generate Schedule<br/>AdminDashboard.handleGenerate confirms first when a draft,<br/>approved or published schedule already exists"]
+    S2["2 · Browser<br/>POST /api/schedules/generate/{section} with the Bearer token"]
+    S3["3 · Laravel<br/>auth:sanctum, then the admin middleware<br/>missing or expired token 401 · authenticated but not admin 403"]
+    S4["4 · Laravel<br/>Gate 3 integrity gate — every subject assigned to the section<br/>must match its year level and semester"]
+    S5["5 · Laravel<br/>take this term's generation lock<br/>schedule-generation:{academic_year}:{semester_name}<br/>ttl 180 s · wait 30 s"]
+    S6["6 · Laravel<br/>POST http://127.0.0.1:8001/generate-schedule/{section_id}<br/>30 s HTTP timeout · server-to-server"]
+    S7["7 · Engine — reads PostgreSQL itself<br/>section window and student count, the section's subjects,<br/>qualified active faculty, availability windows, existing load,<br/>available rooms, this term's sessions (draft/approved/published)"]
+    S8["8 · Engine<br/>CP-SAT model · 15 s budget · maximises the sessions placed"]
+    S9["9 · Engine<br/>returns the placed sessions, an overall status, and a plain-language<br/>reason for every session it could not place · writes nothing"]
+    S10["10 · Laravel<br/>accepts OPTIMAL, FEASIBLE or PARTIAL only"]
+    S11["11 · Laravel<br/>findGeneratedConflicts — the returned plan against every other<br/>section's draft/approved/published session in the same term"]
+    S12["12 · Laravel<br/>one transaction: archive the section's previous drafts,<br/>create the draft, insert one row per placed session"]
+    S13["13 · Laravel<br/>commit, then write the generation log<br/>(optimal / feasible / partial) with the unplaced reasons"]
+    S14["14 · Laravel<br/>release the lock in a finally<br/>200 {schedule_id, sessions, unscheduled}"]
+    S15["15 · Browser<br/>renders the draft in the review table and shows the reason<br/>for anything that could not be placed"]
+    T1["Timing: 15 s solver budget inside a 30 s HTTP timeout<br/>one writer (Laravel) · zero retries"]
+
+    F4["422 — the mismatch is named and the engine is never called.<br/>No generation log row is written"]
+    F5["409 — another run already holds this term's lock.<br/>The run in flight is untouched"]
+    F6a["502 — ConnectionException caught.<br/>Failure log row · no draft · the existing draft survives"]
+    F6b["422 — the engine's own reason, e.g. no subjects assigned,<br/>no qualified faculty, no available room"]
+    F6c["502 — the engine faulted or the 30 s timeout fired.<br/>Failure log row written either way"]
+    F10["422 — INFEASIBLE or ERROR.<br/>Failure log row carrying the per-session reasons"]
+    F11["422 with the conflict list — nothing is written and the<br/>section's existing draft is left exactly as it was"]
+    F12["rollback — no half-written schedule,<br/>the previous draft survives"]
+
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10 --> S11 --> S12 --> S13 --> S14 --> S15 --> T1
+
+    S4 -.->|"subject does not match the section"| F4
+    S5 -.->|"wait expires"| F5
+    S6 -.->|"unreachable"| F6a
+    S6 -.->|"4xx"| F6b
+    S6 -.->|"5xx / timeout"| F6c
+    S10 -.->|"any other status"| F10
+    S11 -.->|"clash"| F11
+    S12 -.->|"a write fails"| F12
+
+    classDef browser fill:#dbeafe,stroke:#1e40af,color:#0f172a;
+    classDef laravel fill:#ede9fe,stroke:#6d28d9,color:#0f172a;
+    classDef engine fill:#fef3c7,stroke:#b45309,color:#0f172a;
+    classDef failure fill:#fee2e2,stroke:#b91c1c,color:#0f172a;
+
+    class S1,S2,S15 browser;
+    class S3,S4,S5,S10,S11,S12,S13,S14 laravel;
+    class S6,S7,S8,S9,T1 engine;
+    class F4,F5,F6a,F6b,F6c,F10,F11,F12 failure;

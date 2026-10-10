@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { SYSTEM_NAME, SYSTEM_ORG } from '../constants/system'
 import { useAuth } from '../context/AuthContext'
 
@@ -351,7 +351,24 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <p className="mt-6 text-center text-xs leading-relaxed text-slate-400">
+          {/* The policies are linked where the credentials are collected, so the
+              documents are readable before anyone types a password. That is a
+              link, deliberately not an "by signing in you consent" notice: the
+              explicit agreement to the Terms of Use happens once, after sign-in,
+              and acknowledging a privacy policy is not consent to processing. */}
+          <nav aria-label="College policies" className="mt-6 text-center text-xs leading-relaxed text-slate-400">
+            <ul className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <li>
+                <Link to="/privacy" className="login-policy-link">Privacy Policy</Link>
+              </li>
+              <li aria-hidden="true">·</li>
+              <li>
+                <Link to="/terms" className="login-policy-link">Terms of Use</Link>
+              </li>
+            </ul>
+          </nav>
+
+          <p className="mt-4 text-center text-xs leading-relaxed text-slate-400">
             © {new Date().getFullYear()} {SYSTEM_ORG}
             <br />
             Faculty, Classroom and Laboratory Scheduling System

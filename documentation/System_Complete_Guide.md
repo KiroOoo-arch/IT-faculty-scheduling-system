@@ -1,6 +1,6 @@
 # IT Faculty Scheduling System — Complete Guide
 
-*Updated: October 10, 2026 — synchronized with the verified architecture: accurate solver terminology, five protection layers including the generation-time conflict gate, room eligibility, and print/PDF distribution*
+*Updated: October 4, 2026 — synchronized with the verified architecture: accurate solver terminology, five protection layers (including the term lock and pre-write conflict gate), room eligibility, and print/PDF distribution*
 
 ---
 
@@ -80,16 +80,16 @@ PostgreSQL                        ↓
 ### 4.1 Schedule Generation
 1. Admin selects a section and clicks **Generate Schedule**
 2. React sends an authenticated request; Laravel validates it and controls the workflow
-3. Laravel takes this academic term's generation lock — an earlier run for the same term must finish first, and a contested run answers **409** rather than racing it
+3. Laravel archives old drafts for that section
 4. Laravel calls the FastAPI engine (`POST /generate-schedule/{section_id}`)
-5. FastAPI reads scheduling data from PostgreSQL: section information, preferred days/time window, assigned subjects, lecture/lab requirements, qualified faculty, faculty availability, teaching loads, available rooms (type, capacity, status), and this term's existing sessions — **draft, approved and published** — for cross-section conflict checking
+5. FastAPI reads scheduling data from PostgreSQL: section information, preferred days/time window, assigned subjects, lecture/lab requirements, qualified faculty, faculty availability, teaching loads, available rooms (type, capacity, status), and existing approved/published sessions for cross-section conflict checking
 6. The CP-SAT solver generates a candidate schedule, maximizing the number of successfully scheduled sessions
 7. Returns **OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE**
-8. Laravel cross-checks the plan against the term's other schedules — a clash answers **422** and nothing is written. Otherwise it persists the result as a **draft**: archiving the section's previous draft, creating the replacement and inserting its sessions happen in **one transaction**, and the generation log is recorded
+8. Laravel persists a successful result as a **draft** schedule with its sessions and records the generation log
 9. React displays the draft to the Admin
 
 ### 4.2 Approval → Publish → Print
-1. Admin **reviews** the draft and may **manually edit** sessions (conflict-checked — see Layer 3 below)
+1. Admin **reviews** the draft and may **manually edit** sessions (conflict-checked — see Layer 2 below)
 2. Admin **approves** the schedule
 3. Admin **publishes** — the publish conflict gate performs a final validation; if conflicts are found, publication is rejected and the schedule stays unpublished until corrected and retried
 4. On success, older approved/published schedules for the same section may be archived (current implementation behavior)
@@ -118,7 +118,7 @@ The scheduler models **eight main constraint categories**, with the **section's 
 | 5 | Faculty no double-booking |
 | 6 | Room no double-booking |
 | 7 | Maximum teaching load — total scheduled hours per teacher ≤ `max_teaching_load` |
-| 8 | Cross-section conflicts — checked against this term's existing **draft/approved/published** sessions |
+| 8 | Cross-section conflicts — checked against existing approved/published sessions |
 
 Also directly enforced by the solver:
 
@@ -164,11 +164,11 @@ A subject's lab requirement (`lab_room_type`) determines the required laboratory
 
 Conflicts and silent data loss are prevented at five independent points:
 
-**Layer 1 — AI/CP-SAT generation.** The scheduler applies the modeled scheduling constraints while generating the candidate schedule, treating every other section's `draft`, `approved` and `published` sessions in the same academic year and semester as fixed bookings.
+**Layer 1 — AI/CP-SAT generation.** The scheduler applies the modeled scheduling constraints while generating the candidate schedule, treating every other section's `draft`, `approved` and `published` sessions in the same academic year and semester as live bookings.
 
-**Layer 2 — Generation-time conflict gate and term lock.** One generation run per academic year and semester at a time: a contested run answers **409** instead of racing the run that holds the lock, and the engine's plan is cross-checked against that term's other schedules before anything is written — a clash answers **422** and the section's existing draft is left exactly as it was.
+**Layer 2 — Term-scoped generation lock and pre-write conflict gate.** Generation for one academic year and semester runs one section at a time behind a cache lock (**409** when contended), and the plan the engine returns is cross-checked against that term's other schedules before anything is written (**422** on a clash, leaving the section's existing draft untouched).
 
-**Layer 3 — Manual edit validation.** When the Admin manually changes a session, backend validation checks the relevant scheduling rules and detects conflicts, including other sections' `draft`/`approved`/`published` sessions in the same term.
+**Layer 3 — Manual edit validation.** When the Admin manually changes a session, backend validation merges the change onto the session's current values and checks the full resulting state against the scheduling rules, other sections' draft/approved/published sessions included.
 
 **Layer 4 — Publish conflict gate.** Before publication, the backend performs the final conflict validation and blocks publication when conflicts exist.
 
@@ -231,9 +231,8 @@ Conflicts and silent data loss are prevented at five independent points:
 
 ## 13. Verification & Tests
 
-- **AI scheduler unit tests**: 118 automated tests (Python standard-library `unittest`) directly exercise `generate_schedule()` with controlled fixtures — no database required. They cover faculty qualification, day + time-window availability (a session must fit within a declared window on its day), room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, the preferred scheduling window, and partial/infeasible handling with per-session reasons. Final run: **118 tests OK, 0 failed, 0 skipped, 0 warnings/errors**. The suite respects all solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE). Run it with `python -m unittest discover -s tests -t tests` (`-t tests` is required: `tests/` has no `__init__.py`)
-- **Backend feature tests** (`php artisan test`, 127 tests / 537 assertions, all passing) run against a dedicated `scheduling_system_testing` database — real data is never touched.
-- **Cross-section conflict regression tests** (`ScheduleGenerationConflictTest.php`, `ScheduleSessionConflictTest.php`, 25 tests / 101 assertions): a generated plan that clashes with another section's draft is refused with 422 and the existing draft survives; another term never causes a false conflict; a persistence failure rolls the draft replacement back; a contended generation lock answers 409; and a hand edit onto another section's draft slot is rejected.
+- **AI scheduler unit tests**: 118 automated tests across five modules (Python standard-library `unittest`) directly exercise `generate_schedule()` with controlled fixtures — no database required. They cover faculty qualification, day + time-window availability (a session must fit within a declared window on its day), room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, the preferred scheduling window, and partial/infeasible handling with per-session reasons. Final run: **118 tests OK, 0 failed, 0 skipped, 0 warnings/errors**. The suite respects all solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE)
+- **Backend feature tests** (`php artisan test`, 143 tests / 604 assertions, all passing) run against a dedicated `scheduling_system_testing` database — real data is never touched.
 - **Published-reference guard tests** (`PublishedReferenceGuardTest.php`, 11 tests): deleting a faculty, subject, room, or section still used by a **published** schedule returns **409** with the affected schedule IDs and session counts; `?force=1` overrides after confirmation; drafts and archived schedules impose no restriction. The September 27 additions cover solver-status acceptance (a fully-placed `FEASIBLE` result is stored as a draft and logged as `feasible`; `INFEASIBLE` is still rejected) and the unreachable-engine path (502 plus a `failure` log row)
 - **Section/year-level generation tests** verify the AI-generated schedule is attributed to the correct section, year level, and semester, that other sections' schedules are untouched, and that regeneration archives only the target section's drafts
 - **Subject–section year/semester validation tests**: matching assignments accepted; wrong-semester and wrong-year assignments rejected (HTTP 422); generation blocked with the AI engine never called on legacy mismatches
@@ -255,7 +254,7 @@ Conflicts and silent data loss are prevented at five independent points:
 
 **Why no faculty login?** The department operates the system per semester. Faculty scheduling information is maintained as records by the Admin, and finalized schedules are distributed as printed/PDF copies. Faculty accounts are therefore unnecessary for the current scope.
 
-**How are conflicts prevented?** Through five layers: (1) solver constraints — every other section's draft/approved/published session in the same academic year and semester counts as a live booking; (2) the generation-time conflict gate and term lock (409 when contended, 422 on a clash); (3) manual-edit validation, drafts included; (4) the publish conflict gate; (5) the published-data delete guard.
+**How are conflicts prevented?** Through five layered protections: (1) solver constraints at generation time, against every other section's draft/approved/published sessions in the same term, (2) a term-scoped generation lock plus a pre-write conflict gate that refuses a clashing plan with 422 before anything is written, (3) manual-edit validation of the full resulting state, (4) the publish conflict gate, and (5) the published-reference delete guard, which protects a timetable that has already been distributed rather than preventing a clash.
 
 **Likely question — "Why can't faculty log in?"**
 Answer: The system is operated by the department once per semester. Faculty input (availability, qualifications) is collected by the admin and entered as records. Output (schedules) is distributed as printed/PDF copies. Login accounts would add maintenance and security overhead with no corresponding benefit.

@@ -37,6 +37,17 @@ class User extends Authenticatable
     }
 
     /**
+     * Every Terms of Use acceptance this account has recorded, oldest first.
+     *
+     * Append-only: accepting a revised version adds a row, so this collection
+     * is the account's acceptance history rather than its current state.
+     */
+    public function termsAcceptances()
+    {
+        return $this->hasMany(TermsAcceptance::class);
+    }
+
+    /**
      * schedules.approved_by is a NO ACTION foreign key onto users, so deleting
      * a user who is credited with an approval fails at the database level.
      * Clear the attribution instead of the schedule: the approval genuinely

@@ -89,31 +89,26 @@ This system automates faculty, classroom, and laboratory scheduling for the IT D
 ### Flow 1: Schedule Generation
 
 ```mermaid
-sequenceDiagram
-    participant U as Admin (Browser)
-    participant F as AdminDashboard (React)
-    participant L as Laravel (ScheduleController)
-    participant A as FastAPI (AI Engine)
-    participant DB as PostgreSQL
-
-    U->>F: Click "Generate Schedule"
-    F->>L: POST /api/schedules/generate/{section} (Bearer token)
-    L->>L: Archive old drafts for this section
-    L->>A: POST http://127.0.0.1:8001/generate-schedule/{id}
-    A->>DB: Query section, subjects, faculty + availabilities, rooms
-    DB-->>A: data
-    A->>A: OR-Tools CP-SAT solver (8 constraints)
-    A-->>L: {status: OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE, sessions[]}
-    alt OPTIMAL, FEASIBLE or PARTIAL
-        L->>DB: Create Schedule (draft) + ScheduleSession rows
-        L->>DB: Write ScheduleGenerationLog
-        L-->>F: 200 {schedule_id, sessions, unscheduled}
-        F-->>U: "Status: OPTIMAL — N sessions created"
-    else INFEASIBLE
-        L->>DB: Write ScheduleGenerationLog (failure)
-        L-->>F: 422 {message}
-        F-->>U: Error message
-    end
+    A["AdminDashboard: click Generate Schedule"] --> B["POST /api/schedules/generate/{section} — Bearer token"]
+    B --> G3{"Gate 3 — every assigned subject matches the section's<br/>year level and semester?"}
+    G3 -- "no" --> G3E["422 naming the subjects<br/>the AI engine is never called and no log row is written"]
+    G3 -- "yes" --> LOCK["Acquire this term's generation lock<br/>schedule-generation:academic_year:semester<br/>ttl 180 s · wait 30 s"]
+    LOCK -- "not acquired in time" --> L409["409 — another generation is already running for this term"]
+    LOCK -- "held" --> ENG["POST http://127.0.0.1:8001/generate-schedule/{id}<br/>30 s HTTP timeout"]
+    ENG --> READ["FastAPI reads the section, its subjects, qualified active faculty,<br/>availability windows, existing load, available rooms,<br/>and this term's sessions (draft / approved / published)"]
+    READ --> SOLVE["CP-SAT model, 15 s budget<br/>maximise the number of sessions placed"]
+    SOLVE --> RES{"Engine answered?"}
+    RES -- "unreachable or 5xx" --> E502["failure log row · 502<br/>no draft created, the existing draft is untouched"]
+    RES -- "4xx (data problem)" --> E422A["failure log row · 422 with the engine's own reason"]
+    RES -- "anything else (INFEASIBLE / ERROR)" --> E422B["failure log row · 422 with the engine message"]
+    RES -- "OPTIMAL / FEASIBLE / PARTIAL" --> XCHK{"findGeneratedConflicts — does the plan clash with another<br/>section's draft/approved/published session in this term?"}
+    XCHK -- "clash" --> E422C["failure log row · 422 with the conflict list<br/>nothing is written, the existing draft survives"]
+    XCHK -- "clean" --> TX["BEGIN transaction: archive the section's previous drafts,<br/>create the draft, insert one row per placed session"]
+    TX --> TXOK["COMMIT — any failure rolls the whole replacement back"]
+    TXOK --> LOG["Write the generation log (optimal / feasible / partial)<br/>with a per-session reason for anything unplaced"]
+    LOG --> OK["200 {schedule_id, sessions, unscheduled}"]
+    OK --> UI["AdminDashboard: 'Status: OPTIMAL — N sessions created'"]
+    OK --> REL["Lock released in a finally — on success and on every handled failure"]
 ```
 
 ### Flow 2: Approval Workflow
@@ -375,7 +370,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | Backend: 127 feature tests (537 assertions) · AI engine: 118 solver unit tests · frontend typecheck + production build |
+| Testing | ✅ Complete | Backend: 143 feature tests (604 assertions) across 18 files · AI engine: 118 solver unit tests across 5 modules · cross-section conflict suite: 25 tests (101 assertions) · frontend typecheck + production build |
 | Published-reference delete guard | ✅ Complete | 409 with the exact scope before deleting master data a published schedule depends on; explicit `?force=1` to proceed |
 
 ---
@@ -388,7 +383,7 @@ erDiagram
 4. **Cascade data integrity, without silent loss** — Deleting a faculty/room/subject record removes the sessions that reference it, but if a *published* schedule still depends on it the delete is refused with the exact scope first
 5. **Real-time conflict detection** — Prevents issues during manual edits
 6. **Publish conflict gate** — Prevents cross-section double-booking
-7. **Published-reference guard** — A five-layer protection model (solver constraints → generation-time conflict gate and term lock → manual-edit validation → publish gate → delete guard), where the fifth layer protects the timetable that has already been distributed rather than one still being built
+7. **Published-reference guard** — the outermost of a five-layer protection model (solver constraints → term lock + pre-write conflict gate → manual-edit validation → publish gate → delete guard), where the last layer protects the timetable that has already been distributed rather than one still being built
 
 ---
 
@@ -477,7 +472,7 @@ This is better than failing completely—users get maximum utility from the syst
 
 **Q6: How does the system prevent double-booking of faculty or rooms?**
 
-**A:** Three mechanisms:
+**A:** Two mechanisms:
 1. **CP-SAT Solver (Proactive)**: During generation, the solver enforces constraints that prevent any overlaps:
    - No faculty in two places at same time
    - No room hosting two classes at same time
@@ -488,23 +483,21 @@ This is better than failing completely—users get maximum utility from the syst
    - Returns 422 error with specific conflict details
    - Prevents saving invalid data
 
-3. **Generation-time conflict gate (Laravel, before the write)**: generation for a term runs one section at a time behind a cache lock, and the engine's plan is cross-checked against every other section's `draft`/`approved`/`published` session in the same academic year and semester — a clash answers **422** with the specific conflicts and the section's existing draft is left untouched.
-
-These layers ensure both generated and manually edited schedules remain conflict-free.
+This dual approach ensures both generated and manually edited schedules remain conflict-free.
 
 ---
 
 **Q7: How does the cross-section conflict constraint work?**
 
 **A:** When generating a schedule for a section:
-1. System queries the same academic year and semester's existing schedules for other sections — **draft, approved and published** all count as active bookings
+1. System queries all existing **published** schedules for other sections
 2. Checks if any proposed session would create a conflict:
    - Same faculty teaching two sections at same time
    - Same room used by two sections at same time
 3. If conflict detected, that combination is excluded from solver options
-4. Laravel re-checks the finished plan against the same set before writing anything — a clash answers 422 and nothing is persisted
+4. System generates schedule that doesn't conflict with published schedules
 
-This prevents "overbooking" faculty/rooms across different sections, including two drafts planned in one sitting.
+This prevents "overbooking" faculty/rooms across different sections.
 
 ---
 
@@ -629,11 +622,11 @@ For university scale, architectural changes would be needed, but the core constr
 
 **A:** Testing approach:
 1. **Ad-hoc testing**: Throughout development
-2. **AI engine unit tests**: 118 automated tests (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 118 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
+2. **AI engine unit tests**: 118 automated tests across five modules (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 118 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
-4. **Automated backend suite**: 127 Laravel feature tests (537 assertions) — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, detailed session-edit conflict payloads, and the cross-section conflict protection (a plan that clashes with another section's draft is refused with 422 and the existing draft survives, a contested term lock answers 409, another term never causes a false conflict, and a failed write rolls the draft replacement back) — plus frontend typecheck and production build
+4. **Automated backend suite**: 143 Laravel feature tests (604 assertions) across 18 files — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
 
-> Run them with `cd backend && php artisan test` (127 passed) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests -t tests` (118 passed). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment. The `-t tests` flag is required because `tests/` has no `__init__.py` and Python 3.11+ will not discover a start directory it cannot import.
+> Run them with `cd backend && php artisan test` (143 passed) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (118 passed). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
 
 Test coverage:
 - Authentication & RBAC ✅
@@ -651,7 +644,7 @@ Test coverage:
 **A:**
 - **Backend (Laravel)**: PHPUnit (built-in)
 - **Frontend (React)**: TypeScript typecheck + production build
-- **AI Engine**: Python standard-library `unittest` — 118 tests running the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests -t tests`; `pytest` is not installed
+- **AI Engine**: Python standard-library `unittest` — 118 tests across five modules running the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests`; `pytest` is not installed
 - **Frontend**: no automated test suite — TypeScript typecheck and production build only, which is an honest gap to state if asked
 - **Integration**: Postman/curl for API testing
 
@@ -815,11 +808,11 @@ So the guard is an **intention checkpoint, not a veto**. Its purpose is that des
 
 ### Key Strengths
 1. **Mathematical rigor** — CP-SAT provides provably valid schedules
-2. **Complete workflow** — Generate → Approve → Publish → Faculty view
+2. **Complete workflow** — Generate → Approve → Publish → print/PDF distribution to faculty and students (faculty hold no accounts)
 3. **Constraint coverage** — 8 hard constraints cover real-world requirements
 4. **Best-effort approach** — Maximizes utility when perfect solution impossible
-5. **Conflict prevention** — Layered: solver constraints, the generation-time conflict gate, real-time edit detection, and the publish gate
-6. **Five protection layers** — Solver constraints, the generation-time conflict gate and term lock, manual-edit validation, the publish conflict gate, and the published-reference delete guard
+5. **Conflict prevention** — Dual mechanism (solver + real-time detection)
+6. **Five protection layers** — Solver constraints, the term-scoped generation lock with its pre-write conflict gate, manual-edit validation, the publish conflict gate, and the published-reference delete guard
 7. **Production-ready** — Authentication, RBAC, error handling, testing
 
 ### Technical Contributions

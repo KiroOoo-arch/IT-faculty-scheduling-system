@@ -3,7 +3,8 @@
 
 *Last updated: reflects work through the frontend, the schedule approval workflow, the cross-section
 conflict protection (term-scoped generation lock, pre-write conflict gate, draft-aware conflict
-checks), the full backend test suite (127 tests), and the AI engine test suite (118 tests).*
+checks), generation-log history, the full backend test suite (143 tests), and the AI engine test
+suite (118 tests).*
 
 This document records what has actually been built, tested, and verified working — as distinct from
 what was originally planned in `Requirements.md` and `SRS.md`. Use this alongside those files: they
@@ -25,7 +26,7 @@ describe the *intended* system; this describes the *current, working* system.
 | Phase 4 — Frontend (React) | ✅ Done | 10 routes; master-data pages, dashboard, reports, two printable timetables |
 | Phase 5 — AI Scheduling Engine | ✅ Done, tested | CP-SAT solver wired to live PostgreSQL via FastAPI |
 | Phase 6 — Integration | ✅ Done | Laravel → FastAPI → Postgres write-back confirmed end-to-end |
-| Phase 7 — Testing | ✅ Automated suite | 127 backend tests (537 assertions), 118 engine tests |
+| Phase 7 — Testing | ✅ Automated suite | 143 backend tests (604 assertions), 118 engine tests |
 
 ---
 
@@ -115,7 +116,7 @@ Route::middleware('auth:sanctum')->group(function () {
 Only `POST /api/login` is public. Everything else needs a token, and everything besides `/logout`
 and `/me` additionally requires the `admin` role. Faculty are records, not users.
 
-### Controllers & Routes (50 routes under `/api`)
+### Controllers & Routes (51 routes under `/api`)
 
 | Resource | Routes | Status |
 |---|---|---|
@@ -126,7 +127,7 @@ and `/me` additionally requires the `admin` role. Faculty are records, not users
 | Room | full CRUD, with a canonical room-type vocabulary | ✅ Tested |
 | Section | full CRUD, with year/semester subject-match validation | ✅ Tested |
 | Schedule | `generate/{section}`, `index`, `show`, `approve`, `publish`, `unpublish`, `reject`, `destroy`, session `update` | ✅ Tested |
-| Reports | `faculty-workload`, `room-utilization`, `section-summary`, `schedule-status`, `conflicts`, `faculty/{faculty}/schedule` | ✅ Tested |
+| Reports | `faculty-workload`, `room-utilization`, `section-summary`, `schedule-status`, `conflicts` (GET = generation logs), `conflicts` (DELETE = clear history), `faculty/{faculty}/schedule` | ✅ Tested |
 | Settings | `index` (GET), `update` (PUT) — the midday break | ✅ Tested |
 
 ### Error semantics
@@ -149,6 +150,27 @@ and `/me` additionally requires the `admin` role. Faculty are records, not users
 `GET /api/reports/conflicts` returns **generation logs**, not conflicts — the Reports UI tab that
 consumes it is correctly labelled "Generation Logs". The endpoint name is misleading and should be
 renamed (`/reports/generation-logs`); it is left as-is because renaming changes the public API.
+
+### Generation-log history
+
+Every generation attempt writes a row to `schedule_generation_logs`: outcome (`optimal` / `partial` /
+`failed`), a one-line message, who requested it, and a JSON `unscheduled_sessions` payload. The
+Reports → Generation Logs tab renders that payload as prose rather than raw JSON — each entry shows
+the subject code and title, the session type, and the solver's own reason. Example:
+
+```
+PROG201 — Object-Oriented Programming  LABORATORY
+No free slot: every day and time this session could use is already taken by the section's
+other classes, the faculty's availability, the midday break, or a room already in use. ...
+```
+
+- The API enriches each entry with `subject_code` / `subject_title` by looking the subject up, and
+  falls back to `Subject #<id>` when a subject has since been deleted, so an old log never breaks
+  rendering.
+- A collapsed **View full details** toggle reveals the exact stored JSON.
+- **Clear history** (`DELETE /api/reports/conflicts`) wipes the log table only. Verified: schedules,
+  sessions, and all master data are untouched, and the history reads empty afterwards.
+- Covered by `tests/Feature/GenerationLogHistoryTest.php`.
 
 ---
 
@@ -187,8 +209,12 @@ renamed (`/reports/generation-logs`); it is left as-is because renaming changes 
 
 ### Known debt
 
-`npm run lint` reports **11 errors / 9 warnings**, all `react-hooks/set-state-in-effect` from the
-`useEffect(() => { fetchX() }, [])` pattern across the admin pages. Pre-existing, no runtime impact.
+`npm run lint` reports **11 errors / 9 warnings**. Pre-existing, no runtime impact. The errors break
+down as 8 × `react-hooks/set-state-in-effect` (the `useEffect(() => { fetchX() }, [])` pattern across
+the admin pages, e.g. `UsersPage.tsx:34`), 2 × `@typescript-eslint/no-explicit-any` (both in
+`ReportsPage.tsx`, lines 27 and 466 — pre-existing, not introduced by the generation-log change), and
+1 × `react-refresh/only-export-components` (`AuthContext.tsx:155`, which exports `API_BASE_URL`
+alongside the provider). The 9 warnings are all `react-hooks/exhaustive-deps`.
 
 ---
 
@@ -254,14 +280,10 @@ Early on, the database was built two ways in parallel: once via raw `schema.sql`
 
 | Target | Command | Current result |
 |---|---|---|
-| Backend | `cd backend && php artisan test` | **127 passed, 537 assertions** |
-| AI Engine | `cd ai-engine && python -m unittest discover -s tests -t tests` | **118 tests, OK** |
+| Backend | `cd backend && php artisan test` | **143 passed, 604 assertions** |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **118 tests, OK** |
 | Frontend build / typecheck | `cd frontend && npm run build` | passes |
 | Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings (known debt) |
-
-The backend and AI-engine rows were re-run for this update; the frontend rows were not. The
-AI-engine command needs `-t tests` because `tests/` has no `__init__.py` and Python 3.11+ refuses to
-discover a start directory it cannot import.
 
 The backend suite covers, among others: section/subject year-semester matching, subject lab
 consistency, room-type vocabulary, faculty availability windows, section window validation, session

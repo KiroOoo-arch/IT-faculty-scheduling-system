@@ -77,7 +77,7 @@ Remove obsolete: overview, workload, sections, generation-logs.
 
 ## 8. Testing chapter — rewrite
 
-- Replace any "18/18 manual tests" claim with the automated suite: 111 backend feature tests (465 assertions) including section/year-level generation tests, the subject-validation rule tests (subject–section year/semester integrity, subject lab consistency), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` is rejected) and the unreachable-engine 502 path, run on an isolated scheduling_system_testing database, plus 53 AI-engine unit tests (Python stdlib unittest) that exercise the CP-SAT solver directly — 53 tests OK, 0 failed, 0 skipped, 0 warnings/errors.
+- Replace any "18/18 manual tests" claim with the automated suite: 114 backend feature tests (475 assertions) including section/year-level generation tests, the subject-validation rule tests (subject–section year/semester integrity, subject lab consistency), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` is rejected) and the unreachable-engine 502 path, run on an isolated scheduling_system_testing database, plus 53 AI-engine unit tests (Python stdlib unittest) that exercise the CP-SAT solver directly — 53 tests OK, 0 failed, 0 skipped, 0 warnings/errors.
 - Add the live end-to-end integration test (September 2026): admin login > AI generated BIT-3A's schedule OPTIMAL with all constraints verified (IAS lab correctly placed in a computer lab) > approve > publish through the gate > unpublish > all 5 reports — all passed.
 - Frontend TypeScript typecheck + production build pass.
 
