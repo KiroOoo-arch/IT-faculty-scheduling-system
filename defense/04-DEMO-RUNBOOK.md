@@ -68,7 +68,7 @@ Point at the generated rows:
 - A **laboratory** session → **Room 2** (a computer_lab) — *"room type matching"*
 - No faculty appears twice at overlapping times — *"no double-booking"*
 - Everything inside the section's preferred window — *"student-centered: the section's own preferred days and times are enforced by the solver"*
-> **Bonus move:** click **Edit** on a session and try to move it onto a conflicting slot → **422 conflict message appears, edit rejected.** "That's protection layer two — every manual edit is re-checked server-side." (Cancel the edit.)
+> **Bonus move:** click **Edit** on a session and try to move it onto a conflicting slot → **422 conflict message appears, edit rejected.** "That's protection layer three — every manual edit is re-checked server-side, against other sections' drafts in the same term too." (Cancel the edit.)
 > **Bonus move 2 — the published-data guard:** with the schedule still `published`, open **Rooms** and try to delete a room the published timetable uses → a **409** confirmation appears naming the affected schedule and how many sessions are at risk; cancel it. "The AI defends the generated schedule, and this guard defends the *published* one — master-data edits can't silently break a live timetable."
 
 ### Step 5 — The validation gate (1:00, optional but powerful)
@@ -78,7 +78,7 @@ Select **BSIT 3A** in the dropdown. Then say:
 
 ### Step 6 — Approve → Publish → Print (2:00)
 Click **Approve** on the new draft → status becomes `approved`. Click **Publish** → status becomes `published`. Click **🖨 Print / PDF**.
-> **Narrate:** "Publish runs the third protection layer — a cross-section conflict gate that blocks double-booking against other published schedules. Then the published schedule opens as a print-friendly weekly grid — save as PDF or print. This replaces any faculty portal: hard-copy distribution is how the department actually works."
+> **Narrate:** "Publish runs the fourth protection layer — a cross-section conflict gate that blocks double-booking against other published schedules. Then the published schedule opens as a print-friendly weekly grid — save as PDF or print. This replaces any faculty portal: hard-copy distribution is how the department actually works."
 **Expected:** print view renders a clean weekly grid (A4 landscape). Close the tab, return to the dashboard.
 
 ### Step 7 — Reports (1:00)
@@ -87,7 +87,7 @@ Click 📈 Reports → click through tabs: **Faculty Load** (hours per teacher),
 
 ### Step 8 — Close (0:30)
 Return to the dashboard.
-> **Close:** "That's the full lifecycle — data in, mathematically guaranteed schedule out, human-approved, published, and printed. The AI proposes; three layers defend; the Admin decides. Thank you — questions welcome."
+> **Close:** "That's the full lifecycle — data in, mathematically guaranteed schedule out, human-approved, published, and printed. The AI proposes; five layers defend; the Admin decides. Thank you — questions welcome."
 
 ---
 

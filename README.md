@@ -61,22 +61,23 @@ result; **Laravel persists it**. A failed or unreachable solver never destroys a
 - **Master data management** — faculty, subjects, rooms/laboratories, sections, users
 - **Faculty availability** — per-day windows, which the solver treats as hard boundaries
 - **Faculty–subject qualification mapping** — a session can only go to faculty who can teach it
-- **AI schedule generation** — `OPTIMAL` / `FEASIBLE` / `PARTIAL` / `INFEASIBLE`, with a per-session reason when a session cannot be placed
+- **AI schedule generation** — `OPTIMAL` / `FEASIBLE` / `PARTIAL` / `INFEASIBLE`, with a per-session reason when a session cannot be placed; generation is serialized per academic term, and a plan that would clash with another section's timetable in that term is refused before it is written
 - **Approval workflow** — `draft → approved → published`, plus `reject` and `unpublish → draft`
-- **Session editing with conflict detection** — manual changes are validated against the full resulting state
+- **Session editing with conflict detection** — manual changes are validated against the full resulting state, including other sections' sessions in the same academic term
 - **Publish conflict gate** — refuses to publish a timetable that clashes with another approved/published one
 - **Published-reference guard** — deleting faculty/subject/room/section still used by a *published* schedule returns `409` unless confirmed with `?force=1`
 - **Reports** — faculty workload, room utilization, section summary, schedule status, generation logs
 - **Printable output** — published section and faculty timetables, with a subject-list or weekly-grid layout, official letterhead, and print/PDF styling
 
-### The four protection layers
+### The five protection layers
 
-Conflicts and silent data loss are both blocked in four places, and it is worth naming all four:
+Conflicts and silent data loss are both blocked in five places, and it is worth naming all five:
 
 1. **Solver constraints** — no double-booking of a room or faculty member, no section self-overlap, faculty availability and load ceilings, room type and capacity matching, break avoidance
-2. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` re-validates the whole proposed state
-3. **Publish conflict gate** — cross-section cross-check before a timetable goes live
-4. **Published-reference delete guard** — a published timetable cannot be quietly orphaned by deleting the faculty/room/subject/section it depends on
+2. **Generation-time conflict gate and term lock** — generation for an academic term runs one section at a time behind a cache lock (a contended run answers `409`), and the engine's plan is checked against every other section's *draft*, approved, and published sessions in the same academic year and semester before anything is written (`422`). A refused or failed run leaves the previous draft exactly as it was
+3. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` re-validates the whole proposed state, including conflicts with other sections' draft/approved/published sessions in the same term
+4. **Publish conflict gate** — cross-section cross-check against approved/published schedules before a timetable goes live
+5. **Published-reference delete guard** — a published timetable cannot be quietly orphaned by deleting the faculty/room/subject/section it depends on
 
 ## Project Structure
 
@@ -157,10 +158,20 @@ existing subject links alone.
 
 | Target | Command | Current result |
 |---|---|---|
-| Backend | `cd backend && php artisan test` | **111 passed, 465 assertions** |
-| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **53 tests, OK** |
+| Backend | `cd backend && php artisan test` | **127 passed, 537 assertions** |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests -t tests` | **118 tests, OK** |
 | Frontend build / typecheck | `cd frontend && npm run build` | passes (`tsc -b && vite build`) |
 | Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings — known debt (`react-hooks/set-state-in-effect` across the admin pages) |
+
+The two conflict suites on their own — from `backend/`, `php vendor/bin/phpunit
+tests/Feature/ScheduleGenerationConflictTest.php tests/Feature/ScheduleSessionConflictTest.php` — are
+25 tests / 101 assertions.
+
+The AI-engine command needs `-t tests`: `tests/` has no `__init__.py`, and Python 3.11+ refuses to
+start discovery in a directory it cannot import, so the plain `-s tests` form exits with
+`ImportError: Start directory is not importable`.
+
+The backend and AI-engine rows were re-run for this update; the frontend rows were not.
 
 ## Development Status
 
@@ -168,17 +179,21 @@ existing subject links alone.
 
 - ✅ AI schedule generation verified live — 15 demo sections returned `OPTIMAL` with every session placed and zero conflicts
 - ✅ Approval → publish workflow, including the status guards (`422` when publishing anything not approved)
+- ✅ Generation refuses a plan that clashes with another section's draft, approved, or published timetable in the same academic year and semester (`422`), and a contended generation run answers `409`
 - ✅ Publish gate blocks cross-section double-booking at publish time
-- ✅ Manual session edits validated against conflicts
+- ✅ Manual session edits validated against conflicts, drafts in the same term included
 - ✅ Published-reference delete guard, and a published schedule cannot be deleted without unpublishing
 - ✅ Admin prints/downloads published schedules for hard-copy distribution
 
 **Known limitations** — stated deliberately, not as a backlog:
 
-- **Generation is per-section.** A new draft only avoids rooms and faculty already committed to
-  *approved/published* schedules, so drafts generated in one batch can overlap each other. The
-  publish gate is what stops a clash reaching students. Generate and publish sequentially for a
-  fully clash-free set.
+- **Generation is per-section and serialized per term.** A new draft treats every other section's
+  *draft*, approved, and published sessions in the same academic year and semester as live bookings —
+  the batch of drafts that used to be able to overlap each other no longer can, because generation
+  runs one section at a time per term behind a lock and a clashing plan is refused rather than
+  written. The trade-off is the mirror image: a section generated later has less room to move, so a
+  session that no longer fits comes back unplaced with a per-session reason for the admin to resolve
+  by editing.
 - **Single role.** Only the Department Head can log in; faculty have no accounts by design.
 - **Logging in invalidates other sessions** for that account.
 - **Lint debt** in the frontend (see Testing).

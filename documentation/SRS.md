@@ -193,7 +193,7 @@ Three-tier architecture:
 5. Faculty no double-booking: No overlapping sessions for one faculty member
 6. Room no double-booking: No overlapping sessions in one room
 7. Maximum teaching load: Total hours (including existing load) cannot exceed `max_teaching_load`
-8. Cross-section conflicts: No conflicts with other sections' approved/published schedules
+8. Cross-section conflicts: No conflicts with other sections' schedules in the same academic year and semester — draft, approved, and published schedules all count as active bookings
 
 Plus:
 - Section preferred scheduling window (days and start/end hours) and section self-overlap — modeled directly by the solver

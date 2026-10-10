@@ -73,7 +73,7 @@ flowchart TD
     end
 
     DRAFT --> TBL
-    EP -.->|"psycopg2 reads of section, subjects, faculty, rooms,<br/>existing approved/published sessions"| TBL
+    EP -.->|"psycopg2 reads of section, subjects, faculty, rooms,<br/>this term's existing sessions (draft/approved/published)"| TBL
 ```
 
 *(Diagram source for the manuscript: `documentation/screenshots/program-flow.mmd`; rendered image: `documentation/screenshots/11-program-flow.png` — the block above and the `.mmd` file are the same 61 lines, so they cannot drift.)*
@@ -178,10 +178,11 @@ flowchart TD
     S["AdminDashboard.handleGenerate: if that section already has a<br/>draft, approved or published schedule, confirm before replacing it<br/>— cancelling sends no request"] --> P["POST /api/schedules/generate/sectionId"]
     P --> G3{"Gate 3 — every assigned subject matches<br/>the section year level + semester?"}
     G3 -- "no" --> R422["422 with the offending subject codes<br/>AI engine never called"]
-    G3 -- "yes" --> HTTP["Http::timeout(30)->post('http://127.0.0.1:8001/generate-schedule/sectionId')"]
+    G3 -- "yes" --> LOCK["Cache::lock('schedule-generation:academic_year:semester')<br/>->block(wait) — a contested run answers 409"]
+    LOCK --> HTTP["Http::timeout(30)->post('http://127.0.0.1:8001/generate-schedule/sectionId')"]
     HTTP --> F1{"AI engine response ok?"}
     F1 -- "non-2xx" --> L502["ScheduleGenerationLog status=failure<br/>502 to the browser"]
-    F1 -- "200" --> READ["FastAPI reads section, subjects, qualified active faculty,<br/>availabilities, existing load, available rooms,<br/>other sections' approved/published sessions"]
+    F1 -- "200" --> READ["FastAPI reads section, subjects, qualified active faculty,<br/>availabilities, existing load, available rooms,<br/>this term's existing sessions — draft/approved/published"]
     READ --> CHK{"enough data to model?"}
     CHK -- "no subjects assigned" --> E400["400 no subjects assigned"]
     CHK -- "no qualified faculty" --> E400b["400 no faculty can teach these subjects"]
@@ -191,14 +192,17 @@ flowchart TD
     PRECHK --> CP["CP-SAT model with the 8 constraint categories<br/>+ section window/self-overlap, Maximize(placed sessions)<br/>max_time_in_seconds = 15"]
     CP --> OUT["{ status, message, sessions[] }<br/>placed sessions carry day/start/end/room/faculty,<br/>unplaced ones carry a reason"]
     OUT --> DEC2{"Laravel accepts the status?"}
-    DEC2 -- "OPTIMAL, FEASIBLE or PARTIAL" --> ARCH["Archive the section's existing drafts<br/>(status draft → archived) — only now, after a usable result"]
+    DEC2 -- "OPTIMAL, FEASIBLE or PARTIAL" --> XCHK{"findGeneratedConflicts: a clash with this term's<br/>other draft/approved/published session?"}
+    XCHK -- "clash" --> X422["ScheduleGenerationLog status=failure<br/>422 with the conflict list — the existing draft is untouched"]
+    XCHK -- "clean" --> ARCH["One transaction — archive the section's existing drafts<br/>(status draft → archived), only now, after a usable result"]
     ARCH --> W["Create Schedule (status=draft) + one ScheduleSession<br/>per placed session + ScheduleGenerationLog<br/>(status optimal | feasible | partial, unscheduled list stored)"]
     W --> UI["200 { schedule_id, status, sessions, unscheduled }<br/>AdminDashboard shows 'Status: X — N sessions created'"]
     DEC2 -- "anything else" --> FAIL["ScheduleGenerationLog status=failure<br/>422 with the engine message"]
 ```
 
 - The engine's own failure codes surface to the browser as **502** (non-2xx from FastAPI), and an **unreachable** engine is caught and answered with the same 502 shape — each path writes its own `failure` log row before responding.
-- Draft archiving happens **only after** the engine returns a usable result, and `AdminDashboard.handleGenerate` asks for confirmation up front when the section already has a schedule. **Previously** the bulk `draft → archived` ran *before* the engine call, so any failure left the section with its previous draft archived and no replacement — **observed**: a `FEASIBLE` rejection and an engine-500 run each archived the section's existing draft even though no new schedule was created, and a connection failure did too. **Fixed:** on 422 (INFEASIBLE/ERROR) and 502 (unreachable or non-2xx) the existing draft is now left untouched, pinned by `a_failed_generation_keeps_the_sections_existing_draft` and `an_infeasible_result_keeps_the_sections_existing_draft` in `ScheduleGenerationSectionTest`.
+- Generation for a term is **serialized by a cache lock** (`Cache::lock('schedule-generation:<academic_year>:<semester>')`, `ttl` 180 s / `wait` 30 s from `config/scheduling.php`): a contested run answers **409** rather than racing the run that holds it. After the engine returns, `findGeneratedConflicts` cross-checks the plan against every other section's `draft`/`approved`/`published` session in the same term — a clash answers **422** before anything is written.
+- Draft archiving happens **only after** the engine returns a usable result and the plan passes that conflict check; archiving the old draft, creating the replacement and inserting its sessions run in **one transaction**, so a failed write rolls the whole replacement back. `AdminDashboard.handleGenerate` asks for confirmation up front when the section already has a schedule. **Previously** the bulk `draft → archived` ran *before* the engine call, so any failure left the section with its previous draft archived and no replacement — **observed**: a `FEASIBLE` rejection and an engine-500 run each archived the section's existing draft even though no new schedule was created, and a connection failure did too. **Fixed:** on 422 (INFEASIBLE/ERROR) and 502 (unreachable or non-2xx) the existing draft is now left untouched, pinned by `a_failed_generation_keeps_the_sections_existing_draft` and `an_infeasible_result_keeps_the_sections_existing_draft` in `ScheduleGenerationSectionTest`.
 - The confirmation prompt is **client-side only** (`AdminDashboard.handleGenerate`): a misclick guard, not an enforced rule. It names what would be replaced — an existing draft, approved or published schedule — and cancelling sends no request at all; a direct API call bypasses it.
 - The solver is a pure function: `ai-engine/api/app.py` does the reading (psycopg2) and `ai-engine/solver/scheduler.py` does the solving, with no HTTP code inside it.
 
@@ -261,12 +265,12 @@ flowchart TD
     C2 -- "outside" --> CONF
     C2 -- "ok" --> C3{"overlaps another session of the same schedule?"}
     C3 -- "yes" --> CONF
-    C3 -- "no" --> C4{"faculty/room already booked in another section's<br/>approved/published schedule at that time?"}
+    C3 -- "no" --> C4{"faculty/room already booked in this term's other section<br/>(draft/approved/published) at that time?"}
     C4 -- "yes" --> CONF
     C4 -- "no" --> OK["Session updated · 200 with subject, faculty, room"]
 ```
 
-This is protection layer 2 — the same rules that the solver enforces at generation time are re-checked on every manual edit.
+This is protection layer 3 — the same rules that the solver enforces at generation time are re-checked on every manual edit, against other sections' `draft`/`approved`/`published` sessions in the same term.
 
 **Observed:** one rejected edit returned all five conflict classes at once — room type (`Room 'ROOM6' is type 'lecture', but this session needs 'computer_lab'.`), faculty availability (`… is not available on day 2 from 7:00 PM to 9:00 PM.`), same-schedule overlap, cross-section faculty double-booking, and cross-section room double-booking — which confirms the merge-then-validate-full-state behavior. Putting a session on a **published** schedule answers 422 `Cannot edit a session on a 'published' schedule.`, and a clean change answers 200.
 
@@ -352,13 +356,13 @@ Session-level reasons are always preserved: structurally impossible sessions (no
 | Login / logout / me | `backend/app/Http/Controllers/AuthController.php` | `login`, `logout`, `me` |
 | Gate 1 (subject lab consistency) | `backend/app/Http/Controllers/SubjectController.php` | `subjectRules`, `labConsistencyErrors`, `store`, `update` |
 | Gate 2 (subject–section integrity) | `backend/app/Http/Controllers/SectionController.php` | `subjectMismatches`, `store`, `update` |
-| Gate 3 + generation | `backend/app/Http/Controllers/ScheduleController.php` | `generate` |
+| Gate 3 + generation | `backend/app/Http/Controllers/ScheduleController.php` | `generate`, `generateWithEngine`, `findGeneratedConflicts` |
 | Gate 4 (edit conflicts) | `backend/app/Http/Controllers/ScheduleSessionController.php` | `update`, `findConflicts`, `overlaps` |
 | Gate 5 + lifecycle | `backend/app/Http/Controllers/ScheduleApprovalController.php` | `approve`, `publish`, `unpublish`, `reject`, `destroy`, `findPublishConflicts` |
 | Reports data | `backend/app/Http/Controllers/ReportController.php` | `facultyWorkload`, `roomUtilization`, `conflicts`, `scheduleStatusOverview`, `sectionSummary` |
 | AI engine endpoint | `ai-engine/api/app.py` | `generate_schedule_for_section`, `health`, `get_connection` |
 | Solver | `ai-engine/solver/scheduler.py` | `generate_schedule()` |
-| Solver test suite | `ai-engine/tests/test_scheduler.py` | 53 unittest cases against `generate_schedule()` |
+| Solver test suite | `ai-engine/tests/` (5 modules) | 118 unittest cases against `generate_schedule()`; `test_scheduler.py` holds 46 of them |
 
 ---
 
@@ -408,6 +412,6 @@ Every status code and branch in §2, §3 and §4 was driven against the running 
 | `INFEASIBLE` result | section given a lab subject and a student count above every room capacity, then generate | `422 {"status":"INFEASIBLE","message":"No sessions could be scheduled. See individual reasons."}` + `failure` row storing all three sessions with reasons (`No room of type 'lecture' exists for this lecture session.`, `No room of type 'computer_lab' exists for this laboratory session.`) |
 | `reject` transition | `PATCH /schedules/{id}/reject` on a draft | `200` → `status = rejected`; `DELETE` afterwards → `200` (every unpublished schedule is deletable); `approve` → `422 … currently 'rejected'.` |
 
-**Still read from source, not exercised here:** the engine's own `500` paths (`psycopg2.Error`, unexpected exception), FastAPI's `404` for a deleted section, and the five `GET /api/reports/*` endpoints (§3.6), plus the frontend-side behaviors described in §4.4 — those were traced in code and in the earlier UI walkthrough, not re-run in this pass. The 53-case AI-engine suite was re-run and passes (`Ran 53 tests … OK`), which is what makes `FEASIBLE` a real, reachable engine result.
+**Still read from source, not exercised here:** the engine's own `500` paths (`psycopg2.Error`, unexpected exception), FastAPI's `404` for a deleted section, and the five `GET /api/reports/*` endpoints (§3.6), plus the frontend-side behaviors described in §4.4 — those were traced in code and in the earlier UI walkthrough, not re-run in this pass. The AI-engine suite as it then stood was re-run and passes (`Ran 53 tests … OK`) — it has since grown to 118 tests across five modules — which is what makes `FEASIBLE` a real, reachable engine result.
 
 **State restored:** every row created for these probes (schedules, sessions, generation-log rows, the scratch section, the non-admin account) was deleted afterwards. After the later cleanup of the stale draft schedule #73 (and its out-of-window session #300), the demo database holds: 31 schedules (29 archived / 1 published / 1 draft), 86 sessions, 53 generation logs, with 0 remaining faculty-availability violations.

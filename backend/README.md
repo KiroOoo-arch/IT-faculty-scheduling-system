@@ -47,20 +47,32 @@ Notable rules:
 - `publish` runs a cross-section conflict check first and refuses on a clash
 - A **published** schedule cannot be deleted — unpublish it first
 - Generating supersedes the previous *draft* only after a usable result exists, so a failed or
-  unreachable engine never destroys the admin's work
+  unreachable engine never destroys the admin's work. Archiving the old draft, creating its
+  replacement and inserting the replacement's sessions are a single transaction, so a persistence
+  failure rolls the whole replacement back
+- Generation is serialized per academic term by a cache lock; a run that cannot take the lock within
+  its wait answers `409` rather than racing the run that holds it
+- A generated plan is checked against every other section's `draft`, `approved` and `published`
+  sessions in the **same academic year and semester** before anything is written. A clash is refused
+  with `422` and the section's existing draft is left exactly as it was
 
-## The four protection layers
+## The five protection layers
 
 1. **Solver constraints** — no room/faculty double-booking, no section self-overlap, availability
    and load ceilings, room type + capacity matching, break avoidance
-2. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` validates the full resulting state
-3. **Publish conflict gate** — cross-section cross-check at publish time
-4. **Published-reference delete guard** — faculty/subject/room/section used by a published schedule
+2. **Generation-time conflict gate + term lock** — one generation run per academic year and semester
+   at a time (`409` when contended), and the engine's result is checked against the same term's
+   other schedules — drafts included — before it is persisted (`422`)
+3. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` validates the full resulting
+   state, including other sections' draft/approved/published sessions in the same term
+4. **Publish conflict gate** — cross-section cross-check against approved/published schedules at
+   publish time
+5. **Published-reference delete guard** — faculty/subject/room/section used by a published schedule
    returns `409` unless confirmed with `?force=1`
 
-> Generation itself is per-section: a new draft only avoids rooms and faculty already committed to
-> *approved/published* schedules, so a batch of drafts can overlap each other. The publish gate is
-> what keeps a clash from reaching students.
+> Generation is still per-section, but within a term it is serialized and draft-aware: a new draft
+> treats every other section's draft as a live booking, and a plan that clashes is refused before it
+> is written — so a batch of drafts for one term can no longer overlap each other.
 
 ## Errors from the AI engine
 
@@ -75,6 +87,12 @@ Notable rules:
 `GET/PUT /api/settings` owns the midday break (`lunch_start`, `lunch_end`, `lunch_enabled`). It is a
 hard constraint in the solver, so it is read on every generation.
 
+`config/scheduling.php` sizes the generation lock: `ttl` (180 s) is how long a run may hold it before
+it expires on its own, and `wait` (30 s) is how long a run waits for a contended lock before answering
+`409`. Both are overridable with `SCHEDULE_GENERATION_LOCK_TTL` and `SCHEDULE_GENERATION_LOCK_WAIT`.
+The lock lives in the cache store, which defaults to `database`; a cross-process guarantee needs a
+shared store, so an in-process store such as `array` only protects a single process.
+
 ## Commands
 
 ```bash
@@ -84,7 +102,11 @@ php artisan key:generate
 php artisan migrate --seed
 php artisan serve         # http://127.0.0.1:8000
 
-php artisan test          # 111 passed, 465 assertions
+php artisan test          # 127 passed, 537 assertions
+
+# just the conflict regression files
+php vendor/bin/phpunit tests/Feature/ScheduleGenerationConflictTest.php \
+    tests/Feature/ScheduleSessionConflictTest.php     # 25 tests, 101 assertions
 
 # optional realistic demo dataset (idempotent)
 php artisan db:seed --class=DemoDataSeeder

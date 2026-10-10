@@ -52,9 +52,9 @@
 - SOP3: Detect/prevent conflicts (8 constraints)
 - SOP4: Optimize resources (reports)
 - SOP5: Department Head control (workflow)
-- SOP6: Acceptability (136 automated tests)
+- SOP6: Acceptability (245 automated tests)
 
-> "Six objectives, each verifiably met. SOP1 — automatic generation via Google OR-Tools CP-SAT. SOP2 — student-centered: each section's preferred days and time window are enforced *by the solver*, and room capacity is checked against student count. SOP3 — conflict prevention through eight hard constraint categories. SOP4 — resource optimization with workload and utilization reports. SOP5 — the Department Head controls review, approval, and publication. SOP6 — acceptability, demonstrated by 136 passing automated tests across the solver and the backend."
+> "Six objectives, each verifiably met. SOP1 — automatic generation via Google OR-Tools CP-SAT. SOP2 — student-centered: each section's preferred days and time window are enforced *by the solver*, and room capacity is checked against student count. SOP3 — conflict prevention through eight hard constraint categories. SOP4 — resource optimization with workload and utilization reports. SOP5 — the Department Head controls review, approval, and publication. SOP6 — acceptability, demonstrated by 245 passing automated tests across the solver and the backend."
 
 ---
 
@@ -65,7 +65,7 @@
 - Faculty/students = records and recipients (print/PDF distribution)
 - Out of scope (future work): university-wide, multi-semester, notifications, soft preferences
 
-> "Scope: one department, used per semester. Only the Admin logs in — a deliberate security decision; faculty are records whose data feeds the solver, and published schedules go out as printed or PDF copies. We're explicit about what's out of scope: university-wide scheduling, multi-semester planning, and soft preferences like lunch breaks. The architecture supports extending to these — independent services can scale independently."
+> "Scope: one department, used per semester. Only the Admin logs in — a deliberate security decision; faculty are records whose data feeds the solver, and published schedules go out as printed or PDF copies. We're explicit about what's out of scope: university-wide scheduling, multi-semester planning, and soft preferences like seniority priority — the midday break itself is already enforced as a hard constraint. The architecture supports extending to these — independent services can scale independently."
 
 ---
 
@@ -112,15 +112,17 @@ React+TS (5173) → Laravel API (8000) → FastAPI AI (8001)
 
 ---
 
-## SLIDE 9 — Three Protection Layers (Speaker C) — 1:30
+## SLIDE 9 — Five Protection Layers (Speaker C) — 1:30
 
 **Slide content:**
-1. Generation constraints (CP-SAT)
-2. Manual-edit conflict detection (server-side, 422 on conflict)
-3. Publish conflict gate (cross-section, final)
+1. Generation constraints (CP-SAT) — every other section's draft/approved/published sessions in the same term are live bookings
+2. Generation-time conflict gate + term lock (409 contended, 422 on a clash)
+3. Manual-edit conflict detection (server-side, 422 on conflict — drafts included)
+4. Publish conflict gate (cross-section, against approved/published)
+5. Published-data delete guard (409 + `?force=1`)
 - Plus: pre-flight data validation before the AI is ever called
 
-> "Conflict prevention doesn't rely on one mechanism — there are three layers. First, the solver's constraints make the *generated* schedule valid by construction. Second, every manual edit of a session is re-validated server-side and rejected with a specific conflict message. Third, before a schedule goes live, a publish gate re-checks for cross-section conflicts. Before any of this, Laravel validates the data itself — mismatched subject assignments are rejected with a 422 naming the offending subjects, and the AI engine is never called with bad data."
+> "Conflict prevention doesn't rely on one mechanism — there are five layers. First, the solver's constraints make the *generated* schedule valid by construction, treating every other section's draft, approved and published sessions in the same term as fixed bookings. Second, generation itself is guarded: only one run at a time per term, and the finished plan is cross-checked before anything is written — a clash answers 422 and the section's existing draft is left untouched. Third, every manual edit of a session is re-validated server-side, drafts included, and rejected with a specific conflict message. Fourth, before a schedule goes live, a publish gate re-checks for cross-section conflicts. Fifth, a delete guard refuses to remove master data a published timetable still uses. Before any of this, Laravel validates the data itself — mismatched subject assignments are rejected with a 422 naming the offending subjects, and the AI engine is never called with bad data."
 
 ---
 
@@ -143,12 +145,12 @@ Generate → DRAFT → Review/Edit → APPROVED → Publish Gate → PUBLISHED �
 ## SLIDE 11 — Testing & Results (Speaker D) — 2:00
 
 **Slide content:**
-- 90 Laravel tests (380 assertions) across 12 files
-- 46 solver unit tests (Python)
+- 127 Laravel tests (537 assertions) across 17 files
+- 118 solver unit tests (Python, 5 modules)
 - Live-verified: BSIT 1A generates OPTIMAL (7 sessions); full workflow passes
 - tsc typecheck + production build clean
 
-> "Two automated suites: 90 backend feature tests with 380 assertions — covering generation correctness, section/subject year-and-semester validation, and lab-hour consistency rules — and 46 solver unit tests in Python covering every constraint category, including infeasible cases and part-time faculty availability windows. Beyond the suites, we live-verified the full workflow end to end: the live sections generate OPTIMAL, the draft-approve-publish-print flow runs clean, and the validation gates fire correctly with named error messages."
+> "Two automated suites: 127 backend feature tests with 537 assertions — covering generation correctness, cross-section conflict protection, section/subject year-and-semester validation, and lab-hour consistency rules — and 118 solver unit tests in Python covering every constraint category, including infeasible cases and part-time faculty availability windows. Beyond the suites, we live-verified the full workflow end to end: the live sections generate OPTIMAL, the draft-approve-publish-print flow runs clean, and the validation gates fire correctly with named error messages."
 
 ---
 
@@ -156,10 +158,10 @@ Generate → DRAFT → Review/Edit → APPROVED → Publish Gate → PUBLISHED �
 
 **Slide content:**
 - Manual hours → seconds; errors → mathematical guarantees
-- AI proposes, three layers defend, the Admin decides
+- AI proposes, five layers defend, the Admin decides
 - Future: soft constraints, CSV export, university scale, notifications
 
-> "The system turns hours of error-prone manual work into seconds of provably valid scheduling — with explanations, accountability, and the Department Head in control. Future work: soft constraints like lunch breaks and seniority preference, spreadsheet export, university-wide scaling, and notifications. Thank you — we welcome your questions."
+> "The system turns hours of error-prone manual work into seconds of provably valid scheduling — with explanations, accountability, and the Department Head in control. Future work: soft preferences like seniority priority and gap minimization — the midday break is already a hard constraint — plus spreadsheet export, university-wide scaling, and notifications. Thank you — we welcome your questions."
 
 ---
 
@@ -196,5 +198,5 @@ Generate → DRAFT → Review/Edit → APPROVED → Publish Gate → PUBLISHED �
 
 1. **Handoffs:** each speaker's last line names the next topic — use them; they prevent dead air and show coordination.
 2. **If a panelist interrupts with a question mid-slide:** answer briefly from the fact sheet, then "Happy to go deeper in the Q&A — continuing."
-3. **Numbers freeze:** 90 backend tests / 380 assertions / 46 solver tests / 136 total / 8 constraints / 4 room types / 4 statuses / 11 tables / 15 s solver cap / under 1 s actual. Nothing else.
+3. **Numbers freeze:** 127 backend tests / 537 assertions / 118 solver tests / 245 total / 8 constraints / 4 room types / 4 statuses / 11 tables / 15 s solver cap / under 1 s actual. Nothing else.
 4. **Never say:** ML, neural network, "always works", "faculty login". Say: constraint programming, CP-SAT, "proposes and explains", "records, not users", "availability is a day + a declared time window".

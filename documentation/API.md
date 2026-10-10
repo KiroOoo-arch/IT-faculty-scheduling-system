@@ -196,10 +196,15 @@ of `OPTIMAL`, `FEASIBLE`, `PARTIAL`, `INFEASIBLE`, `ERROR`.
 - All endpoints require a Bearer token except `POST /api/login`
 - All endpoints are admin-only — faculty are records, not users; non-admin logins are rejected
 - Schedule generation uses the Google OR-Tools CP-SAT solver, budgeted at 15 seconds per section
-- Conflict detection runs in real time on manual session edits
-- The publish conflict gate prevents cross-section double-booking
-- Generation itself is **per-section**: a new draft only avoids rooms/faculty committed to
-  *approved/published* schedules, so the publish gate is the final guard
+- Conflict detection runs in real time on manual session edits, against other sections' `draft`,
+  `approved` and `published` sessions in the **same academic year and semester**
+- The publish conflict gate prevents cross-section double-booking before a timetable goes live
+- Generation is **per-section, serialized per term, and draft-aware**: runs for one academic term are
+  serialized by a cache lock (`409` when contended), a new draft treats every other section's
+  `draft`/`approved`/`published` sessions in that term as live bookings, and a plan that would clash
+  is refused with `422` before anything is written
 
-**Last Updated:** October 4, 2026 — synchronized with the current 50-route API, the corrected
-engine error mapping (`4xx` → 422), and the login failure codes (`401`/`403`/`422`).
+**Last Updated:** October 10, 2026 — synchronized with the cross-section conflict protection
+(term-scoped generation lock, pre-write conflict gate, draft-aware manual-edit checks), the
+50-route API, the corrected engine error mapping (`4xx` → 422), and the login failure codes
+(`401`/`403`/`422`).

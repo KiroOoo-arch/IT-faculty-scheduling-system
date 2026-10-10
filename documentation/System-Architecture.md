@@ -4,14 +4,15 @@
 
 > **Role model:** The authorized **Admin / Department Head** is the only system user and operator. **Faculty are scheduling records/entities, not system users** — they never log in. Faculty data (name, employee number, employment type, qualifications, subject assignments, availability, max teaching load) feeds the scheduling engine, and published schedules reach faculty and students as **printed/PDF copies**.
 
-### The four protection layers (conflicts and silent data loss are both blocked)
+### The five protection layers (conflicts and silent data loss are both blocked)
 
-1. **AI generation constraints** — the CP-SAT solver mathematically enforces all constraint categories when producing a candidate schedule
-2. **Manual edit conflict detection** — every admin edit of a draft/approved session is re-checked server-side
-3. **Publish conflict gate** — a final cross-section conflict check runs before any schedule goes live
-4. **Published-reference guard** — deleting master data (faculty, room, subject, section, user) that a *published* schedule still depends on is refused with **409** and the exact scope of the loss; only an explicit `?force=1` proceeds (see §2.10)
+1. **AI generation constraints** — the CP-SAT solver mathematically enforces all constraint categories when producing a candidate schedule, treating every other section's `draft`, `approved` and `published` sessions in the same academic year and semester as fixed bookings
+2. **Generation-time conflict gate and term lock** — generation for a term runs one section at a time behind a cache lock (a contended run answers **409**), and the engine's plan is cross-checked against that term's other schedules before anything is written; a clash is refused with **422** and the section's existing draft is left untouched
+3. **Manual edit conflict detection** — every admin edit of a draft/approved session is re-checked server-side, against other sections' draft/approved/published sessions in the same term
+4. **Publish conflict gate** — a final cross-section conflict check runs before any schedule goes live
+5. **Published-reference guard** — deleting master data (faculty, room, subject, section, user) that a *published* schedule still depends on is refused with **409** and the exact scope of the loss; only an explicit `?force=1` proceeds (see §2.10)
 
-Layers 1–3 protect the *contents* of a schedule while it is being built. Layer 4 protects the timetable that has **already been distributed** — the one case where the data that is changing lives outside the schedule and the loss would otherwise be invisible.
+Layers 1–4 protect the *contents* of a schedule while it is being built. Layer 5 protects the timetable that has **already been distributed** — the one case where the data that is changing lives outside the schedule and the loss would otherwise be invisible.
 
 Plus a **pre-scheduling validation gate in Laravel** (application-layer business rules, not solver constraints): subject–section year/semester integrity (FR-018) and subject lab consistency (FR-019) are enforced when data is saved and re-checked before the AI engine is ever called — invalid assignments return HTTP 422 and cannot reach the solver.
 
@@ -66,19 +67,20 @@ sequenceDiagram
     F->>L: POST /api/schedules/generate/{section} (Bearer token)
     L->>L: Validate the section's assigned subjects<br/>match its year level + semester
     Note over L: Mismatch → 422, the AI engine is never called
+    L->>L: Take this term's generation lock — a contended run answers 409
     L->>A: POST http://127.0.0.1:8001/generate-schedule/{id}
-    A->>DB: Query section, subjects, faculty + availabilities,<br/>available rooms, existing approved/published sessions
+    A->>DB: Query section, subjects, faculty + availabilities, available rooms,<br/>this term's existing sessions (draft, approved and published)
     DB-->>A: data
     A->>A: OR-Tools CP-SAT solver (8 constraints)
     A-->>L: {status: OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE, sessions[]}
-    alt OPTIMAL, FEASIBLE or PARTIAL
-        L->>DB: Supersede the previous draft (archive) — only now that the result is real
-        L->>DB: Create Schedule (draft) + ScheduleSession rows
+    L->>L: Cross-check the plan against the term's other schedules — a clash answers 422
+    alt OPTIMAL, FEASIBLE or PARTIAL and no clash
+        L->>DB: One transaction — archive the previous draft, then create Schedule (draft) + ScheduleSession rows
         L->>DB: Write ScheduleGenerationLog
         L-->>F: 200 {schedule_id, sessions, unscheduled}
         F-->>U: "Status: OPTIMAL — N sessions created"
-    else INFEASIBLE / failure
-        Note over L: The existing draft is left untouched —<br/>a failed attempt is retryable, not destructive
+    else INFEASIBLE / failure / clash
+        Note over L: The existing draft is left untouched —<br/>a refused or failed attempt is retryable, not destructive
         L->>DB: Write ScheduleGenerationLog (failure)
         L-->>F: 422 {message} or 502 (engine unreachable)
         F-->>U: Error message
@@ -179,7 +181,7 @@ The solver is designed to satisfy the defined scheduling constraints and reports
 5. Faculty no double-booking
 6. Room no double-booking
 7. Maximum teaching load
-8. Cross-section conflicts (against existing approved/published sessions)
+8. Cross-section conflicts (against this term's existing draft/approved/published sessions)
 
 ### 2.7 End-to-End Workflow
 

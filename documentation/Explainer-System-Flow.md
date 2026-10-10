@@ -49,7 +49,7 @@ This is the heart of the figure. The steps are colour-coded by actor, which lets
 | Actor | Steps | What it does |
 |---|---|---|
 | **Browser** (blue) | 1, 2, 17 | Starts the request; renders the result |
-| **Laravel** (purple) | 3, 4, 5, 6, 15, 16 | Guards, validates, archives, calls the engine, persists |
+| **Laravel** (purple) | 3, 4, 5, 6, 15, 16 | Guards, validates, takes the term lock, calls the engine, cross-checks the plan, persists (archiving the previous draft in the same transaction) |
 | **PostgreSQL** (green) | 7–12 | Supplies six separate read sets to the engine |
 | **FastAPI** (amber) | 13, 14 | Builds the model, solves it, returns the result |
 
@@ -107,7 +107,7 @@ How availability is authored, and what happens when two things run at once. Key 
 - A row only means anything when **both** start and end times are present; a row with a missing time is ignored by the engine, so an empty window silently imposes no restriction.
 - A faculty member with **no** declared availability at all falls back to the section's preferred days; one **with** declared windows is restricted to exactly those.
 - Generation is **synchronous**. There is no queue, no worker, and no retry. The admin waits.
-- A run only affects other sections once it is **approved or published** — drafts never influence anyone else.
+- A run affects other sections as soon as it is a **draft**: `draft`, `approved` and `published` sessions in the same academic year and semester all count as live bookings for the next run. Generation for one term is serialized by a cache lock, so a run cannot read a pre-run snapshot that another in-flight run is about to change.
 
 ### Timing strip
 
@@ -135,7 +135,7 @@ How availability is authored, and what happens when two things run at once. Key 
 >
 > It starts at the browser — step 1 — where the admin picks a section and clicks generate. The request goes to Laravel, which first checks the token, then the role. Step 4 is a data-integrity gate: every subject assigned to that section must match the section's year level and semester. If not, Laravel answers 422 and **never calls the AI engine at all** — so bad data can't waste a solve.
 >
-> Step 5 archives the section's previous drafts. Step 6 Laravel calls the engine. Notice steps 7 to 12 — those reads are the engine reading PostgreSQL **itself**, server-to-server. Then it solves, and returns the result to Laravel, which saves the draft — Laravel is the only writer in the system.
+> On the ordering: Laravel archives the section's previous draft **only after** the engine returns a usable result and the finished plan clears the cross-section conflict check — archiving up front would let a failed or clashing run destroy the admin's work, so the whole replacement (archive, new draft, sessions) is one transaction. Step 6 is where Laravel calls the engine. Notice steps 7 to 12 — those reads are the engine reading PostgreSQL **itself**, server-to-server. Then it solves, and returns the result to Laravel, which saves the draft — Laravel is the only writer in the system.
 >
 > The middle panel is the one I'd draw your attention to. Every failure path is enumerated with its status code and its side effect. An unreachable engine is a 502 with a failure log. A solver that can't place everything is a **partial success** — we save the draft and report the sessions it couldn't place, rather than throwing the whole run away.
 >
@@ -155,7 +155,7 @@ It never fails silently. It maximises the number of sessions it can place, retur
 Deliberate headroom. The solver stops itself at 15 seconds and returns the best answer it found. The 30-second HTTP timeout means the outer request will not time out before the inner solve has had a chance to finish and report.
 
 **"How do you stop two people scheduling the same room?"**
-Three layers. At generation time the solver treats other sections' approved and published sessions as hard constraints. A manual edit is re-checked by the conflict validator. And publishing runs a cross-section conflict gate that refuses with 422 if the new schedule clashes with another section's live schedule.
+Layered, not one mechanism. At generation time the solver treats every other section's **draft**, approved and published sessions in the same term as hard constraints, Laravel serializes runs for a term behind a lock (409 when contended) and cross-checks the generated plan before writing it (422 on a clash). A manual edit is re-checked by the conflict validator, drafts in the same term included. And publishing runs a cross-section conflict gate that refuses with 422 if the new schedule clashes with another section's live schedule.
 
 **"Is a draft visible to faculty?"**
 No. Only `published` schedules are printed and distributed. Drafts and approved schedules are internal.
@@ -180,9 +180,11 @@ Not directly. A published schedule must be **unpublished** first, which returns 
 
 4. **The engine's direct database read is a genuine dependency.** It appears in this figure as steps 7–12 and in the architecture figure as boundary B3. Be ready to defend it, or to concede it if the panel's requirement forbids any direct database access by the AI service.
 
-5. **Generation is one section per request, run sequentially.** Generating for many sections means many sequential calls, each with its own 30-second ceiling. There is no batch endpoint and no queue.
+5. **Generation is one section per request, run sequentially.** Generating for many sections means many sequential calls, each with its own 30-second ceiling. There is no batch endpoint and no queue — runs for the same academic term are serialized by a cache lock, so a second request for that term waits for the first and answers **409** if its wait expires.
 
 6. **`FEASIBLE` is a success, not a failure.** This looks counter-intuitive on a status list, so state it explicitly: the solver hit its 15-second budget but placed every session. It is accepted and stored identically to `OPTIMAL`.
+
+7. **The figure's step boxes predate the archiving fix.** Archiving now happens *after* the engine returns a usable result (and after the pre-write conflict check), inside one transaction — the fix that stopped a failed run from destroying the section's previous draft landed after this figure was rendered, so the step-5/step-6 boxes still read in the older order. Narrate the order as the script above does. Refreshing the image needs its editable source, `.tmp-run/diagram/system-flow-v2.html`, which is not committed and is no longer present in the working tree — so the image could not be re-rendered here.
 
 ---
 

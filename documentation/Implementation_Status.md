@@ -1,8 +1,9 @@
 # Implementation Status & Technical Documentation
 ## AI-Assisted Student-Centered Constraint-Based Faculty, Classroom, and Laboratory Scheduling System
 
-*Last updated: reflects work through the frontend, the schedule approval workflow, the full backend
-test suite (111 tests), and the AI engine test suite (53 tests).*
+*Last updated: reflects work through the frontend, the schedule approval workflow, the cross-section
+conflict protection (term-scoped generation lock, pre-write conflict gate, draft-aware conflict
+checks), the full backend test suite (127 tests), and the AI engine test suite (118 tests).*
 
 This document records what has actually been built, tested, and verified working — as distinct from
 what was originally planned in `Requirements.md` and `SRS.md`. Use this alongside those files: they
@@ -24,7 +25,7 @@ describe the *intended* system; this describes the *current, working* system.
 | Phase 4 — Frontend (React) | ✅ Done | 10 routes; master-data pages, dashboard, reports, two printable timetables |
 | Phase 5 — AI Scheduling Engine | ✅ Done, tested | CP-SAT solver wired to live PostgreSQL via FastAPI |
 | Phase 6 — Integration | ✅ Done | Laravel → FastAPI → Postgres write-back confirmed end-to-end |
-| Phase 7 — Testing | ✅ Automated suite | 111 backend tests (465 assertions), 53 engine tests |
+| Phase 7 — Testing | ✅ Automated suite | 127 backend tests (537 assertions), 118 engine tests |
 
 ---
 
@@ -200,19 +201,27 @@ draft --approve--> approved --publish--> published --unpublish--> draft
   +-- delete (any state except published)
 ```
 
-**Four protection layers** — name all four when presenting:
+**Five protection layers** — name all five when presenting:
 
 1. **Solver constraints** — room/faculty double-booking, section self-overlap, availability and load
-   ceilings, room type + capacity, break avoidance
-2. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` validates the full proposed state
-3. **Publish conflict gate** — cross-section cross-check before a timetable goes live
-4. **Published-reference delete guard** — a published timetable cannot be orphaned by deleting the
+   ceilings, room type + capacity, break avoidance, against every other section's draft/approved/
+   published sessions in the same academic year and semester
+2. **Generation-time conflict gate and term lock** — one generation run per academic year and semester
+   at a time (`409` when contended); the engine's plan is cross-checked against that term's other
+   schedules before anything is written (`422` on a clash)
+3. **Manual-edit validation** — `PUT /api/schedules/sessions/{id}` validates the full proposed state,
+   including other sections' draft/approved/published sessions in the same term
+4. **Publish conflict gate** — cross-section cross-check before a timetable goes live
+5. **Published-reference delete guard** — a published timetable cannot be orphaned by deleting the
    faculty/room/subject/section it depends on
 
-> **Generation is per-section.** A draft only avoids rooms and faculty already committed to
-> *approved/published* schedules, so drafts generated in one batch can overlap one another. The
-> publish gate is what prevents a clash from reaching students — generate and publish sequentially
-> for a fully clash-free set.
+> **Superseded:** earlier revisions of this document recorded a limitation here — a draft used to
+> avoid only *approved/published* schedules, so drafts generated in one batch could overlap one
+> another. Both halves are no longer true: a new draft treats every other section's *draft*, approved
+> and published sessions in the same academic year and semester as live bookings, and generation for
+> a term runs one section at a time behind a lock, so a clashing plan is refused rather than written.
+> The trade-off is the mirror image — a section generated later has less room to move, and a session
+> that no longer fits comes back unplaced with a per-session reason for the admin to resolve.
 
 ---
 
@@ -245,10 +254,14 @@ Early on, the database was built two ways in parallel: once via raw `schema.sql`
 
 | Target | Command | Current result |
 |---|---|---|
-| Backend | `cd backend && php artisan test` | **111 passed, 465 assertions** |
-| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **53 tests, OK** |
+| Backend | `cd backend && php artisan test` | **127 passed, 537 assertions** |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests -t tests` | **118 tests, OK** |
 | Frontend build / typecheck | `cd frontend && npm run build` | passes |
 | Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings (known debt) |
+
+The backend and AI-engine rows were re-run for this update; the frontend rows were not. The
+AI-engine command needs `-t tests` because `tests/` has no `__init__.py` and Python 3.11+ refuses to
+discover a start directory it cannot import.
 
 The backend suite covers, among others: section/subject year-semester matching, subject lab
 consistency, room-type vocabulary, faculty availability windows, section window validation, session

@@ -17,7 +17,7 @@
 > **Three — conflicts are invisible across sections.** Checking one section's schedule tells you nothing about another section using the same room or teacher.
 > **Four — there's no audit trail.** Nothing records who generated a schedule, when, or why it changed.
 
-> "Our project replaces that manual process with a system that *generates* conflict-free schedules automatically, *defends* them with three layers of validation, and keeps the Department Head in full control."
+> "Our project replaces that manual process with a system that *generates* conflict-free schedules automatically, *defends* them with five layers of validation, and keeps the Department Head in full control."
 
 *(Transition to B: "My teammate will now present our objectives.")*
 
@@ -37,7 +37,7 @@
 >
 > **SOP 5 — Keep the Department Head in control.** The AI proposes a draft; the admin reviews, edits, approves, and publishes through a conflict gate. Publishing is never automatic — *the AI proposes, the Admin decides.*
 >
-> **SOP 6 — Ensure acceptability and reliability.** The system ships with 136 automated tests across the solver and backend, plus a full audit trail of every generation attempt."
+> **SOP 6 — Ensure acceptability and reliability.** The system ships with 245 automated tests across the solver and backend, plus a full audit trail of every generation attempt."
 
 *(Transition to C: "To achieve these objectives, here is our methodology.")*
 
@@ -63,7 +63,7 @@
 
 > "**Scope — the system covers one IT Department, per semester:** admin-only access by deliberate design decision; faculty and students are *records and recipients*, not system users — published schedules are distributed as printed or PDF copies. The system manages faculty records, subject qualifications and availability, rooms and labs, sections, and the full schedule lifecycle from draft to published.
 >
-> **What it does not cover** — and we say this openly: university-wide multi-department scheduling, multi-semester planning, notifications, and soft preferences like lunch breaks or seniority priority. These are documented future work; the architecture supports them.
+> **What it does not cover** — and we say this openly: university-wide multi-department scheduling, multi-semester planning, notifications, and soft preferences like seniority priority or gap minimization (the midday break itself is already enforced as a hard constraint). These are documented future work; the architecture supports them.
 >
 > **Expected output:** a working web system where the Department Head logs in, manages scheduling data, clicks generate, and receives — in about two seconds on our data scale — a conflict-free schedule that respects all eight constraints; every unschedulable session comes back with a plain-language reason. The schedule then moves through draft, approval, and publication, and ends as a printable PDF for distribution."
 
@@ -97,10 +97,10 @@
 > Three concrete mechanisms: each section's preferred days and time window are enforced by the solver; room capacity is checked against the section's student count; and every session belongs to a section — the schedule is built around sections' needs, not around room convenience.
 
 **Q4: Is your system already working?**
-> Yes — a working end-to-end prototype exists and is verified: the live dataset generates OPTIMAL (all sessions placed), the full draft → approve → publish → print workflow runs, and 136 automated tests pass.
+> Yes — a working end-to-end prototype exists and is verified: the live dataset generates OPTIMAL (all sessions placed), the full draft → approve → publish → print workflow runs, and 245 automated tests pass.
 
 **Q5: Why does the admin have to approve? Can't it just publish?**
-> Two reasons: (1) accountability — a human must own the published schedule; (2) safety — the publish step runs one more cross-section conflict check, the third and final protection layer.
+> Two reasons: (1) accountability — a human must own the published schedule; (2) safety — the publish step runs one more cross-section conflict check, the fourth of the five protection layers.
 
 **Q6: What if the AI cannot schedule everything?**
 > It reports PARTIAL with a plain-language reason per unscheduled session — e.g., "no qualified faculty available" — and INFEASIBLE when nothing can be placed. The admin fixes the data and regenerates. Best-effort with explanations beats a silently broken schedule.
@@ -109,10 +109,10 @@
 > The Admin/Department Head is the only login. Faculty are scheduling records — their qualifications and availability feed the solver — and students receive the published schedule as a printed/PDF copy. This was a deliberate design decision to reduce the security surface and match how the department distributes schedules.
 
 **Q8: How is this different from existing scheduling software?**
-> Three things: (1) mathematically guaranteed conflict-freedom via CP-SAT, not heuristic matching; (2) explanations — every failure is explained, not just displayed as an error; (3) three protection layers — generation constraints, edit-time validation, and a publish gate.
+> Three things: (1) mathematically guaranteed conflict-freedom via CP-SAT, not heuristic matching; (2) explanations — every failure is explained, not just displayed as an error; (3) five protection layers — generation constraints, a term-scoped generation lock with a pre-write conflict gate, edit-time validation, the publish gate, and a published-data delete guard.
 
 **Q9: What are your deliverables?**
-> The working system (React frontend, Laravel API, FastAPI AI engine, PostgreSQL database), complete documentation (SRS, requirements, architecture, ERD, user manual, data privacy statement), 136 automated tests, and this defense.
+> The working system (React frontend, Laravel API, FastAPI AI engine, PostgreSQL database), complete documentation (SRS, requirements, architecture, ERD, user manual, data privacy statement), 245 automated tests, and this defense.
 
 **Q10: What is your timeline / what's left to do?**
 > The system is functionally complete and verified. Remaining work is preparation: polished demo data, this defense, and optional enhancements (CSV export, soft constraints) documented as future work.

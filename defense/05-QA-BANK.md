@@ -36,7 +36,7 @@ Organized by theme. ⭐ = highest-probability questions.
 > No training data exists; scheduling validity is a hard requirement — one conflict invalidates the schedule, and probabilities don't guarantee anything. CP-SAT gives mathematical satisfaction + optimality proof + explanations. This is an optimization/modeling problem, not a prediction problem. (Bonus: "we chose the right tool — using ML here would have been using AI for its own sake.")
 
 **Q9. What exactly are the 8 constraints?**
-> (1) faculty qualification, (2) faculty availability (day + declared time window), (3) room type matching, (4) room capacity vs section size, (5) faculty no double-booking, (6) room no double-booking, (7) max teaching load, (8) cross-section conflicts vs approved/published schedules. Plus the section's preferred window and self-overlap prevention modeled directly.
+> (1) faculty qualification, (2) faculty availability (day + declared time window), (3) room type matching, (4) room capacity vs section size, (5) faculty no double-booking, (6) room no double-booking, (7) max teaching load, (8) cross-section conflicts vs the **same academic year and semester's** draft/approved/published schedules. Plus the section's preferred window and self-overlap prevention modeled directly.
 
 **Q10. ⭐ Is faculty availability enforced by hour or by day?**
 > **By day *and* by hour.** Each faculty member declares availability as a day plus a start/end window, and the solver only places a session when it fits entirely inside one declared window on that day. A faculty member with no declared availability at all falls back to the section's preferred days. The section's own preferred window also applies as an outer bound.
@@ -48,7 +48,7 @@ Organized by theme. ⭐ = highest-probability questions.
 > CP-SAT proves optimality within the 15-second budget — on our data it returns OPTIMAL in about 1–2 seconds. If the budget is hit with a valid solution, it reports FEASIBLE instead of claiming optimality.
 
 **Q13. Why maximize sessions as the objective? Why not fairness or compactness?**
-> Correctness first: place as much as possible without violating any hard constraint. Additional objectives (compact schedules, balanced loads, lunch gaps) are additive soft objectives — documented future work.
+> Correctness first: place as much as possible without violating any hard constraint. Additional objectives (compact schedules, balanced loads, preferred gap placement) are additive soft objectives — documented future work. The midday break itself is already enforced as a hard constraint.
 
 **Q14. What was your hardest technical bug?** ⭐ (authenticity gold — tell it well)
 > A constraint-modeling one. Time-disjointness is a *disjunction* — session A is before B or after B. Our first implementation reified it one-directionally (¬overlap → must start after the external session), which silently forced an ordering. When an approved schedule had evening sessions outside a morning section's window, every placement became impossible → instant INFEASIBLE on clearly schedulable data. We added solver-status logging, diagnosed the reification, rewrote the constraints as explicit before/after booleans for both external and internal conflicts, and added a 46-test solver suite covering exactly these cases. It taught us: in CP, *how you encode a rule* is as important as the rule.
@@ -104,14 +104,14 @@ Organized by theme. ⭐ = highest-probability questions.
 
 ## E. Validation & Conflict Prevention
 
-**Q28. ⭐ You mention "three protection layers" — what are they?**
-> (1) CP-SAT constraints during generation; (2) server-side conflict detection on every manual session edit (422 with specifics); (3) the publish conflict gate — a final cross-section check before going live. Plus a pre-flight data gate in Laravel (subject/section year-semester matching, lab-hour consistency) that rejects bad data with a 422 *before the AI is ever called*.
+**Q28. ⭐ You mention "five protection layers" — what are they?**
+> (1) CP-SAT constraints during generation — every other section's draft/approved/published session in the same academic year and semester is a fixed booking; (2) the generation-time gate: one run per term behind a cache lock (409 if contended), and the finished plan is cross-checked before anything is written (422 on a clash, the section's existing draft untouched, replacement in one transaction); (3) server-side conflict detection on every manual session edit (422 with specifics, drafts included); (4) the publish conflict gate — a final cross-section check against approved/published schedules before going live; (5) the published-data delete guard (409 + `?force=1`). Plus a pre-flight data gate in Laravel (subject/section year-semester matching, lab-hour consistency) that rejects bad data with a 422 *before the AI is ever called*.
 
 **Q29. What conflicts can a manual edit trigger?**
 > Faculty time overlap, room time overlap, section self-overlap, room type mismatch, capacity — each returned specifically so the admin knows exactly what to fix.
 
 **Q30. What does the publish gate check that the solver didn't already?**
-> Time passes between generation and publication — other sections' schedules may have been published in between. The gate re-checks faculty/room/time conflicts against the *current* set of published schedules, not the state as of generation time.
+> Two things. Generation already treats every other section's draft/approved/published session in the same academic year and semester as a live booking — serialized by the term lock, with a pre-write conflict check that answers 422 — but time still passes between generation and publication, and other sections' schedules may be approved or published in between. So the gate re-checks faculty/room/time conflicts against the *current* set of approved/published schedules, not the state as of generation time.
 
 **Q31. Tell me about the validation 422s.**
 > Two gates: SectionController validates subject-year/semester matching on save (naming offending subjects); SubjectController enforces lab consistency (lab hours > 0 requires a lab room type; zero lab hours requires none). ScheduleController re-checks before calling the AI. Every 422 names the offending data — errors are explanations.
@@ -121,7 +121,7 @@ Organized by theme. ⭐ = highest-probability questions.
 ## F. Testing
 
 **Q32. ⭐ How did you test the system?**
-> Three levels: (1) **46 Python unit tests** on the solver — every constraint category, part-time faculty restrictions, infeasible cases, the disjointness reification; (2) **90 Laravel feature tests (380 assertions)** — generation correctness (right section/year/semester), subject-section matching gate, lab consistency rules, regeneration archiving; (3) **live end-to-end verification** — the live sections generating OPTIMAL, the full approve→publish→print workflow, validation gates firing, zero console/network errors. Frontend TypeScript compile + production build pass.
+> Three levels: (1) **118 Python unit tests** on the solver (five modules) — every constraint category, part-time faculty restrictions, infeasible cases, the disjointness reification; (2) **127 Laravel feature tests (537 assertions)** — generation correctness (right section/year/semester), cross-section conflict protection (term lock 409, pre-write gate 422, atomic draft replacement, draft-aware manual edits), subject-section matching gate, lab consistency rules, regeneration archiving; (3) **live end-to-end verification** — the live sections generating OPTIMAL, the full approve→publish→print workflow, validation gates firing, zero console/network errors. Frontend TypeScript compile + production build pass.
 
 **Q33. Do tests touch real data?**
 > No — the backend suite runs on an isolated `scheduling_system_testing` database; dev data is never touched.
@@ -137,7 +137,7 @@ Organized by theme. ⭐ = highest-probability questions.
 > Manual scheduling: hours of cross-checking per semester, errors found after posting. Ours: seconds, with conflicts mathematically excluded before posting, plus reports and an audit trail. Time saved is real but modest; the *error class eliminated* (double-bookings, wrong rooms, overloads) is the core value.
 
 **Q36. What would you build next?**
-> Soft constraints (lunch break, seniority preference), CSV/Excel export, availability declared per calendar date, notifications on schedule changes, university-scale partitioning, automated UI tests.
+> Soft preferences (seniority priority, gap minimization), CSV/Excel export, availability declared per calendar date, notifications on schedule changes, university-scale partitioning, automated UI tests.
 
 **Q37. ⭐ What are the system's limitations?** (volunteer these!)
 > Department-scale only; availability declared per day-of-week rather than per calendar date; no soft preferences yet; synchronous generation call; small real-world dataset so far. Each has a documented path forward — and none affects correctness of what IS implemented.

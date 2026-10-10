@@ -1,7 +1,7 @@
 # FACT SHEET — Single Source of Truth
 ## AI-Assisted Student-Centered Constraint-Based Faculty, Classroom, and Laboratory Scheduling System
 
-> **TEAM RULE: Say only what is on this sheet.** Every claim here was verified against the actual source code and live-tested (October 2, 2026). If a fact isn't here, don't say it. If a panelist disputes a number, this sheet has the source file to point to.
+> **TEAM RULE: Say only what is on this sheet.** Every claim here was verified against the actual source code and live-tested (October 10, 2026). If a fact isn't here, don't say it. If a panelist disputes a number, this sheet has the source file to point to.
 
 ---
 
@@ -35,7 +35,7 @@ Manual faculty scheduling in the IT Department is:
 3. **Invisible** — conflicts across sections are only discovered after the schedule is posted
 4. **Untraceable** — no record of who generated what, when, or why a schedule changed
 
-Our system solves all four with constraint-based AI generation, a three-layer conflict defense, and a full audit trail.
+Our system solves all four with constraint-based AI generation, a five-layer conflict defense, and a full audit trail.
 
 ---
 
@@ -58,9 +58,10 @@ Our system solves all four with constraint-based AI generation, a three-layer co
 
 | Fact | Correct value | ❌ Do NOT say |
 |---|---|---|
-| Backend tests | **90 passing (380 assertions)** across 12 feature test files | "23 tests" (outdated) |
-| Solver tests | **46 passing** (Python unittest) | "32" (outdated) |
-| Total automated tests | **136 passing** | — |
+| Backend tests | **127 passing (537 assertions)** across 17 feature test files | "23 tests" (outdated) |
+| Solver tests | **118 passing** (Python unittest, 5 modules) | "46" (the old test_scheduler.py-only size) |
+| Cross-section conflict tests | **25 passing (101 assertions)** — `ScheduleGenerationConflictTest`, `ScheduleSessionConflictTest` | — |
+| Total automated tests | **245 passing** | — |
 | Solver time limit | **15 seconds max** per generation | "instant" |
 | Database tables | **11 domain tables** (+ auth/cache/jobs framework tables) | "15 tables" |
 | Constraint categories | **8 hard** + section preferred window + section self-overlap | "exactly 8 total" |
@@ -81,7 +82,7 @@ Enforced mathematically by CP-SAT in `ai-engine/solver/scheduler.py` — a gener
 5. **Faculty no double-booking** — one teacher, one place at a time
 6. **Room no double-booking** — one room, one class at a time
 7. **Maximum teaching load** — total hours ≤ `max_teaching_load` (including existing load from other schedules)
-8. **Cross-section conflicts** — no conflict with existing approved/published sessions of other sections
+8. **Cross-section conflicts** — no conflict with other sections' sessions in the **same academic year and semester**; `draft`, approved and published schedules all count as active bookings (so two drafts generated for one term cannot claim the same faculty member or room)
 
 Plus two modeled by the solver directly:
 - **Section preferred scheduling window** — sessions must fit the section's `preferred_days` + start/end time
@@ -91,17 +92,17 @@ Plus two modeled by the solver directly:
 
 ---
 
-## 7. The Three Protection Layers (best defense material in the whole project)
+## 7. The Five Protection Layers (best defense material in the whole project)
 
-1. **Generation constraints** — CP-SAT enforces all constraints while *producing* the candidate schedule
-2. **Manual-edit conflict detection** — every admin edit of a session (day/time/room/faculty) is re-checked server-side and rejected with 422 on conflict
-3. **Publish conflict gate** — a final cross-section conflict check before any schedule goes live
+1. **Generation constraints** — CP-SAT enforces all constraints while *producing* the candidate schedule, treating every other section's `draft`, `approved` and `published` sessions in the same academic year and semester as fixed bookings
+2. **Generation-time conflict gate + term lock** — one generation run per academic year and semester at a time (a contested run answers **409**), and the engine's plan is cross-checked against that term's other schedules before anything is written (**422** on a clash — the section's existing draft survives, and the replacement is one transaction)
+3. **Manual-edit conflict detection** — every admin edit of a session (day/time/room/faculty) is re-checked server-side, against other sections' draft/approved/published sessions in the same term, and rejected with 422 on conflict
+4. **Publish conflict gate** — a final cross-section conflict check against approved/published schedules before any schedule goes live
+5. **Published-data delete guard** — deleting master data (faculty, subject, room, or section) that a **published** schedule still uses is blocked with **HTTP 409** and requires an explicit `?force=1` confirmation
 
 Plus a **pre-flight validation gate in Laravel** (application rules, not solver constraints): subject–section year/semester matching and subject lab-hour/room-type consistency. Invalid data returns HTTP 422 and **never reaches the AI engine**.
 
-A fourth, data-protection guard: deleting master data (faculty, subject, room, or section) that a **published** schedule still uses is blocked with **HTTP 409** and requires an explicit `?force=1` confirmation. The AI defends the generated schedule, and the guard defends the published one.
-
-**One-sentence version:** "AI proposes, three layers defend, the Admin decides."
+**One-sentence version:** "AI proposes, five layers defend, the Admin decides."
 
 ---
 
@@ -162,7 +163,7 @@ These were demonstrated in the running system today:
 | Limitation | How to frame it |
 |---|---|
 | Department-level scope only | "University-wide scheduling is future work; the architecture (independent services) is ready for it" |
-| No soft constraints yet (lunch break, seniority preference) | "We deliberately hardened all *validity* constraints first; preferences are a v2 feature" |
+| Soft *preferences* not modeled yet (seniority priority, gap minimization) | "We deliberately hardened all *validity* constraints first — the midday break is already a hard constraint — and soft preferences are a v2 feature" |
 | Availability is declared per day-of-week, not per calendar date | "A session must fit inside a declared window on a declared day; term-date ranges are future work" |
 | Small demo dataset | "The solver's complexity is independent of dataset size for correctness; performance was verified at 1–2 s for our scale" |
 | Synchronous generation call | "Appropriate at department scale; queues would be the scaling path" |
@@ -176,7 +177,7 @@ These were demonstrated in the running system today:
 
 | Old claim | Correct now |
 |---|---|
-| "6/6 backend tests" | 90 backend tests (380 assertions) + 46 solver tests = 136 total |
+| "6/6 backend tests" | 127 backend tests (537 assertions) + 118 solver tests = 245 total |
 | Faculty Dashboard exists | Removed Sept 2026 — faculty are records, not users |
 | Print/PDF "planned" | Implemented (`PrintableSchedule.tsx`) and demo-verified |
 | "Not enforced" max load | IS enforced (constraint #7, verified in `scheduler.py`) |
@@ -193,12 +194,13 @@ These were demonstrated in the running system today:
 | 15s solver limit | `ai-engine/solver/scheduler.py` (line ~206) |
 | Validation gates (year/semester, lab consistency) | `backend/app/Http/Controllers/ScheduleController.php`, `SectionController.php`, `SubjectController.php` |
 | Publish conflict gate · published-data delete guard (409 + `force=1`) | `backend/app/Http/Controllers/ScheduleApprovalController.php`, `backend/app/Http/Controllers/Concerns/GuardsPublishedReferences.php` |
+| Term lock + generation-time conflict gate (409/422, same-term drafts count, atomic draft replacement) | `backend/app/Http/Controllers/ScheduleController.php`, `backend/config/scheduling.php` |
 | Admin-only routing | `backend/routes/api.php` |
 | 11 domain tables | `backend/database/migrations/` (17 files total incl. framework tables) |
 | Frontend pages (9) | `frontend/src/pages/` |
 | Constraint documentation | `documentation/Constraints.md` |
-| Test counts | `backend/tests/Feature/` (90 tests / 380 assertions), `ai-engine/tests/test_scheduler.py` (46 tests) |
+| Test counts | `backend/tests/Feature/` (127 tests / 537 assertions across 17 files), `ai-engine/tests/` (118 tests across 5 modules; `test_scheduler.py` holds 46) |
 
 ---
 
-*Fact sheet verified October 2, 2026 against the running system and source code.*
+*Fact sheet verified October 10, 2026 against the running system and source code.*

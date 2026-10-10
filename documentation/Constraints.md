@@ -11,12 +11,13 @@ The system implements **eight main constraint categories**, with the **section's
 5. **Faculty no double-booking** — a faculty member cannot teach two overlapping sessions
 6. **Room no double-booking** — a room cannot host two overlapping sessions
 7. **Maximum teaching load** — total scheduled hours per faculty member (including existing load from other schedules) cannot exceed `max_teaching_load`
-8. **Cross-section conflicts** — new sessions cannot conflict with existing approved/published sessions of other sections (faculty, room, or time)
+8. **Cross-section conflicts** — new sessions cannot conflict with other sections' sessions in the **same academic year and semester**; `draft` schedules count alongside `approved` and `published` ones, so two sections planned in one sitting cannot claim the same faculty member or room (faculty, room, or time)
 
 Plus:
 
 - **Section preferred scheduling window** — all sessions must fit within the section's preferred days and time window (`preferred_days`, `preferred_start_time` to `preferred_end_time`); if a subject's required hours don't fit, the solver reports `INFEASIBLE` with a specific explanation
 - **Section self-overlap** — a section cannot attend two sessions at the same time
+- **Midday break** — a configurable hard break (default 12:00–13:00 PM, stored in `settings`) that no session may overlap
 
 ## Solver Objective & Result Terminology
 
@@ -24,6 +25,5 @@ The solver **maximizes the number of successfully scheduled sessions** (best-eff
 
 ## Not Implemented (future work)
 
-- Mandatory lunch break in the daily schedule
 - Priority/preference weighting for senior faculty
 - Faculty scheduling *preferences* as a soft constraint distinct from hard availability (availability is currently a hard rule only)
