@@ -166,10 +166,10 @@ Yes. Gate 4 merges your change onto the session's current values and then valida
 The solver enforces the *scheduling* constraints — no double-booking, room type and capacity, qualification, availability, section preferences, maximum teaching load. The gates enforce *data-integrity* rules at the application layer — lab-hour consistency, subject/section matching, the publish conflict check. The gates never reach OR-Tools.
 
 **"How many tests do you have?"**
-Two suites. The AI engine has **118 unit tests** across five modules that call `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function. The Laravel side has **143 tests / 604 assertions** covering the feature endpoints, including the conflict payload, the term lock and pre-write conflict gate, and the 401 contract. Both suites pass.
+Two suites. The AI engine has **171 unit tests** across eight modules. 118 of them are the five-module solver suite, which calls `generate_schedule()` directly with structured data and no HTTP or database involved — which is possible because the solver is a pure function — and the other 53 cover department ownership and the readiness endpoint. The Laravel side has **143 tests / 604 assertions** covering the feature endpoints, including the conflict payload, the term lock and pre-write conflict gate, and the 401 contract. Both suites pass.
 
 **"Why does the engine's input reading live in `app.py` rather than in the solver?"**
-Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` contains no HTTP code at all and is a pure function — data in, data out. That is what makes the 118 solver tests fast and deterministic.
+Separation of concerns. `app.py` handles HTTP and data access; `scheduler.py` contains no HTTP code at all and is a pure function — data in, data out. That is what makes the solver suite (118 of the engine's 171 tests) fast and deterministic.
 
 **"Show me how a login failure is handled."**
 `AuthController::login` distinguishes the failures rather than reporting them all as validation

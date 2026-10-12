@@ -4,7 +4,7 @@
 *Last updated: reflects work through the frontend, the schedule approval workflow, the cross-section
 conflict protection (term-scoped generation lock, pre-write conflict gate, draft-aware conflict
 checks), generation-log history, the full backend test suite (143 tests), and the AI engine test
-suite (118 tests).*
+suite (171 tests).*
 
 This document records what has actually been built, tested, and verified working — as distinct from
 what was originally planned in `Requirements.md` and `SRS.md`. Use this alongside those files: they
@@ -26,7 +26,7 @@ describe the *intended* system; this describes the *current, working* system.
 | Phase 4 — Frontend (React) | ✅ Done | 10 routes; master-data pages, dashboard, reports, two printable timetables |
 | Phase 5 — AI Scheduling Engine | ✅ Done, tested | CP-SAT solver wired to live PostgreSQL via FastAPI |
 | Phase 6 — Integration | ✅ Done | Laravel → FastAPI → Postgres write-back confirmed end-to-end |
-| Phase 7 — Testing | ✅ Automated suite | 143 backend tests (604 assertions), 118 engine tests |
+| Phase 7 — Testing | ✅ Automated suite | 143 backend tests (604 assertions), 171 engine tests |
 
 ---
 
@@ -280,8 +280,8 @@ Early on, the database was built two ways in parallel: once via raw `schema.sql`
 
 | Target | Command | Current result |
 |---|---|---|
-| Backend | `cd backend && php artisan test` | **143 passed, 604 assertions** |
-| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **118 tests, OK** |
+| Backend | `cd backend && php artisan test` | **143 tests, 604 assertions** (last reported passing) |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **171 tests across 8 modules** |
 | Frontend build / typecheck | `cd frontend && npm run build` | passes |
 | Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings (known debt) |
 

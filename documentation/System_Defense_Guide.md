@@ -146,7 +146,7 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     U->>L: PUT /api/schedules/sessions/{id}
-    L->>DB: Check for conflicts
+    L->>DB: Re-validate the whole merged session against every other section's draft/approved/published sessions in the same academic year and semester
     alt conflicts found
         L-->>U: 422 {conflicts: [...]}
     else no conflicts
@@ -289,7 +289,7 @@ erDiagram
 | 5 | Faculty no double-booking | Same teacher in two places at once | No overlapping time slots |
 | 6 | Room no double-booking | Same room hosting two classes | No overlapping time slots |
 | 7 | Max teaching load | Faculty exceeding max hours | Sum of hours ≤ max_teaching_load |
-| 8 | Cross-section conflicts | Conflicts with published schedules | Check against existing published sessions |
+| 8 | Cross-section conflicts | Clashes with another section's live timetable in the same academic year and semester — **draft**, approved and published sessions all count | Pre-write gate in `ScheduleController::findGeneratedConflicts`; the engine is also given this term's live sessions as constraints |
 
 ### Soft Constraints (Not Yet Implemented)
 
@@ -370,7 +370,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | Backend: 143 feature tests (604 assertions) across 18 files · AI engine: 118 solver unit tests across 5 modules · cross-section conflict suite: 25 tests (101 assertions) · frontend typecheck + production build |
+| Testing | ✅ Complete | Backend: 143 feature tests (604 assertions) across 18 files · AI engine: 171 unit tests across 8 modules (118 of them the five-module solver suite) · cross-section conflict suite: 25 tests (101 assertions) · frontend typecheck + production build |
 | Published-reference delete guard | ✅ Complete | 409 with the exact scope before deleting master data a published schedule depends on; explicit `?force=1` to proceed |
 
 ---
@@ -472,7 +472,7 @@ This is better than failing completely—users get maximum utility from the syst
 
 **Q6: How does the system prevent double-booking of faculty or rooms?**
 
-**A:** Two mechanisms:
+**A:** Three mechanisms:
 1. **CP-SAT Solver (Proactive)**: During generation, the solver enforces constraints that prevent any overlaps:
    - No faculty in two places at same time
    - No room hosting two classes at same time
@@ -483,21 +483,23 @@ This is better than failing completely—users get maximum utility from the syst
    - Returns 422 error with specific conflict details
    - Prevents saving invalid data
 
-This dual approach ensures both generated and manually edited schedules remain conflict-free.
+3. **Generation-time conflict gate (Laravel, before the write)**: generation for a term runs one section at a time behind a cache lock, and the engine's plan is cross-checked against every other section's `draft`/`approved`/`published` session in the same academic year and semester — a clash answers **422** with the specific conflicts and the section's existing draft is left untouched.
+
+These layers ensure both generated and manually edited schedules remain conflict-free.
 
 ---
 
 **Q7: How does the cross-section conflict constraint work?**
 
 **A:** When generating a schedule for a section:
-1. System queries all existing **published** schedules for other sections
+1. System queries the same academic year and semester's existing schedules for other sections — **draft, approved and published** all count as active bookings
 2. Checks if any proposed session would create a conflict:
    - Same faculty teaching two sections at same time
    - Same room used by two sections at same time
 3. If conflict detected, that combination is excluded from solver options
-4. System generates schedule that doesn't conflict with published schedules
+4. Laravel re-checks the finished plan against the same set before writing anything — a clash answers 422 and nothing is persisted
 
-This prevents "overbooking" faculty/rooms across different sections.
+This prevents "overbooking" faculty/rooms across different sections, including two drafts planned in one sitting.
 
 ---
 
@@ -622,11 +624,11 @@ For university scale, architectural changes would be needed, but the core constr
 
 **A:** Testing approach:
 1. **Ad-hoc testing**: Throughout development
-2. **AI engine unit tests**: 118 automated tests across five modules (Python standard-library `unittest`) directly exercise the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Final run: 118 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
+2. **AI engine unit tests**: 171 automated tests across eight modules (Python standard-library `unittest`); 118 of them are the five-module solver suite that directly exercises the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Its last recorded run (the five-module solver suite): 118 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
 4. **Automated backend suite**: 143 Laravel feature tests (604 assertions) across 18 files — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
 
-> Run them with `cd backend && php artisan test` (143 passed) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (118 passed). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
+> Run them with `cd backend && php artisan test` (143 tests — 604 assertions, last reported passing) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (171 tests across 8 modules, counted from the committed files but not re-run in the reconciliation). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
 
 Test coverage:
 - Authentication & RBAC ✅
@@ -644,7 +646,7 @@ Test coverage:
 **A:**
 - **Backend (Laravel)**: PHPUnit (built-in)
 - **Frontend (React)**: TypeScript typecheck + production build
-- **AI Engine**: Python standard-library `unittest` — 118 tests across five modules running the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests`; `pytest` is not installed
+- **AI Engine**: Python standard-library `unittest` — 171 tests across eight modules; 118 of them run the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests`; `pytest` is not installed
 - **Frontend**: no automated test suite — TypeScript typecheck and production build only, which is an honest gap to state if asked
 - **Integration**: Postman/curl for API testing
 
@@ -747,7 +749,7 @@ If availability is empty, system falls back to section's preferred days (best-ef
 1. **Constraint #6**: Room cannot host two sessions simultaneously
 2. **During generation**: Solver assigns unique time-slot combinations to each session
 3. **During manual edit**: Real-time conflict detection blocks invalid assignments
-4. **Cross-section check**: Constraint #8 checks against published schedules
+4. **Cross-section check**: Constraint #8 is enforced against every other section's **draft, approved and published** sessions in the same academic year and semester — twice: once by the engine (as input constraints) and once by Laravel's pre-write gate before anything is stored
 
 Result: No double-booking of rooms across all sections.
 

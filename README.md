@@ -160,8 +160,8 @@ existing subject links alone.
 
 | Target | Command | Current result |
 |---|---|---|
-| Backend | `cd backend && php artisan test` | **143 passed, 604 assertions** |
-| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **118 tests, OK** |
+| Backend | `cd backend && php artisan test` | **143 tests, 604 assertions** (last reported passing) |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **171 tests across 8 modules** |
 | Frontend build / typecheck | `cd frontend && npm run build` | passes (`tsc -b && vite build`) |
 | Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings — known debt (`react-hooks/set-state-in-effect` across the admin pages) |
 

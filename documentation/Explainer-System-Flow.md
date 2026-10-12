@@ -6,6 +6,16 @@
 
 *This file explains the system flow figure so you can present it and defend it. Steps, status codes, and every failure branch were traced through the code and exercised against the running stack.*
 
+> **Canonical source of record.** `screenshots/system-flow.mmd` is the single maintained
+> source for this figure, and it is a `flowchart TB`. The flowchart notation is kept in
+> preference to a sequence diagram because every failure branch is a first-class node in
+> it — 401/403 on entry, 422 on the subject-mismatch gate, 409 when the term lock is
+> already held, 502/422/timeout from the engine call, 422 on the pre-write conflict check,
+> and the rollback when a write fails — and because the render command, the documented
+> dimensions and the drift checker's size expectation are all tied to this rendering. A
+> sequence-diagram variant of the same flow was drafted on another branch and is
+> deliberately *not* adopted, so one figure never has two competing sources.
+
 ---
 
 ## 1. What this figure is

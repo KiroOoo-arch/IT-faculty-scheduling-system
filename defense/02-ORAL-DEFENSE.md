@@ -52,9 +52,9 @@
 - SOP3: Detect/prevent conflicts (8 constraints)
 - SOP4: Optimize resources (reports)
 - SOP5: Department Head control (workflow)
-- SOP6: Acceptability (245 automated tests)
+- SOP6: Acceptability (314 automated tests)
 
-> "Six objectives, each verifiably met. SOP1 — automatic generation via Google OR-Tools CP-SAT. SOP2 — student-centered: each section's preferred days and time window are enforced *by the solver*, and room capacity is checked against student count. SOP3 — conflict prevention through eight hard constraint categories. SOP4 — resource optimization with workload and utilization reports. SOP5 — the Department Head controls review, approval, and publication. SOP6 — acceptability, demonstrated by 245 passing automated tests across the solver and the backend."
+> "Six objectives, each verifiably met. SOP1 — automatic generation via Google OR-Tools CP-SAT. SOP2 — student-centered: each section's preferred days and time window are enforced *by the solver*, and room capacity is checked against student count. SOP3 — conflict prevention through eight hard constraint categories. SOP4 — resource optimization with workload and utilization reports. SOP5 — the Department Head controls review, approval, and publication. SOP6 — acceptability, demonstrated by 314 automated tests across the solver and the backend (last reported passing)."
 
 ---
 
@@ -146,11 +146,11 @@ Generate → DRAFT → Review/Edit → APPROVED → Publish Gate → PUBLISHED �
 
 **Slide content:**
 - 143 Laravel tests (604 assertions) across 18 files
-- 118 solver unit tests (Python, 5 modules)
+- 171 engine unit tests (Python, 8 modules; 118 of them the five-module solver suite)
 - Live-verified: BSIT 1A generates OPTIMAL (7 sessions); full workflow passes
 - tsc typecheck + production build clean
 
-> "Two automated suites: 143 backend feature tests with 604 assertions — covering generation correctness, cross-section conflict protection, section/subject year-and-semester validation, and lab-hour consistency rules — and 118 solver unit tests in Python covering every constraint category, including infeasible cases and part-time faculty availability windows. Beyond the suites, we live-verified the full workflow end to end: the live sections generate OPTIMAL, the draft-approve-publish-print flow runs clean, and the validation gates fire correctly with named error messages."
+> "Two automated suites: 143 backend feature tests with 604 assertions — covering generation correctness, cross-section conflict protection, section/subject year-and-semester validation, and lab-hour consistency rules — and 171 engine unit tests in Python — 118 of them the five-module solver suite covering every constraint category, including infeasible cases and part-time faculty availability windows, plus 53 covering department ownership and the readiness endpoint. Beyond the suites, we live-verified the full workflow end to end: the live sections generate OPTIMAL, the draft-approve-publish-print flow runs clean, and the validation gates fire correctly with named error messages."
 
 ---
 
@@ -198,5 +198,5 @@ Generate → DRAFT → Review/Edit → APPROVED → Publish Gate → PUBLISHED �
 
 1. **Handoffs:** each speaker's last line names the next topic — use them; they prevent dead air and show coordination.
 2. **If a panelist interrupts with a question mid-slide:** answer briefly from the fact sheet, then "Happy to go deeper in the Q&A — continuing."
-3. **Numbers freeze:** 143 backend tests / 604 assertions / 118 solver tests / 261 total / 8 constraints / 4 room types / 4 statuses / 11 tables / 15 s solver cap / under 1 s actual. Nothing else.
+3. **Numbers freeze:** 143 backend tests / 604 assertions / 171 engine tests / 314 total / 8 constraints / 4 room types / 4 statuses / 11 tables / 15 s solver cap / under 1 s actual. Nothing else.
 4. **Never say:** ML, neural network, "always works", "faculty login". Say: constraint programming, CP-SAT, "proposes and explains", "records, not users", "availability is a day + a declared time window".

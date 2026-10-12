@@ -69,7 +69,7 @@
 | AI Schedule Generation | ✅ OPTIMAL / FEASIBLE / PARTIAL / INFEASIBLE |
 | Subject–Section Year/Semester Validation | ✅ Mismatched assignments rejected with 422; generation blocked (AI engine never called) |
 | Subject Lab Consistency Validation | ✅ Invalid lab_hours/lab_room_type combinations rejected with 422 on create and update |
-| AI Engine Unit Tests | ✅ 118 unit tests across five modules directly exercising the CP-SAT solver (`generate_schedule()`) via stdlib unittest — 118 tests OK, 0 failed, 0 skipped, 0 warnings/errors |
+| AI Engine Unit Tests | ✅ 171 unit tests across eight modules — 118 of them the five-module solver suite directly exercising the CP-SAT solver (`generate_schedule()`) via stdlib unittest; that five-module suite's last run passed (0 failed, 0 skipped) |
 | Manual Edit Conflict Check | ✅ Real-time validation |
 | Published-Reference Delete Guard | ✅ Deleting faculty/subject/room/section still used by a published schedule returns HTTP 409; `?force=1` overrides after confirmation |
 | Schedule Approval Workflow | ✅ Draft → Approved → Published |
@@ -107,7 +107,7 @@
 
 ## Notes
 
-This document reflects the current state of the system as of October 2026. Most recent full verification: backend **143 tests passed (604 assertions)**, AI scheduler **118 unit tests passed** across five modules (0 failed/skipped/warnings), frontend production build passed, and the full live lifecycle verified (generate → review/edit → approve → publish → print → unpublish). This supersedes the September 16 verification, which recorded 90 backend tests / 380 assertions and 46 engine tests.
+This document reflects the current state of the system as of October 2026. **Last reported verification (historical — not re-run during the documentation reconciliation):** backend **143 tests (604 assertions)**, AI scheduler **171 unit tests** across eight modules (counted from the committed files; the five-module solver suite's last run reported 0 failed/skipped/warnings), frontend production build passing, and the full live lifecycle verified (generate → review/edit → approve → publish → print → unpublish). This supersedes the September 16 verification, which recorded 90 backend tests / 380 assertions and 46 engine tests.
 
 **September 27, 2026 — defects found by live API verification and fixed:** a fully-placed `FEASIBLE` solver result is now accepted (it was previously reported to the Admin as "No feasible schedule found."), and an unreachable AI engine now answers `502` while still writing a `failure` generation-log row (it previously returned a raw `500` and logged nothing). Regression tests were added; the suite has since grown from the 90 tests / 380 assertions recorded at the time of that fix to **143 tests / 604 assertions**, all passing.
 

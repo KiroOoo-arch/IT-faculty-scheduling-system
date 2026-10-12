@@ -1,0 +1,13 @@
+{
+  "theme": "default",
+  "sequence": {
+    "wrap": true,
+    "actorMargin": 90,
+    "messageMargin": 34,
+    "noteMargin": 12
+  },
+  "flowchart": {
+    "useMaxWidth": false,
+    "htmlLabels": true
+  }
+}

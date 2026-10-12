@@ -362,7 +362,7 @@ Session-level reasons are always preserved: structurally impossible sessions (no
 | Reports data | `backend/app/Http/Controllers/ReportController.php` | `facultyWorkload`, `roomUtilization`, `conflicts`, `scheduleStatusOverview`, `sectionSummary` |
 | AI engine endpoint | `ai-engine/api/app.py` | `generate_schedule_for_section`, `health`, `get_connection` |
 | Solver | `ai-engine/solver/scheduler.py` | `generate_schedule()` |
-| Solver test suite | `ai-engine/tests/` (5 modules) | 118 unittest cases against `generate_schedule()`; `test_scheduler.py` holds 46 of them |
+| Engine test suite | `ai-engine/tests/` (8 modules) | 171 unittest cases — 118 of them the five-module solver suite against `generate_schedule()`; `test_scheduler.py` holds 46 of them |
 
 ---
 
@@ -412,6 +412,6 @@ Every status code and branch in §2, §3 and §4 was driven against the running 
 | `INFEASIBLE` result | section given a lab subject and a student count above every room capacity, then generate | `422 {"status":"INFEASIBLE","message":"No sessions could be scheduled. See individual reasons."}` + `failure` row storing all three sessions with reasons (`No room of type 'lecture' exists for this lecture session.`, `No room of type 'computer_lab' exists for this laboratory session.`) |
 | `reject` transition | `PATCH /schedules/{id}/reject` on a draft | `200` → `status = rejected`; `DELETE` afterwards → `200` (every unpublished schedule is deletable); `approve` → `422 … currently 'rejected'.` |
 
-**Still read from source, not exercised here:** the engine's own `500` paths (`psycopg2.Error`, unexpected exception), FastAPI's `404` for a deleted section, and the five `GET /api/reports/*` endpoints (§3.6), plus the frontend-side behaviors described in §4.4 — those were traced in code and in the earlier UI walkthrough, not re-run in this pass. The AI-engine suite as it then stood was re-run and passes (`Ran 53 tests … OK`) — it has since grown to 118 tests across five modules — which is what makes `FEASIBLE` a real, reachable engine result.
+**Still read from source, not exercised here:** the engine's own `500` paths (`psycopg2.Error`, unexpected exception), FastAPI's `404` for a deleted section, and the five `GET /api/reports/*` endpoints (§3.6), plus the frontend-side behaviors described in §4.4 — those were traced in code and in the earlier UI walkthrough, not re-run in this pass. The AI-engine suite as it then stood was re-run and passes (`Ran 53 tests … OK`) — it has since grown to 171 tests across eight modules — which is what makes `FEASIBLE` a real, reachable engine result.
 
 **State restored:** every row created for these probes (schedules, sessions, generation-log rows, the scratch section, the non-admin account) was deleted afterwards. After the later cleanup of the stale draft schedule #73 (and its out-of-window session #300), the demo database holds: 31 schedules (29 archived / 1 published / 1 draft), 86 sessions, 53 generation logs, with 0 remaining faculty-availability violations.

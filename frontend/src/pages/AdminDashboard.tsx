@@ -301,13 +301,23 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-[#0a2f9c]">{SYSTEM_ORG}</p>
-            <h1 className="text-2xl font-bold text-gray-800">Welcome, {user?.name}</h1>
-            <p className="mt-1 text-sm font-semibold text-[#0a2f9c]">{SYSTEM_NAME}</p>
+        <div className="flex justify-between items-center mb-6 gap-4">
+          <div className="flex items-center gap-4">
+            {/* The college seal — the same artwork the printable letterhead
+                draws from — so the dashboard and the printed timetable share
+                one identity. */}
+            <img
+              src="/lcc-seal.png"
+              alt="Lapu-Lapu City College seal"
+              className="h-16 w-16 shrink-0 object-contain"
+            />
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-[#0a2f9c]">{SYSTEM_ORG}</p>
+              <h1 className="text-2xl font-bold text-gray-800">Welcome, {user?.name}</h1>
+              <p className="mt-1 text-sm font-semibold text-[#0a2f9c]">{SYSTEM_NAME}</p>
+            </div>
           </div>
-          <button onClick={logout} className="btn-navy-outline">Log out</button>
+          <button onClick={logout} className="btn-navy-outline shrink-0">Log out</button>
         </div>
 
         {/* A failed initial load used to surface only inside the faculty table at
