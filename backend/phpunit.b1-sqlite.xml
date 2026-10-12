@@ -1,15 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Temporary, local configuration for running only the two B1 classification
-    tests (not the whole DepartmentPreflightTest class) against a throwaway
+    Local harness for the SQLite-compatible part of DepartmentPreflightTest:
+    the 24 of its 25 tests that do not need PostgreSQL, run against a throwaway
     in-memory SQLite database.
+
+    The one test left out is
+    it_fails_when_the_department_migrations_have_not_been_applied. It runs
+    "DROP TABLE IF EXISTS ... CASCADE", which is not SQLite syntax, so it is
+    PostgreSQL-only and is never part of this run; the other 24 pass here,
+    including it_fails_when_the_classification_column_has_not_been_applied,
+    whose "ALTER TABLE ... DROP COLUMN" SQLite does support.
+
+    PHPUnit cannot name individual tests in this file: a testsuite can include
+    or exclude files, and it can list tests tagged into a group, but it cannot
+    name methods. The file element below therefore selects the whole class, and
+    the selection is narrowed on the command line with PHPUnit's exclude filter
+    option, which is documented at the top of tests/bootstrap.b1-sqlite.php.
+    Without it an unfiltered run of this configuration would select all 25
+    tests and fail on the PostgreSQL-only one, so the bootstrap refuses that
+    invocation, and any other whose selection includes that test, before a
+    single test is loaded.
 
     It is deliberately separate from phpunit.xml and phpunit.isolated.xml, both
     of which target PostgreSQL. force="true" means these values win over
-    anything already in the environment, and tests/bootstrap.b1-sqlite.php
-    refuses to run at all unless the resolved connection really is sqlite
-    in-memory, with the pdo_sqlite driver loaded for the process. The exact run
-    command is documented at the top of that bootstrap file.
+    anything already in the environment, and the bootstrap refuses to run at all
+    unless the resolved connection really is sqlite in-memory, with the
+    pdo_sqlite driver loaded for the process.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
@@ -17,7 +33,7 @@
          colors="true"
 >
     <testsuites>
-        <testsuite name="B1 classification mapping">
+        <testsuite name="DepartmentPreflightTest, SQLite-compatible tests">
             <file>tests/Feature/DepartmentPreflightTest.php</file>
         </testsuite>
     </testsuites>
