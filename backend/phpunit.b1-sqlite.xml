@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Temporary, local configuration for running only the two B1 classification
+    tests (not the whole DepartmentPreflightTest class) against a throwaway
+    in-memory SQLite database.
+
+    It is deliberately separate from phpunit.xml and phpunit.isolated.xml, both
+    of which target PostgreSQL. force="true" means these values win over
+    anything already in the environment, and tests/bootstrap.b1-sqlite.php
+    refuses to run at all unless the resolved connection really is sqlite
+    in-memory, with the pdo_sqlite driver loaded for the process. The exact run
+    command is documented at the top of that bootstrap file.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.b1-sqlite.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="B1 classification mapping">
+            <file>tests/Feature/DepartmentPreflightTest.php</file>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
+        <env name="BCRYPT_ROUNDS" value="4" force="true"/>
+        <env name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
+        <env name="DB_CONNECTION" value="sqlite" force="true"/>
+        <env name="DB_DATABASE" value=":memory:" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <env name="MAIL_MAILER" value="array" force="true"/>
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="SESSION_DRIVER" value="array" force="true"/>
+        <env name="PULSE_ENABLED" value="false" force="true"/>
+        <env name="TELESCOPE_ENABLED" value="false" force="true"/>
+        <env name="NIGHTWATCH_ENABLED" value="false" force="true"/>
+    </php>
+</phpunit>

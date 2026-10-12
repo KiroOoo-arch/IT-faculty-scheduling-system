@@ -230,6 +230,26 @@ class DepartmentPreflightTest extends TestCase
     }
 
     #[Test]
+    public function it_fails_when_a_listed_minor_is_stored_as_a_major(): void
+    {
+        /**
+         * The direction the major check cannot see, and the reason both directions
+         * are judged: a listed minor stored as a major silently stops being open to
+         * every department and becomes schedulable only where the access table
+         * allows, so what is deployed is no longer the reviewed shape.
+         */
+        $this->seed(DepartmentSeeder::class);
+
+        $this->makeSubject('MATH1', $this->departmentId('BIT'), Subject::CLASSIFICATION_MAJOR);
+
+        $this->assertNotReady(
+            'MATH1 is listed as a minor / shared subject',
+            "but is classified as 'major'",
+            'schedulable only by the departments authorized for it',
+        );
+    }
+
+    #[Test]
     public function it_fails_when_a_listed_majors_owner_holds_no_access_grant(): void
     {
         /**
@@ -243,6 +263,29 @@ class DepartmentPreflightTest extends TestCase
 
         $this->assertNotReady(
             'PROG1 is listed as a major authorized for BIT but has no subject_department_access row for it',
+            'so that department cannot schedule it',
+        );
+    }
+
+    #[Test]
+    public function it_fails_when_an_unlisted_majors_owner_holds_no_access_grant(): void
+    {
+        /**
+         * The same mandatory owner row, for a major the reviewed mapping does not
+         * list — a subject someone reviewed through the subject editor or the bulk
+         * review instead of the backfill. Enforcement reads the access table alone,
+         * so without the owner's row this major is schedulable nowhere; and because
+         * the mapping cannot describe it, it used to be skipped entirely.
+         */
+        $this->seed(DepartmentSeeder::class);
+
+        // LEGACY1 is on none of the seeder's lists: it stands in for a subject
+        // reviewed directly rather than backfilled.
+        $this->makeSubject('LEGACY1', $this->departmentId('BIT'), Subject::CLASSIFICATION_MAJOR, ownerGrant: false);
+
+        $this->assertNotReady(
+            'LEGACY1 is a major outside the reviewed mapping',
+            'its owning department BIT holds no subject_department_access row for it',
             'so that department cannot schedule it',
         );
     }
@@ -382,6 +425,40 @@ class DepartmentPreflightTest extends TestCase
         $output = $this->assertReady();
 
         $this->assertStringContainsString('1 major, 1 minor / shared and 0 unclassified subject(s)', $output);
+    }
+
+    #[Test]
+    public function it_passes_when_a_listed_minor_is_stored_as_a_minor(): void
+    {
+        $this->seed(DepartmentSeeder::class);
+
+        $this->makeSubject('MATH1');
+
+        $output = $this->assertReady();
+
+        $this->assertStringContainsString('0 major, 1 minor / shared and 0 unclassified subject(s)', $output);
+        $this->assertSame(Subject::CLASSIFICATION_MINOR, Subject::where('code', 'MATH1')->value('classification'));
+        $this->assertNull(Subject::where('code', 'MATH1')->value('department_id'));
+    }
+
+    #[Test]
+    public function it_passes_when_an_unlisted_majors_owner_holds_its_access_grant(): void
+    {
+        /**
+         * The other half of the rule: a major outside the reviewed mapping that does
+         * hold its owner's row is a legitimate, schedulable major, because a human
+         * reviewed it. It must not be refused — being unlisted is not by itself a
+         * fault, which is why the check falls back to its own owning department
+         * rather than demanding a mapping entry.
+         */
+        $this->seed(DepartmentSeeder::class);
+
+        $subject = $this->makeSubject('LEGACY1', $this->departmentId('BIT'), Subject::CLASSIFICATION_MAJOR);
+
+        $output = $this->assertReady();
+
+        $this->assertStringContainsString('1 major, 0 minor / shared and 0 unclassified subject(s)', $output);
+        $this->assertSame([$this->departmentId('BIT')], $subject->authorizedDepartmentIds());
     }
 
     #[Test]
