@@ -49,6 +49,7 @@ class PublishedReferenceGuardTest extends TestCase
     {
         $subject = Subject::create([
             'code' => 'PROG1',
+            'classification' => 'minor',
             'title' => 'Programming 1',
             'year_level' => 1,
             'semester_name' => '1st Semester',
@@ -272,6 +273,7 @@ class PublishedReferenceGuardTest extends TestCase
     {
         $subject = Subject::create([
             'code' => 'UNUSED1',
+            'classification' => 'minor',
             'title' => 'Unused',
             'year_level' => 1,
             'semester_name' => '1st Semester',

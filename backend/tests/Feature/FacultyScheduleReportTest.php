@@ -56,6 +56,7 @@ class FacultyScheduleReportTest extends TestCase
 
         $this->subject = Subject::create([
             'code' => 'PROG2', 'title' => 'Programming 2', 'year_level' => 2,
+            'classification' => 'minor',
             'semester_name' => '1st Semester', 'lecture_hours' => 2, 'lab_hours' => 0,
             'is_active' => true,
         ]);

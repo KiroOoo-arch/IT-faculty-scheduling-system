@@ -409,6 +409,15 @@ export default function AdminDashboard() {
                       }`}>{schedule.status}</span>
                     </div>
                     <div className="flex gap-2">
+                      {/* The multi-session editor: split a subject across days, and the
+                          required/scheduled/remaining hours the table below does not show.
+                          A published schedule opens read-only. */}
+                      {['draft', 'approved', 'published'].includes(schedule.status) && (
+                        <a href={`/admin/schedules/${schedule.id}/sessions`}
+                          className="bg-[#0a2f9c] hover:bg-[#08227a] text-white px-3 py-1.5 rounded text-sm transition">
+                          Sessions
+                        </a>
+                      )}
                       {schedule.status === 'draft' && (
                         <button onClick={() => handleApprove(schedule.id)}
                           className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition">Approve</button>

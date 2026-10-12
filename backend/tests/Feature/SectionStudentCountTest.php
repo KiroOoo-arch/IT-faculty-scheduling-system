@@ -156,6 +156,7 @@ class SectionStudentCountTest extends TestCase
     {
         $mismatched = Subject::create([
             'code' => 'PROG2', 'title' => 'Programming 2',
+            'classification' => 'minor',
             'year_level' => 2, 'semester_name' => '2nd Semester',
             'lecture_hours' => 2, 'lab_hours' => 0,
         ]);

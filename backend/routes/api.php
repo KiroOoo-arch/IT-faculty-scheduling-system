@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\FacultyController;
 use App\Http\Controllers\LegalController;
 use App\Http\Controllers\SubjectController;
@@ -35,11 +36,16 @@ Route::middleware('auth:sanctum')->group(function () {
     // All routes below are admin-only (EnsureUserIsAdmin middleware).
     // Faculty are records, not users — no faculty accounts exist.
     Route::middleware('admin')->group(function () {
+        // Departments exist only to own major subjects; the list is read-only
+        // vocabulary for the Subject and Section screens.
+        Route::get('/departments', [DepartmentController::class, 'index']);
+
         Route::apiResource('faculties', FacultyController::class);
         Route::apiResource('subjects', SubjectController::class);
         Route::apiResource('rooms', RoomController::class);
         Route::apiResource('sections', SectionController::class);
 
+        // Schedule generation + lifecycle (admin only).
         Route::post('/schedules/generate/{section}', [ScheduleController::class, 'generate']);
         Route::get('/schedules', [ScheduleApprovalController::class, 'index']);
         Route::get('/schedules/{schedule}', [ScheduleApprovalController::class, 'show']);
@@ -47,8 +53,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/schedules/{schedule}/publish', [ScheduleApprovalController::class, 'publish']);
         Route::patch('/schedules/{schedule}/unpublish', [ScheduleApprovalController::class, 'unpublish']);
         Route::patch('/schedules/{schedule}/reject', [ScheduleApprovalController::class, 'reject']);
-        Route::put('/schedules/sessions/{session}', [ScheduleSessionController::class, 'update']);
         Route::delete('/schedules/{schedule}', [ScheduleApprovalController::class, 'destroy']);
+
+        // Schedule sessions — the multi-session editor (admin only).
+        Route::get('/schedules/{schedule}/sessions', [ScheduleSessionController::class, 'index']);
+        Route::post('/schedules/{schedule}/sessions', [ScheduleSessionController::class, 'store']);
+        Route::put('/schedules/{schedule}/sessions', [ScheduleSessionController::class, 'updateBatch']);
+        Route::delete('/schedules/{schedule}/sessions', [ScheduleSessionController::class, 'destroy']);
+
+        // Manual single-session edit — kept for legacy clients (admin only).
+        Route::put('/schedules/sessions/{session}', [ScheduleSessionController::class, 'update']);
 
         // Institutional settings the Department Head owns (the midday break).
         Route::get('/settings', [SettingController::class, 'index']);
@@ -71,6 +85,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/faculties/{faculty}/subjects/{subjectId}', [FacultyController::class, 'detachSubject']);
         Route::post('/faculties/{faculty}/availability', [FacultyController::class, 'updateAvailability']);
         Route::get('/faculties/{faculty}/availability', [FacultyController::class, 'getAvailability']);
+        // No authentication endpoints are registered in this group. A second
+        // `POST /login` declared here would shadow the public one above —
+        // Laravel keys routes by method + URI, so the last registration wins —
+        // and every sign-in attempt would be answered 401 by the middleware
+        // before the controller ever ran.
         Route::get('/login', function () {
         return response()->json(['message' => 'Unauthenticated.'], 401);
         })->name('login');

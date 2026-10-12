@@ -57,6 +57,7 @@ class ScheduleGenerationSectionTest extends TestCase
 
         $this->subject = Subject::create([
             'code' => 'PROG2',
+            'classification' => 'minor',
             'title' => 'Programming 2',
             'year_level' => 2,
             'semester_name' => '1st Semester',

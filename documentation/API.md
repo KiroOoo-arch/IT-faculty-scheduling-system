@@ -42,15 +42,42 @@ acceptance status and record endpoints act only on the caller's own account. 55 
 | POST | `/api/faculties/{id}/subjects` | ✅ Implemented | Attach qualified subjects (`subject_ids`) |
 | DELETE | `/api/faculties/{id}/subjects/{subjectId}` | ✅ Implemented | Detach one subject |
 
+### Department Management
+
+| Method | Endpoint | Status | Description |
+|---|---|---|---|
+| GET | `/api/departments` | ✅ Implemented | List departments as `{id, code, name}`, ordered by `code`. Admin only |
+
+> **Codes are handles; names are labels.** `code` (`BIT`, `ELEC`) is what ownership, access grants,
+> section name prefixes and `?department_id=` key on, and it never changes. `name` is what the admin
+> screens print — currently **Industrial Technology** (`BIT`) and **BindTech Electronics** (`ELEC`).
+> Renaming a department is an edit to `DepartmentSeeder::DEPARTMENTS` plus a re-seed: the seeder matches
+> on `code` and rewrites a name only when the stored one differs, so an authorized seed renames the
+> existing row instead of adding a second department, and it leaves subjects, grants, sections and
+> schedules untouched. Creating or editing departments is deliberately not exposed over the API yet.
+
 ### Subject Management
 
 | Method | Endpoint | Status | Description |
 |---|---|---|---|
-| GET | `/api/subjects` | ✅ Implemented | List all subjects with nested `faculties` |
+| GET | `/api/subjects` | ✅ Implemented | List all subjects with nested `faculties`, owner and `department_access`. `?department_id=N` narrows the list to what that department may schedule — its authorized majors plus every minor / shared subject — and `?department_id=` (empty) returns the minors only, which is what a section with no department may take |
 | GET | `/api/subjects/{id}` | ✅ Implemented | Get one subject record |
 | POST | `/api/subjects` | ✅ Implemented | Create subject. Validates lab consistency: `lab_hours > 0` requires `lab_room_type` of `computer_lab`, `science_lab`, or `electronics_lab`; `lab_hours = 0` requires `lab_room_type` null. Violations → **422** |
-| PUT | `/api/subjects/{id}` | ✅ Implemented | Update subject — same lab consistency validation as create |
+| PUT | `/api/subjects/{id}` | ✅ Implemented | Update subject — same lab consistency validation as create, plus the classification rules below |
 | DELETE | `/api/subjects/{id}` | ✅ Implemented | Delete subject. **409** if a published schedule still uses it; retry with `?force=1` |
+
+> **Classification.** Every subject is `major`, `minor` or `unclassified` (`classification`; omitted on
+> create means `unclassified`). A `major` needs a `department_id` and gets that department's row in
+> `subject_department_access` automatically; `access_department_ids` adds further departments (this is how
+> `ELEC201` is shared with BIT). A `minor` must have no `department_id` and no grants; an `unclassified`
+> subject is schedulable nowhere and is rejected by section assignment and by generation. A change that
+> would leave an existing section holding a subject it may not schedule is refused with **422** rather than
+> stranding the assignment.
+>
+> The admin Subjects screen sends all three fields on every save (`classification`, `department_id`,
+> `access_department_ids`), including `department_id: null` and an empty access list for a minor or an
+> unclassified subject, so the stored row is explicit and never depends on the server inferring an
+> outcome. Section editors are offered only what this contract permits.
 
 ### Room Management
 

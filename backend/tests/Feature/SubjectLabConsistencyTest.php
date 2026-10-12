@@ -146,6 +146,7 @@ class SubjectLabConsistencyTest extends TestCase
         // Start from a valid lab subject
         $subject = Subject::create($this->validPayload([
             'code' => 'PROG2',
+            'classification' => 'minor',
             'title' => 'Programming 2',
             'lecture_hours' => 2,
             'lab_hours' => 3,
@@ -174,6 +175,7 @@ class SubjectLabConsistencyTest extends TestCase
         // Lecture-only subject gains a lab component the correct way
         $subject = Subject::create($this->validPayload([
             'code' => 'NET1',
+            'classification' => 'minor',
             'title' => 'Networking 1',
         ]));
 
@@ -198,6 +200,7 @@ class SubjectLabConsistencyTest extends TestCase
     {
         $subject = Subject::create($this->validPayload([
             'code' => 'PROG3',
+            'classification' => 'minor',
             'title' => 'Programming 3',
             'lecture_hours' => 2,
             'lab_hours' => 3,

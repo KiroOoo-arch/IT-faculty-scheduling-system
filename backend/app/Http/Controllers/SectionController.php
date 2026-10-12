@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\GuardsPublishedReferences;
+use App\Models\Department;
 use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use App\Models\Section;
@@ -50,14 +51,69 @@ class SectionController extends Controller
         return $mismatches;
     }
 
+    /**
+     * The section a proposed assignment would land in, built without touching the
+     * database: the gate runs before the section exists (create) or before it is
+     * updated, and the rule it consults only reads a name and a department.
+     */
+    private function candidateSection(string $name, ?int $departmentId): Section
+    {
+        $section = new Section([
+            'name' => $name,
+            'department_id' => $departmentId,
+        ]);
+
+        $section->setRelation(
+            'department',
+            $departmentId === null ? null : Department::find($departmentId)
+        );
+
+        return $section;
+    }
+
+    /**
+     * Validate that every subject assigned to a section may actually be scheduled
+     * there. Returns one sentence per offending subject, or an empty array when
+     * all are allowed.
+     *
+     * The judgement is made by the Subject model — a minor is allowed everywhere,
+     * a major only where a department is authorized for it, an unclassified
+     * subject nowhere — so the section editor, the subject list, the generation
+     * gate and the session validator cannot disagree about what a department may
+     * take.
+     */
+    private function subjectDepartmentConflicts(string $sectionName, ?int $departmentId, array $subjectIds): array
+    {
+        if (empty($subjectIds)) {
+            return [];
+        }
+
+        $subjects = Subject::with('department')->whereIn('id', $subjectIds)->get();
+        $target = null;
+
+        $conflicts = [];
+
+        foreach ($subjects as $subject) {
+            $target ??= $this->candidateSection($sectionName, $departmentId);
+
+            $reason = $subject->assignmentConflictReason($target);
+
+            if ($reason !== null) {
+                $conflicts[] = $reason;
+            }
+        }
+
+        return $conflicts;
+    }
+
     public function index()
     {
-        return response()->json(Section::with('subjects')->get());
+        return response()->json(Section::with(['department', 'subjects.department'])->get());
     }
 
     public function show(Section $section)
     {
-        $section->load('subjects');
+        $section->load(['department', 'subjects.department']);
 
         return response()->json($section);
     }
@@ -90,6 +146,10 @@ class SectionController extends Controller
             'preferred_start_time' => 'required|date_format:H:i',
             'preferred_end_time' => 'required|date_format:H:i|after:preferred_start_time',
             'student_count' => 'sometimes|integer|min:1|max:1000',
+            // The owning department decides which major subjects this section may
+            // take. Absent or null means no department, and then only shared /
+            // minor subjects are allowed.
+            'department_id' => 'sometimes|nullable|integer|exists:departments,id',
             'subject_ids' => 'sometimes|array',
             'subject_ids.*' => 'exists:subjects,id',
         ]);
@@ -105,6 +165,21 @@ class SectionController extends Controller
                     'message' => 'Some subjects do not match this section\'s year level and semester: '
                         . implode(' ', $mismatches),
                     'errors' => ['subject_ids' => $mismatches],
+                ], 422);
+            }
+
+            $conflicts = $this->subjectDepartmentConflicts(
+                $validated['name'],
+                array_key_exists('department_id', $validated) && $validated['department_id'] !== null
+                    ? (int) $validated['department_id']
+                    : null,
+                $validated['subject_ids']
+            );
+            if (!empty($conflicts)) {
+                return response()->json([
+                    'message' => 'Some subjects do not belong to this section\'s department: '
+                        . implode(' ', $conflicts),
+                    'errors' => ['subject_ids' => $conflicts],
                 ], 422);
             }
         }
@@ -125,13 +200,19 @@ class SectionController extends Controller
             $attributes['student_count'] = $validated['student_count'];
         }
 
+        // Set when supplied, including an explicit null (no department), so a
+        // client can clear the owner as well as change it.
+        if (array_key_exists('department_id', $validated)) {
+            $attributes['department_id'] = $validated['department_id'];
+        }
+
         $section = Section::create($attributes);
 
         if (!empty($validated['subject_ids'])) {
             $section->subjects()->sync($validated['subject_ids']);
         }
 
-        return response()->json($section->load('subjects'), 201);
+        return response()->json($section->load(['department', 'subjects.department']), 201);
     }
 
     public function update(Request $request, Section $section)
@@ -158,6 +239,7 @@ class SectionController extends Controller
             'preferred_start_time' => 'sometimes|date_format:H:i',
             'preferred_end_time' => 'sometimes|date_format:H:i',
             'student_count' => 'sometimes|integer|min:1|max:1000',
+            'department_id' => 'sometimes|nullable|integer|exists:departments,id',
             'subject_ids' => 'sometimes|array',
             'subject_ids.*' => 'exists:subjects,id',
         ]);
@@ -165,6 +247,9 @@ class SectionController extends Controller
         // Effective values: submitted changes merged over the section's current state
         $effectiveYearLevel = $validated['year_level'] ?? $section->year_level;
         $effectiveSemester = $validated['semester_name'] ?? $section->semester_name;
+        $effectiveDepartmentId = array_key_exists('department_id', $validated)
+            ? ($validated['department_id'] === null ? null : (int) $validated['department_id'])
+            : ($section->department_id === null ? null : (int) $section->department_id);
 
         // The window is validated on the merged state, not on the payload: a
         // partial update that moves only one end can still invert the window
@@ -198,13 +283,36 @@ class SectionController extends Controller
             }
         }
 
+        // Ownership is checked on the merged state too. Moving a section to
+        // another department must be refused when it still holds a major of the
+        // old one — otherwise the rule could be bypassed by editing the section
+        // instead of its subject list.
+        $departmentChanged = array_key_exists('department_id', $validated) && $effectiveDepartmentId !== ($section->department_id === null ? null : (int) $section->department_id);
+
+        if (isset($validated['subject_ids']) || $departmentChanged) {
+            $candidateIds = $validated['subject_ids'] ?? $section->subjects()->pluck('subjects.id')->all();
+
+            $conflicts = $this->subjectDepartmentConflicts(
+                $validated['name'] ?? $section->name,
+                $effectiveDepartmentId,
+                $candidateIds
+            );
+            if (!empty($conflicts)) {
+                return response()->json([
+                    'message' => 'Some subjects do not belong to this section\'s department: '
+                        . implode(' ', $conflicts),
+                    'errors' => ['subject_ids' => $conflicts],
+                ], 422);
+            }
+        }
+
         $section->update(collect($validated)->except('subject_ids')->toArray());
 
         if (isset($validated['subject_ids'])) {
             $section->subjects()->sync($validated['subject_ids']);
         }
 
-        return response()->json($section->load('subjects'));
+        return response()->json($section->load(['department', 'subjects.department']));
     }
 
     public function destroy(Request $request, Section $section)
@@ -244,6 +352,11 @@ class SectionController extends Controller
  * - store(): create a new section and attach subjects
  * - update(): edit an existing section and update subjects
  * - destroy(): delete a section
+ *
+ * Department ownership: a section may only be assigned subjects that are shared
+ * / minor (no owning department) or owned by the section's own department. The
+ * check runs both when the subject list changes and when the section's
+ * department changes, so neither edit can leave an invalid pairing behind.
  *
  * Also cleans AM/PM time input before validation and returns JSON responses.
  */

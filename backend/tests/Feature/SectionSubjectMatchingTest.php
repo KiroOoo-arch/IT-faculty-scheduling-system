@@ -62,6 +62,7 @@ class SectionSubjectMatchingTest extends TestCase
     {
         $subject = Subject::create([
             'code' => 'PROG1', 'title' => 'Programming 1',
+            'classification' => 'minor',
             'year_level' => 1, 'semester_name' => '1st Semester',
             'lecture_hours' => 2, 'lab_hours' => 3,
         ]);
@@ -78,6 +79,7 @@ class SectionSubjectMatchingTest extends TestCase
     {
         $subject = Subject::create([
             'code' => 'PROG2', 'title' => 'Programming 2',
+            'classification' => 'minor',
             'year_level' => 1, 'semester_name' => '2nd Semester',
             'lecture_hours' => 2, 'lab_hours' => 3,
         ]);
@@ -98,6 +100,7 @@ class SectionSubjectMatchingTest extends TestCase
     {
         $subject = Subject::create([
             'code' => 'CAPSTONE', 'title' => 'Capstone Project',
+            'classification' => 'minor',
             'year_level' => 3, 'semester_name' => '1st Semester',
             'lecture_hours' => 2, 'lab_hours' => 0,
         ]);
@@ -115,16 +118,19 @@ class SectionSubjectMatchingTest extends TestCase
     {
         $wrongSemester = Subject::create([
             'code' => 'MATH2', 'title' => 'Calculus 2',
+            'classification' => 'minor',
             'year_level' => 1, 'semester_name' => '2nd Semester',
             'lecture_hours' => 3, 'lab_hours' => 0,
         ]);
         $wrongYear = Subject::create([
             'code' => 'NET2', 'title' => 'Networking 2',
+            'classification' => 'minor',
             'year_level' => 2, 'semester_name' => '1st Semester',
             'lecture_hours' => 2, 'lab_hours' => 3,
         ]);
         $matching = Subject::create([
             'code' => 'PROG1', 'title' => 'Programming 1',
+            'classification' => 'minor',
             'year_level' => 1, 'semester_name' => '1st Semester',
             'lecture_hours' => 2, 'lab_hours' => 3,
         ]);
@@ -147,6 +153,7 @@ class SectionSubjectMatchingTest extends TestCase
 
         $wrongSubject = Subject::create([
             'code' => 'SAD', 'title' => 'Software Analysis and Design',
+            'classification' => 'minor',
             'year_level' => 3, 'semester_name' => '1st Semester',
             'lecture_hours' => 3, 'lab_hours' => 0,
         ]);
@@ -168,6 +175,7 @@ class SectionSubjectMatchingTest extends TestCase
 
         $secondSemSubject = Subject::create([
             'code' => 'PROG2', 'title' => 'Programming 2',
+            'classification' => 'minor',
             'year_level' => 1, 'semester_name' => '2nd Semester',
             'lecture_hours' => 2, 'lab_hours' => 3,
         ]);
@@ -190,6 +198,7 @@ class SectionSubjectMatchingTest extends TestCase
 
         $subject = Subject::create([
             'code' => 'PROG1', 'title' => 'Programming 1',
+            'classification' => 'minor',
             'year_level' => 1, 'semester_name' => '1st Semester',
             'lecture_hours' => 2, 'lab_hours' => 0,
         ]);
@@ -239,6 +248,7 @@ class SectionSubjectMatchingTest extends TestCase
         // Legacy bad data: a 1st-sem subject attached to a 2nd-sem section
         $wrongSubject = Subject::create([
             'code' => 'PROG1', 'title' => 'Programming 1',
+            'classification' => 'minor',
             'year_level' => 1, 'semester_name' => '1st Semester',
             'lecture_hours' => 2, 'lab_hours' => 0,
         ]);
@@ -263,6 +273,7 @@ class SectionSubjectMatchingTest extends TestCase
 
         $wrongYearSubject = Subject::create([
             'code' => 'CAPSTONE', 'title' => 'Capstone Project',
+            'classification' => 'minor',
             'year_level' => 3, 'semester_name' => '1st Semester',
             'lecture_hours' => 2, 'lab_hours' => 0,
         ]);

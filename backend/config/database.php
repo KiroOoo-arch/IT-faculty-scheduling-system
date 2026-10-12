@@ -97,6 +97,16 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+
+            // Laravel issues `set time zone 'UTC'` on connect when this key is
+            // present. Without it the session timezone is whatever the server's
+            // postgresql.conf happens to say, and PostgreSQL converts a
+            // `CURRENT_TIMESTAMP` column default into that zone before storing
+            // it in a naive timestamp — so schedules.generated_at was persisted
+            // as local wall clock (+08) while every PHP-written timestamp was
+            // UTC. Pinning the connection makes database-side defaults agree
+            // with the application clock, on any server.
+            'timezone' => 'UTC',
         ],
 
         'sqlsrv' => [

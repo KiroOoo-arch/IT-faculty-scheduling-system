@@ -13,6 +13,7 @@ import FacultyPage from './pages/admin/FacultyPage'
 import SubjectsPage from './pages/admin/SubjectsPage'
 import SectionsPage from './pages/admin/SectionsPage'
 import ReportsPage from './pages/admin/ReportsPage'           // ← ADD THIS LINE
+import ScheduleSessionEditor from './pages/admin/ScheduleSessionEditor'
 
 function Dashboard() {
   const { user } = useAuth()
@@ -61,6 +62,7 @@ function AppRoutes() {
       <Route path="/admin/subjects" element={<ProtectedRoute><SubjectsPage /></ProtectedRoute>} />
       <Route path="/admin/sections" element={<ProtectedRoute><SectionsPage /></ProtectedRoute>} />
       <Route path="/admin/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />   {/* ← ADD THIS LINE */}
+      <Route path="/admin/schedules/:scheduleId/sessions" element={<ProtectedRoute><ScheduleSessionEditor /></ProtectedRoute>} />
       <Route path="/print-schedule" element={<ProtectedRoute requireTerms={false}><PrintableSchedule /></ProtectedRoute>} />
       <Route path="/print-faculty-schedule" element={<ProtectedRoute requireTerms={false}><PrintableFacultySchedule /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />

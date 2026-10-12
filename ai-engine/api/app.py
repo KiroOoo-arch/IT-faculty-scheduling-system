@@ -12,6 +12,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "solver"))
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from scheduler import generate_schedule
 from time_slots import hhmm_to_minutes
@@ -89,12 +90,177 @@ def read_lunch_settings(cur):
 
 @app.get("/health")
 def health():
+    """
+    Liveness: is this process up, and can it open a database connection at all.
+
+    Deliberately independent of schema compatibility. A liveness probe must not
+    fail because a migration has not run yet, or the orchestrator would restart a
+    perfectly healthy process forever — use /ready to gate traffic instead.
+    """
     try:
         conn = get_connection()
         conn.close()
         return {"status": "ok", "database": "connected"}
-    except Exception as e:
-        return {"status": "error", "database": str(e)}
+    except Exception:
+        # The exception is deliberately not repeated. A psycopg2 connection error
+        # can carry the host, port, user and database from the connection string,
+        # and this endpoint is unauthenticated.
+        return {"status": "error", "database": "unavailable"}
+
+
+# --- Readiness ----------------------------------------------------------------
+# The table and columns the department ownership rule reads. Readiness means all
+# of them exist, not merely that a connection could be opened: the generation
+# query LEFT JOINs `departments` and selects `department_id` from both tables, so
+# a database without them cannot serve a single request.
+
+REQUIRED_DEPARTMENT_SCHEMA = (
+    ("subjects", "department_id"),
+    ("subjects", "classification"),
+    ("sections", "department_id"),
+)
+
+# Tables the ownership rule reads, alongside the columns above.
+REQUIRED_DEPARTMENT_TABLES = (
+    "departments",
+    "subject_department_access",
+)
+
+DEPARTMENT_SCHEMA_QUERY = (
+    "SELECT table_name, column_name "
+    "FROM information_schema.columns "
+    "WHERE table_schema = 'public' "
+    "AND ("
+    "(table_name = 'subjects' "
+    "AND column_name IN ('department_id', 'classification')) "
+    "OR (table_name = 'sections' AND column_name = 'department_id')"
+    ")"
+)
+
+
+def missing_department_schema(cur):
+    """
+    Which parts of the department schema are absent, as readable items.
+
+    Read-only: one existence probe per table plus one metadata query, no table
+    data. `to_regclass` answers whether a table exists without raising when it
+    does not, so a pre-migration database reports cleanly instead of erroring.
+    """
+    missing = []
+
+    for table in REQUIRED_DEPARTMENT_TABLES:
+        cur.execute(f"SELECT to_regclass('public.{table}') AS relation")
+        row = cur.fetchone()
+        if not row or row.get("relation") is None:
+            missing.append(f"{table} table")
+
+    cur.execute(DEPARTMENT_SCHEMA_QUERY)
+    present = {(r["table_name"], r["column_name"]) for r in cur.fetchall()}
+
+    for table, column in REQUIRED_DEPARTMENT_SCHEMA:
+        if (table, column) not in present:
+            missing.append(f"{table}.{column} column")
+
+    return missing
+
+
+def ownership_is_seeded(cur):
+    """
+    Whether the reviewed ownership data is actually present: at least one
+    department, and at least one subject carrying a review outcome.
+
+    Departments alone are not enough any more. A database with departments but no
+    classified subject has nothing to schedule — every subject is `unclassified`,
+    which the guard refuses — so advertising readiness would promise a service the
+    engine cannot provide. This is the state a half-finished activation leaves
+    behind, and it is the one the seeder exists to clear.
+    """
+    cur.execute("SELECT count(*) AS total FROM departments")
+    row = cur.fetchone()
+    if not row or not row["total"]:
+        return False
+
+    cur.execute(
+        "SELECT count(*) AS total FROM subjects "
+        "WHERE classification IN ('major', 'minor')"
+    )
+    row = cur.fetchone()
+    return bool(row and row["total"])
+
+
+@app.get("/ready")
+def ready():
+    """
+    Readiness: can this engine serve generation against this database?
+
+    200 only when a connection opens, the department schema is applied, and
+    ownership has been seeded. Otherwise 503, so an orchestrator holds traffic
+    back rather than handing the engine a database it cannot honour.
+
+    Nothing here reveals credentials, connection strings or SQL: no exception text
+    is ever returned, and this endpoint is unauthenticated. The items reported as
+    missing are table and column names, which are what makes the response
+    actionable.
+    """
+    try:
+        conn = get_connection()
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "reason": "database_unavailable",
+                "detail": "Could not open a database connection.",
+            },
+        )
+
+    try:
+        cur = conn.cursor()
+
+        missing = missing_department_schema(cur)
+        if missing:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "reason": "schema_incompatible",
+                    "detail": "The department schema is not applied to this database.",
+                    "missing": missing,
+                },
+            )
+
+        if not ownership_is_seeded(cur):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "reason": "ownership_not_seeded",
+                    "detail": (
+                        "No subject has a review outcome yet, so every subject is "
+                        "unclassified and generation would be refused for all of "
+                        "them."
+                    ),
+                },
+            )
+
+        return {
+            "status": "ready",
+            "schema": "department_ownership",
+        }
+    except psycopg2.Error:
+        # A database failure is a readiness failure. Its text can name tables,
+        # columns, parameters or the connection, so report the fact, not the
+        # message.
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "reason": "database_error",
+                "detail": "The database could not be inspected for readiness.",
+            },
+        )
+    finally:
+        conn.close()
 
 
 @app.post("/generate-schedule/{section_id}")
@@ -105,9 +271,12 @@ def generate_schedule_for_section(section_id: int):
 
         # --- Section ---
         cur.execute(
-            "SELECT id, name, preferred_days, preferred_start_time, preferred_end_time, student_count, "
-            "academic_year, semester_name "
-            "FROM sections WHERE id = %s",
+            "SELECT s.id, s.name, s.preferred_days, s.preferred_start_time, s.preferred_end_time, "
+            "s.student_count, s.department_id, d.name AS department_name, "
+            "s.academic_year, s.semester_name "
+            "FROM sections s "
+            "LEFT JOIN departments d ON d.id = s.department_id "
+            "WHERE s.id = %s",
             (section_id,),
         )
         section_row = cur.fetchone()
@@ -127,6 +296,13 @@ def generate_schedule_for_section(section_id: int):
             "preferred_start_minutes": parse_minutes(section_row["preferred_start_time"]),
             "preferred_end_minutes": parse_minutes(section_row["preferred_end_time"]),
             "student_count": section_row.get("student_count", 30),
+            # Which department owns this section: a major subject may only be
+            # placed here when it belongs to the same one (see the ownership
+            # guard below). Null means the section may take shared subjects only.
+            "department_id": section_row.get("department_id"),
+            # The section's own department by name, so an ownership rejection can
+            # name both sides rather than only the subject's owner.
+            "department_name": section_row.get("department_name"),
             # A fixed midday break keeps 12:00-1:00 PM clear. Read per request so
             # changing it in Settings takes effect on the next generation.
             "lunch": read_lunch_settings(cur),
@@ -135,9 +311,11 @@ def generate_schedule_for_section(section_id: int):
         # --- Subjects assigned to this section ---
         cur.execute(
             """
-            SELECT s.id, s.code, s.lecture_hours, s.lab_hours, s.lab_room_type
+            SELECT s.id, s.code, s.lecture_hours, s.lab_hours, s.lab_room_type,
+                   s.classification, s.department_id, d.name AS department_name
             FROM subjects s
             JOIN section_subjects ss ON ss.subject_id = s.id
+            LEFT JOIN departments d ON d.id = s.department_id
             WHERE ss.section_id = %s
             """,
             (section_id,),
@@ -148,8 +326,91 @@ def generate_schedule_for_section(section_id: int):
                 status_code=400, detail=f"Section {section_id} has no subjects assigned."
             )
 
-        # --- Faculty who can teach any of these subjects ---
         subject_ids = [s["id"] for s in subjects]
+
+        # --- Department authorization ---
+        # Which departments may schedule which subject is held in
+        # subject_department_access: for a major, its owner plus any department the
+        # curriculum grants it to (ELEC201, owned by Electronics, is granted to
+        # BIT). A minor needs no rows — being open to everyone is its
+        # classification.
+        cur.execute(
+            "SELECT subject_id, department_id FROM subject_department_access "
+            "WHERE subject_id = ANY(%s)",
+            (subject_ids,),
+        )
+        authorized_departments = {}
+        for row in cur.fetchall():
+            authorized_departments.setdefault(row["subject_id"], set()).add(
+                int(row["department_id"])
+            )
+
+        # --- Department ownership ---
+        # A minor is schedulable anywhere. A major is schedulable only where a
+        # department is authorized for it, so it must have an owner and an access
+        # row for the section's department. Anything unclassified — including a
+        # row from a database that predates the classification column — is
+        # schedulable nowhere.
+        #
+        # The backend refuses such a run before it ever reaches us, so this is the
+        # second line of defence, for a direct engine call: it fails loudly rather
+        # than quietly dropping a subject, which would hand back a schedule that
+        # is missing its classes.
+        for candidate in subjects:
+            classification = candidate.get("classification") or "unclassified"
+
+            if classification == "minor":
+                continue
+
+            section_department_id = section.get("department_id")
+
+            if classification != "major":
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{candidate['code']} has not been classified yet, so it cannot "
+                        "be scheduled. Classify it as a major (with its owning "
+                        "department) or as a minor / shared subject first."
+                    ),
+                )
+
+            owner = candidate.get("department_id")
+
+            if owner is not None and section_department_id is not None:
+                authorized = authorized_departments.get(candidate["id"], set())
+                if int(section_department_id) in authorized:
+                    continue
+
+            # The names come from the LEFT JOIN, so they are absent whenever the
+            # department row cannot be resolved — an unseeded table, or an
+            # ownership id whose row has gone. The id is then the honest label;
+            # `owner` is read from subjects.department_id, not from the join, so a
+            # missing name never turns a major into a shared subject.
+            if owner is None:
+                owner_label = "no department (the major has no owner)"
+            else:
+                owner_label = candidate.get("department_name") or f"department #{owner}"
+
+            if section_department_id is None:
+                # A section with no department of its own cannot claim anyone's
+                # major: only minor subjects are open to it.
+                target = f"section {section['name']}, which has no department"
+            else:
+                section_label = (
+                    section.get("department_name")
+                    or f"department #{section_department_id}"
+                )
+                target = f"section {section['name']} ({section_label})"
+
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{candidate['code']} is a major subject of {owner_label} "
+                    f"and cannot be scheduled for {target}."
+                ),
+            )
+
+        # --- Faculty who can teach any of these subjects ---
         cur.execute(
             """
             SELECT DISTINCT f.id, f.name

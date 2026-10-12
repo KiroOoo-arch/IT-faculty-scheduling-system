@@ -47,6 +47,7 @@ class MasterDataDeletionTest extends TestCase
     {
         return Subject::create([
             'code' => $code,
+            'classification' => 'minor',
             'title' => 'Programming 1',
             'year_level' => 1,
             'semester_name' => '1st Semester',

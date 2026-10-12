@@ -66,6 +66,7 @@ class ScheduleGenerationConflictTest extends TestCase
 
         $this->subject = Subject::create([
             'code' => 'PROG1',
+            'classification' => 'minor',
             'title' => 'Programming 1',
             'year_level' => 1,
             'semester_name' => '1st Semester',

@@ -22,8 +22,12 @@ class ScheduleController extends Controller
     public function generate(Section $section)
     {
         // Pre-scheduling data-integrity gate: every subject assigned to the
-        // section must match the section's year level and semester. Blocks
-        // legacy/invalid assignments before the AI engine is ever called.
+        // section must match the section's year level and semester, and must be
+        // either a shared / minor subject or a major of the section's own
+        // department. Blocks legacy/invalid assignments before the AI engine is
+        // ever called.
+        $section->loadMissing(['subjects.department']);
+
         $mismatches = [];
         foreach ($section->subjects as $subject) {
             if ((int) $subject->year_level !== (int) $section->year_level
@@ -42,12 +46,19 @@ class ScheduleController extends Controller
                     $section->year_level,
                     $section->semester_name
                 );
+            } elseif (($reason = $subject->assignmentConflictReason($section)) !== null) {
+                // Same rule the section editor and the session validator apply —
+                // a legacy or hand-edited assignment must not reach the engine
+                // either. The reason comes from the model, so an unclassified
+                // subject is refused as unclassified rather than described as
+                // someone's major.
+                $mismatches[] = $reason;
             }
         }
 
         if (!empty($mismatches)) {
             return response()->json([
-                'message' => 'Schedule generation blocked: some assigned subjects do not match this section\'s year level and semester. Fix the section\'s subject assignments first. '
+                'message' => 'Schedule generation blocked: some assigned subjects do not match this section\'s year level, semester or department. Fix the section\'s subject assignments first. '
                     . implode(' ', $mismatches),
                 'errors' => ['subject_ids' => $mismatches],
             ], 422);
@@ -218,6 +229,11 @@ class ScheduleController extends Controller
             $schedule = Schedule::create([
                 'section_id' => $section->id,
                 'status' => 'draft',
+                // Stamped from the application clock rather than left to the
+                // column's CURRENT_TIMESTAMP default, so generated_at records
+                // the same instant as created_at whichever timezone the
+                // database server is configured for.
+                'generated_at' => now(),
             ]);
 
             foreach ($scheduled as $session) {

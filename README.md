@@ -59,6 +59,7 @@ result; **Laravel persists it**. A failed or unreachable solver never destroys a
 
 - **Authentication** — Sanctum token auth, admin-only (RBAC middleware). Wrong credentials answer `401`.
 - **Master data management** — faculty, subjects, rooms/laboratories, sections, users
+- **Subject classification and department ownership** — every subject is a *major* (one owning department, schedulable only by the departments authorized for it), a *minor / shared* subject (open to every department) or *unclassified* (unschedulable until reviewed). A **Subjects Needing Review** queue on the Subjects page is where the unreviewed ones are classified, one click for minor / shared and the owning plus authorized departments for a major — one subject at a time or in bulk, with a per-subject report whenever a bulk pass partly fails
 - **Faculty availability** — per-day windows, which the solver treats as hard boundaries
 - **Faculty–subject qualification mapping** — a session can only go to faculty who can teach it
 - **AI schedule generation** — `OPTIMAL` / `FEASIBLE` / `PARTIAL` / `INFEASIBLE`, with a per-session reason when a session cannot be placed

@@ -70,6 +70,82 @@ Notable rules:
 > cross-checked before it is written. The publish gate remains the final check before a clash reaches
 > students.
 
+## Subject classification and department ownership
+
+Every subject carries a review outcome in `subjects.classification`:
+
+| Value | Meaning | Owner | Schedulable where |
+|---|---|---|---|
+| `major` | a reviewed major subject | exactly one department (`subjects.department_id`) | sections whose department holds a `subject_department_access` grant for it |
+| `minor` | a reviewed shared / service subject | none | every section, including one with no department |
+| `unclassified` | not reviewed yet — the column default | none | nowhere: assignment and generation both refuse it |
+
+A major's authorization lives in **`subject_department_access`** (one row per department allowed to
+schedule it, `PRIMARY KEY (subject_id, department_id)`). The owner's row is mandatory; a second
+department can hold one too, which is how `ELEC201` — owned by ELEC (BindTech Electronics) — is also
+scheduled by the BIT (Industrial Technology) sections. Authorization is data, not a comparison of two
+columns, so a shared major needs no special case anywhere.
+
+Before the code and the label: `departments.code` (`BIT`, `ELEC`) is the stable handle ownership, access
+grants, section name prefixes and `?department_id=` all key on, and `departments.name` is only ever
+printed — currently *Industrial Technology* and *BindTech Electronics*. Renaming a department is
+therefore a one-line edit to `DepartmentSeeder::DEPARTMENTS` plus a re-seed; the seeder matches on
+`code`, so it renames the existing row instead of adding a second department, and it touches no subject,
+grant, section or schedule. `php artisan departments:preflight` reports departments by code, so the
+rename never affects whether a database is safe to activate.
+
+The database enforces the invariant set, so no importer or manual SQL session can create a major with no
+owner, a minor that claims one, or an unknown classification value.
+
+`unclassified` is the default and is never inferred as `minor`: an unreviewed subject grants nothing,
+which is the opposite of the old behaviour where a null `department_id` meant "shared" whether or not
+anyone had reviewed it.
+
+The same rule is applied in four places, all reading `Subject::isSchedulableBySection()`:
+
+- the section editor, when a section's subject list or department changes;
+- the scoped subject list (`GET /api/subjects?department_id=N`);
+- the pre-generation gate (`POST /api/schedules/generate/{section}`);
+- the multi-session validator (`POST /api/schedules/{schedule}/sessions`);
+
+and the AI engine re-applies it as a second line of defence, reading the same access table.
+
+### The deployment gate
+
+```bash
+php artisan departments:preflight      # read-only, safe to re-run, exit 0 required
+```
+
+It exits **`1`**, naming the reasons, when the migrations are missing, a department the seeder expects is
+absent, a listed major is still unclassified or owned by the wrong department, a listed major's owner
+holds no access grant, a minor subject holds one anyway, or an existing `section_subjects` row pairs a
+section with a subject it may not schedule (a major of an unauthorized department, or an unclassified
+subject). It exits **`0`** when the reviewed classification is complete and consistent. It never writes.
+
+A subject that nobody has reviewed is reported as a **warning** rather than a failure, because it blocks
+nothing until a section holds it — at which point the assignment check fails and names it.
+
+### Activation sequence
+
+The migrations and the backfill ship together. Between them every subject is `unclassified`, so nothing
+can be scheduled: the state fails closed instead of running unrestricted.
+
+```bash
+php artisan migrate                                      # 1. schema
+php artisan db:seed --class=DepartmentSeeder              # 2. classification + access backfill (idempotent)
+php artisan departments:preflight                         # 3. validation — must exit 0 and print READY
+curl -fsS http://127.0.0.1:8001/ready                     # 4. engine readiness — must be 200
+```
+
+Re-run step 3 after any bulk import or section reshuffle.
+
+### Reviewed curriculum
+
+The backfill classifies the approved curriculum: **17 majors** (15 owned by BIT, `ELEC` and the
+cross-department `ELEC201` owned by ELEC) and **13 minor / shared subjects**. `ELEC201` is owned by ELEC
+with access grants for both ELEC and BIT. A code on neither list stays `unclassified` until someone
+reviews it through the API.
+
 ## Errors from the AI engine
 
 | Engine result | API answers | Why |
@@ -92,7 +168,10 @@ php artisan key:generate
 php artisan migrate --seed
 php artisan serve         # http://127.0.0.1:8000
 
-php artisan test          # 143 passed, 604 assertions
+php artisan test          # 269 passed, 1268 assertions
+
+# the same suite against an isolated database copy (no shared database is touched)
+./vendor/bin/phpunit -c phpunit.phase2_test.xml
 
 # optional realistic demo dataset (idempotent)
 php artisan db:seed --class=DemoDataSeeder

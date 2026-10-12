@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Department;
 use App\Models\Faculty;
 use App\Models\FacultyAvailability;
 use App\Models\Room;
@@ -43,8 +44,12 @@ class DatabaseSeeder extends Seeder
             'semester_name' => '1st Semester', 'lecture_hours' => 2, 'lab_hours' => 3,
             'lab_room_type' => 'computer_lab',
         ]);
-        $prog2 = Subject::create([
-            'code' => 'PROG2', 'title' => 'Programming 2', 'year_level' => 1,
+        // A reviewed major of the IT department, like PROG1. The demo set uses
+        // codes from the approved curriculum on purpose: a code on no list would
+        // stay unclassified, and an unclassified subject cannot be scheduled, so
+        // the demo section could not be generated for at all.
+        $prog3 = Subject::create([
+            'code' => 'PROG3', 'title' => 'Programming 3', 'year_level' => 1,
             'semester_name' => '1st Semester', 'lecture_hours' => 2, 'lab_hours' => 3,
             'lab_room_type' => 'computer_lab',
         ]);
@@ -54,11 +59,11 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // Link the section to the subjects it takes
-        $section->subjects()->attach([$prog1->id, $prog2->id, $math1->id]);
+        $section->subjects()->attach([$prog1->id, $prog3->id, $math1->id]);
 
         // Faculty are records, not users — no login accounts (admin manages everything)
         $reyes = Faculty::create(['name' => 'Prof. Reyes', 'faculty_type' => 'full_time']);
-        $reyes->subjects()->attach([$prog1->id, $prog2->id]);
+        $reyes->subjects()->attach([$prog1->id, $prog3->id]);
         FacultyAvailability::create(['faculty_id' => $reyes->id, 'day_of_week' => 1, 'start_time' => '07:00', 'end_time' => '15:00']);
         FacultyAvailability::create(['faculty_id' => $reyes->id, 'day_of_week' => 3, 'start_time' => '07:00', 'end_time' => '15:00']);
         FacultyAvailability::create(['faculty_id' => $reyes->id, 'day_of_week' => 5, 'start_time' => '07:00', 'end_time' => '15:00']);
@@ -70,10 +75,24 @@ class DatabaseSeeder extends Seeder
         }
 
         $cruz = Faculty::create(['name' => 'Prof. Cruz', 'faculty_type' => 'part_time']);
-        $cruz->subjects()->attach([$prog2->id]);
+        $cruz->subjects()->attach([$prog3->id]);
         foreach ([1, 3, 5] as $day) {
             FacultyAvailability::create(['faculty_id' => $cruz->id, 'day_of_week' => $day, 'start_time' => '07:00', 'end_time' => '15:00']);
         }
+
+        // Departments, classification and access. Runs last because it claims
+        // sections by name prefix, and the section above is created here. The
+        // subjects above are deliberately left unclassified on creation and
+        // classified by this pass, which is exactly what an activation does.
+        $this->call(DepartmentSeeder::class);
+
+        // The demo section is the IT programme's, so it can take the IT major
+        // subjects attached above. Its name ('BSIT 1A') predates the BIT-
+        // convention the seeder matches on, so it is claimed explicitly rather
+        // than by widening that prefix match.
+        $section->forceFill([
+            'department_id' => Department::where('code', 'BIT')->value('id'),
+        ])->save();
     }
 } #* DatabaseSeeder
  #* Seeds the database with initial data:
