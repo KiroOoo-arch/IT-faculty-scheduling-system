@@ -168,7 +168,7 @@ php artisan key:generate
 php artisan migrate --seed
 php artisan serve         # http://127.0.0.1:8000
 
-php artisan test          # 269 passed, 1268 assertions
+php artisan test          # 289 passed, 1402 assertions
 
 # the same suite against an isolated database copy (no shared database is touched)
 ./vendor/bin/phpunit -c phpunit.phase2_test.xml

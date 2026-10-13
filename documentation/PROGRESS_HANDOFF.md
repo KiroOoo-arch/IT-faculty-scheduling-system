@@ -1,8 +1,8 @@
 # Project Progress Handoff
 
 Project: IT Faculty Scheduling System
-Branch: feature/multi-session-editor
-Commit: 445495bcac971fe91b27d655e1a6a88e7c9f5e80
+Branch: reconcile/2x-doc-drift-and-seal
+Last verified commit: 29bb9e1 (fix: classify the demo dataset so the documented seed flow generates)
 
 ## Implemented areas reported
 - Multi-session scheduling
@@ -12,34 +12,43 @@ Commit: 445495bcac971fe91b27d655e1a6a88e7c9f5e80
 - Department preflight and AI-engine scheduling guards
 - Associated frontend, backend, tests, and documentation
 
-## Latest reported checks
-- Frontend build: npm run build succeeded.
-- AI-engine test scripts reported successful, including readiness, department ownership,
-  schedule quality, same-subject-days, lunch break, gap preference, guard sensitivity,
-  and scheduler checks.
-- Backend certification: PENDING. A previous report claimed 282 tests and 1,376 assertions
-  passed, but this was not reverified in the latest session. Backend feature tests may not
-  run until the isolated test database identity and restricted role permissions are
-  verified through authorized authentication.
+## Latest reported checks (all measured 2026-10-13)
+- Frontend: `npm run build` (`tsc -b && vite build`) succeeded.
+- AI engine: `python -m unittest discover -s tests -t tests` — 171 tests, OK.
+- Backend certification: VERIFIED. `php artisan test` — 289 tests, 1402 assertions, all
+  passing, exit 0 — run against the isolated `scheduling_system_testing` database after
+  confirming that database was empty and at the latest migration. The PostgreSQL-only
+  preflight test passed as part of that run.
+- Documentation drift: `python documentation/tools/check_doc_drift.py` re-measured the
+  suites and the affected documents were reconciled to the measured numbers.
+- Live application run: backend :8000, AI engine :8001, frontend :5173 on a disposable
+  database — login, terms acceptance, generation (OPTIMAL), approve, publish, unpublish,
+  the draft-publish guard, print view, reports, and settings all verified.
 
-## Database safety status
-- Production database: scheduling_system. Do not connect to, query, migrate, seed, or
-  modify it during this task.
-- Protected canonical testing database: scheduling_system_testing. Do not connect to,
-  query, migrate, seed, or modify it during this task.
-- A candidate isolated database was reported as schedule_system_defense_test_20261012.
-  The originally proposed spelling was scheduling_system_defense_test_20261012.
-  The exact target and dedicated role permissions still require authenticated verification.
-- SELECT current_database(), current_user has not been successfully verified using the
-  intended restricted test role.
-- No backend database-mutating tests may run until isolation is established.
+## Database safety status (updated 2026-10-13)
+- The backend suite ran against `scheduling_system_testing` only, as configured in
+  `backend/phpunit.xml` (`DB_CONNECTION=pgsql`, `DB_DATABASE=scheduling_system_testing`).
+  That database was verified empty and at the latest migration before the run, and every
+  test runs inside RefreshDatabase's transaction.
+- The local application run used a purpose-created disposable database,
+  `scheduling_system_localrun_20261013`, so no existing database was migrated, seeded, or
+  otherwise changed to make the demo work.
+- The development database `scheduling_system` holds live development data (3 users,
+  16 sections, 30 subjects, 1 schedule, 23 faculty) and is four migrations behind the
+  current set. It was observed read-only: not migrated, not seeded, and not used by the
+  tests. The department and classification features will not work there until those four
+  migrations are applied.
+- No production database, PostgreSQL configuration, or deployment setting was changed.
 
 ## Next steps
-1. Verify the exact existing test database name and restricted role through authorized
-   authentication.
-2. Run backend feature tests only after the isolated database identity and permissions are
-   confirmed.
-3. Fix any failures and prepare a reliable defense demonstration.
+1. Apply the four pending department/classification migrations to `scheduling_system` when
+   its data is meant to be kept, then run `php artisan departments:preflight` before
+   activating generation.
+2. Decide whether `backend/phpunit.isolated.xml` is expected: `phpunit.b1-sqlite.xml` cites
+   it, but it is absent from this checkout and from every branch of the repository.
+3. Decide how the untracked `backend/app/Console/Commands/DepartmentPreflight.php` relates
+   to the committed `DepartmentsPreflightCommand.php` — both declare the same
+   `departments:preflight` signature, and only the committed one currently wins.
 4. Plan production activation and deployment separately, after the defense and with
    explicit approval.
 

@@ -58,10 +58,10 @@ Our system solves all four with constraint-based AI generation, a five-layer con
 
 | Fact | Correct value | ❌ Do NOT say |
 |---|---|---|
-| Backend tests | **143 tests (604 assertions)** across 18 feature test files — last reported passing | "23 tests" (outdated) |
-| AI-engine tests | **171 test methods** (Python unittest, 8 modules) — counted from the committed files, not re-run | "118" (the old five-module size; "46" before that) |
-| Cross-section conflict tests | **25 tests (101 assertions)** — `ScheduleGenerationConflictTest`, `ScheduleSessionConflictTest` — last reported passing | — |
-| Total automated tests | **314 tests** (143 backend + 171 engine) | — |
+| Backend tests | **289 tests (1402 assertions)** across 26 feature test files — measured 2026-10-13, all passing | "23 tests" (outdated) |
+| AI-engine tests | **171 test methods** (Python unittest, 8 modules) — re-run 2026-10-13, OK | "118" (the old five-module size; "46" before that) |
+| Cross-section conflict tests | **25 tests (101 assertions)** — `ScheduleGenerationConflictTest`, `ScheduleSessionConflictTest` — measured 2026-10-13, passing | — |
+| Total automated tests | **460 tests** (289 backend + 171 engine) | — |
 | Solver time limit | **15 seconds max** per generation | "instant" |
 | Database tables | **11 domain tables** (+ auth/cache/jobs framework tables) | "15 tables" |
 | Constraint categories | **8 hard** + section preferred window + section self-overlap | "exactly 8 total" |
@@ -72,8 +72,8 @@ Our system solves all four with constraint-based AI generation, a five-layer con
 **Evidence behind the test numbers (say it this way if pressed):**
 
 - **Verified here:** the documentation-drift checker's own suite — **40 tests, OK** — and the frontend production build (`tsc -b && vite build`), which passed.
-- **Inventory, counted not run:** the **171** AI-engine test methods across 8 modules, counted from the committed `test_*.py` files (an AST count confirms they are all collectible `unittest` methods). The complete 171-test suite was not re-run in the reconciliation, so do not claim a fresh 171-test pass.
-- **Last reported, not re-verified here:** the backend suite (**143 tests / 604 assertions**), the cross-section conflict suite (**25 tests / 101 assertions**), and the five-module solver run (**118 tests OK, 0 failed**) — quote these as historical reports of earlier runs.
+- **Verified 2026-10-13:** the **171** AI-engine test methods across 8 modules, counted from the committed `test_*.py` files (an AST count confirms they are all collectible `unittest` methods). The complete suite was re-run on that date (`python -m unittest discover -s tests -t tests`) and reported `Ran 171 tests … OK`, so a fresh 171-test pass is safe to claim.
+- **Verified 2026-10-13:** the backend suite (**289 tests / 1402 assertions**, run against the isolated `scheduling_system_testing` database) and, within that same run, the cross-section conflict suite (**25 tests / 101 assertions**). The five-module solver run (**118 tests OK, 0 failed**) remains a historical report of an earlier run — quote it as such.
 
 ---
 
@@ -183,7 +183,7 @@ These were demonstrated in the running system today:
 
 | Old claim | Correct now |
 |---|---|
-| "6/6 backend tests" | 143 backend tests (604 assertions) + 171 engine tests = 314 total |
+| "6/6 backend tests" | 289 backend tests (1402 assertions) + 171 engine tests = 460 total |
 | Faculty Dashboard exists | Removed Sept 2026 — faculty are records, not users |
 | Print/PDF "planned" | Implemented (`PrintableSchedule.tsx`) and demo-verified |
 | "Not enforced" max load | IS enforced (constraint #7, verified in `scheduler.py`) |
@@ -205,7 +205,7 @@ These were demonstrated in the running system today:
 | 11 domain tables | `backend/database/migrations/` (17 files total incl. framework tables) |
 | Frontend pages (9) | `frontend/src/pages/` |
 | Constraint documentation | `documentation/Constraints.md` |
-| Test counts | `backend/tests/Feature/` (143 tests / 604 assertions across 18 files), `ai-engine/tests/` (171 tests across 8 modules; 118 of them the five-module solver suite, and `test_scheduler.py` holds 46) |
+| Test counts | `backend/tests/Feature/` (289 tests / 1402 assertions across 26 files), `ai-engine/tests/` (171 tests across 8 modules; 118 of them the five-module solver suite, and `test_scheduler.py` holds 46) |
 
 ---
 

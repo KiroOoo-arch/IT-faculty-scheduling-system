@@ -16,7 +16,7 @@ together), `Data-Privacy-and-Security.md` (data handling).
 | Check | Result |
 |---|---|
 | App works end-to-end locally | ✅ Yes — Laravel :8000, React :5173, FastAPI solver :8001, PostgreSQL :5432 |
-| Backend tests | 143 tests / 604 assertions (last reported passing) |
+| Backend tests | 289 tests / 1402 assertions (measured 2026-10-13, all passing) |
 | Engine tests | ✅ 171 tests across 8 modules |
 | Frontend build | ✅ clean (`tsc -b && vite build`) |
 | Frontend lint | ❌ exit 1 — 11 errors / 9 warnings (8 `set-state-in-effect`, 2 `no-explicit-any`, 1 `react-refresh`) |
@@ -88,7 +88,7 @@ Do this on a branch before touching any hosting. Every item is small and indepen
 
 ### 1.7 Verify nothing regressed
 ```bash
-cd backend && php artisan test                 # expect 143 tests / 604 assertions
+cd backend && php artisan test                 # expect 289 tests / 1402 assertions
 cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests   # expect 171 tests across 8 modules
 cd frontend && npm run build && npm run lint   # expect clean build, lint 0 problems
 ```

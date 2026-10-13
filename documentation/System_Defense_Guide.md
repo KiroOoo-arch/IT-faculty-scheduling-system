@@ -370,7 +370,7 @@ erDiagram
 | Reports | ✅ Complete | Faculty workload, room utilization |
 | Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
 | Frontend | ✅ Complete | React + TypeScript |
-| Testing | ✅ Complete | Backend: 143 feature tests (604 assertions) across 18 files · AI engine: 171 unit tests across 8 modules (118 of them the five-module solver suite) · cross-section conflict suite: 25 tests (101 assertions) · frontend typecheck + production build |
+| Testing | ✅ Complete | Backend: 289 feature tests (1402 assertions) across 26 files · AI engine: 171 unit tests across 8 modules (118 of them the five-module solver suite) · cross-section conflict suite: 25 tests (101 assertions) · frontend typecheck + production build |
 | Published-reference delete guard | ✅ Complete | 409 with the exact scope before deleting master data a published schedule depends on; explicit `?force=1` to proceed |
 
 ---
@@ -626,9 +626,9 @@ For university scale, architectural changes would be needed, but the core constr
 1. **Ad-hoc testing**: Throughout development
 2. **AI engine unit tests**: 171 automated tests across eight modules (Python standard-library `unittest`); 118 of them are the five-module solver suite that directly exercises the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Its last recorded run (the five-module solver suite): 118 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
 3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
-4. **Automated backend suite**: 143 Laravel feature tests (604 assertions) across 18 files — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
+4. **Automated backend suite**: 289 Laravel feature tests (1402 assertions) across 26 files — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
 
-> Run them with `cd backend && php artisan test` (143 tests — 604 assertions, last reported passing) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (171 tests across 8 modules, counted from the committed files but not re-run in the reconciliation). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
+> Run them with `cd backend && php artisan test` (289 tests — 1402 assertions, re-run 2026-10-13, all passing) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (171 tests across 8 modules, re-run 2026-10-13, OK). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
 
 Test coverage:
 - Authentication & RBAC ✅

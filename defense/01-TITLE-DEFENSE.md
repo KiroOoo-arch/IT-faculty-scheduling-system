@@ -97,7 +97,7 @@
 > Three concrete mechanisms: each section's preferred days and time window are enforced by the solver; room capacity is checked against the section's student count; and every session belongs to a section — the schedule is built around sections' needs, not around room convenience.
 
 **Q4: Is your system already working?**
-> Yes — a working end-to-end prototype exists and is verified: the live dataset generates OPTIMAL (all sessions placed), the full draft → approve → publish → print workflow runs, and the two automated suites hold 314 tests (143 backend + 171 engine), last reported passing.
+> Yes — a working end-to-end prototype exists and is verified: the live dataset generates OPTIMAL (all sessions placed), the full draft → approve → publish → print workflow runs, and the two automated suites hold 460 tests (289 backend + 171 engine), last run 2026-10-13 and passing.
 
 **Q5: Why does the admin have to approve? Can't it just publish?**
 > Two reasons: (1) accountability — a human must own the published schedule; (2) safety — the publish step runs one more cross-section conflict check, the fourth of the five protection layers.

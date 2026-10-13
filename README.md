@@ -160,9 +160,9 @@ existing subject links alone.
 
 | Target | Command | Current result |
 |---|---|---|
-| Backend | `cd backend && php artisan test` | **143 tests, 604 assertions** (last reported passing) |
-| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **171 tests across 8 modules** |
-| Frontend build / typecheck | `cd frontend && npm run build` | passes (`tsc -b && vite build`) |
+| Backend | `cd backend && php artisan test` | **289 tests, 1402 assertions** (measured 2026-10-13, all passing) |
+| AI Engine | `cd ai-engine && python -m unittest discover -s tests` | **171 tests across 8 modules** (re-run 2026-10-13, OK) |
+| Frontend build / typecheck | `cd frontend && npm run build` | passes (`tsc -b && vite build`, re-run 2026-10-13) |
 | Frontend lint | `cd frontend && npm run lint` | 11 errors / 9 warnings — known debt (`react-hooks/set-state-in-effect` across the admin pages) |
 
 The two conflict suites on their own — from `backend/`, `php vendor/bin/phpunit
@@ -173,7 +173,8 @@ The AI-engine command needs `-t tests`: `tests/` has no `__init__.py`, and Pytho
 start discovery in a directory it cannot import, so the plain `-s tests` form exits with
 `ImportError: Start directory is not importable`.
 
-The backend and AI-engine rows were re-run for this update; the frontend rows were not.
+The backend, AI-engine and frontend-build rows were re-run for this update; the frontend lint row
+was not.
 
 ## Development Status
 
