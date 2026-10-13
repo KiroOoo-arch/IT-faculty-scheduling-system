@@ -48,6 +48,18 @@ class DemoDataSeeder extends Seeder
 
         $this->attachSubjectsToSections($sections, $subjects);
         $this->seedFaculty();
+
+        // Classification and access, then the claim on every section this
+        // seeder just created. Runs last, and for the same reason it runs last
+        // in DatabaseSeeder: the demo catalogue and the BIT sections are the
+        // rows the review describes, so they do not exist yet when the seeder
+        // above starts. Without this pass every demo subject would stay
+        // `unclassified` — schedulable nowhere — the preflight would fail
+        // closed and generation would refuse each demo section, which is the
+        // opposite of what `php artisan db:seed --class=DemoDataSeeder` is for.
+        // DepartmentSeeder is idempotent, so re-running it here (and re-running
+        // the demo seed) changes nothing that is already correct.
+        $this->call(DepartmentSeeder::class);
     }
 
     /** Extra rooms so every session type has a room that seats the section. */
