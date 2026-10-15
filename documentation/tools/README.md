@@ -11,6 +11,8 @@ application, the database, or the test suites.
 | [`check_doc_drift.py`](check_doc_drift.py) | Reports documentation drift: stale counts, obsolete behavior claims, artifact and link problems. |
 | [`mermaid-render-config.json`](mermaid-render-config.json) | The Mermaid config used for every render (message wrapping, margins). |
 | [`test_check_doc_drift.py`](test_check_doc_drift.py) | Fixture-based self-tests for the checker — the single canonical suite. |
+| [`check_secrets.py`](check_secrets.py) | Reports credentials, tokens and private keys in the repository, with every matched value redacted. Exits non-zero, so the same command guards a commit. |
+| [`test_check_secrets.py`](test_check_secrets.py) | Fixture-based self-tests for the secret scanner. |
 
 ## Word documents
 
@@ -84,6 +86,84 @@ access for `npx` to fetch the CLI. The committed PNGs were rendered at
 cite them predate this tooling and are not re-rendered by it. The Mermaid Live
 editor (`https://mermaid.live`) remains a fallback: paste the `.mmd`, export a PNG
 at the same scale.
+
+## Secret scanner
+
+```bash
+python documentation/tools/check_secrets.py                 # tracked + untracked files; exit 0 = clean, 1 = findings
+python documentation/tools/check_secrets.py --staged        # what a commit would add (used by the hook)
+python documentation/tools/check_secrets.py --history       # committed content, report only — never rewrites
+python documentation/tools/check_secrets.py --paths .tmp-run
+python documentation/tools/check_secrets.py --json
+python documentation/tools/check_secrets.py --list-rules
+python documentation/tools/check_secrets.py --install-hook   # write .git/hooks/pre-commit
+```
+
+It is stdlib-only: no package, no network, no new project dependency. **Matched
+values are never printed, logged or written anywhere** — a finding names the
+file, line, column and rule, and reports only how many characters were withheld,
+so its output is safe to paste into a ticket.
+
+Rules cover private-key blocks, AWS key ids and secret access keys, GitHub and
+Slack tokens and webhook URLs, JWTs, Laravel `APP_KEY`, connection URIs carrying a
+password, `PGPASSWORD`/`DB_PASSWORD` assignments, literal bearer and Basic
+credentials, and the vendor formats whose shape gives them away (Google, Stripe,
+npm, SendGrid). Values that are obviously placeholders (`<redacted>`, `${PGPASSWORD}`, `env('VAR')`,
+`changeme`, …) are not findings. The two escapes mirror the drift checker:
+`secret-scan:allow` on the line, or `secret-scan:allow-next` on the line before
+it — say *why* in the same comment.
+
+A value on a secret-looking key is judged two ways. A **quoted** literal is
+matched by its key name alone, so that name has to be specific: bare `token` is
+absent on purpose, because `const token = 'abc'` is ordinary code and a rule that
+flags it gets switched off. An **unquoted** right-hand side must clear three
+gates — not a placeholder, not an expression (no property access, indexing, call,
+template or path), at least 16 characters from at least three character classes,
+and at least 3.2 bits of Shannon entropy per character — which is why its key name
+can be broad and catch `API_TOKEN=…` in a `.env` or a shell script. The thresholds
+live in `MIN_UNQUOTED_SECRET_*`: missing an unquoted secret is recoverable,
+training someone to bypass the guard is not.
+
+A secret word anywhere in a name counts, so `SECRET_KEY` and `SECRET_KEY_BASE`
+are recognised. The qualifier list is limited to words that name a credential, so
+`PASSWORD_HASH` and `TOKENIZER` are not findings, and neither are expressions such
+as `body.password = form.password` or `password: e.target.value`.
+
+Like the drift checker, it never edits anything. Removing a secret is a human
+edit; rotating it is an operator action.
+
+### Pre-commit guard
+
+`--install-hook` writes `.git/hooks/pre-commit`, which runs the scanner over the
+**staged** content and aborts the commit on a finding. Git hooks are not
+versioned, so each clone opts in once:
+
+```bash
+python documentation/tools/check_secrets.py --install-hook
+```
+
+By design the hook needs no dependency, and it protects the moment a secret would
+enter history. Deliberate bypass is `git commit --no-verify`.
+
+### CI
+
+`.github/workflows/ci.yml` runs the same scanner in a job of its own, beside the
+frontend lint/build: check out, set up Python, scan the checked-out tree, then run
+this suite. It imports only the standard library, so the job installs nothing and
+needs no secret of its own in order to look for one. A finding exits 1 and fails
+the job, and the log still never contains the value.
+
+CI deliberately does **not** run `--history`: a push-time check cannot prevent a
+value that is already committed, and a known historical finding would turn every
+run red until the separate history cleanup lands. History stays a report-only,
+local command.
+
+### History is not scanned automatically
+
+`--history` reads every reachable blob through `git cat-file` and matches it with
+the same patterns. It **reports only** — it never rewrites history. A finding
+there means the value is already committed and must be **rotated**, not merely
+deleted: scrubbing the file leaves the value in every earlier commit.
 
 ## Drift checker
 
