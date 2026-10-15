@@ -1,0 +1,161 @@
+# Continuous integration — frontend lint/build plus a repository secret scan.
+#
+# All three jobs are self-contained on purpose: the frontend checks need no
+# database and no external service, the secret scan is standard-library Python
+# run over the checked-out tree, and the guard and gate self-tests substitute
+# their own doubles for PHP and for the database connection, so nothing here
+# needs a secret or a database in order to do its work. The backend suite
+# (PostgreSQL) and the AI-engine tests (OR-Tools) are left out for exactly that
+# reason: they need a database and a solver, so they belong in their own workflow
+# with those services stood up.
+#
+# The secret scan reads the checked-out tree, not Git history: a push-time check
+# cannot prevent a value that is already committed, and a failing history scan
+# would keep every run red for a value that no push can un-commit. History
+# therefore stays a report-only command, run locally with --history.
+#
+# The tree scan is still the gate. It fails on any value the checked-out commit
+# itself carries, so a redaction has to be committed — editing the file locally
+# is not enough to make this job pass.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# One run per ref: a newer push supersedes an in-flight one instead of queueing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege — the job only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  # The `frontend` job is conditional: the CI publication set does not include
+  # frontend sources, so this job only runs when the frontend source tree is
+  # present in the checked-out repository. When frontend/ is absent the job is
+  # simply skipped (it never runs, and nothing is claimed as built).
+  frontend:
+    name: Lint & build
+    runs-on: ubuntu-latest
+    # No job-wide defaults.run.working-directory: this job has steps that run
+    # from the repository root (the skip report) and steps that run from
+    # frontend/. Explicit working-directories are set per step instead.
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # The CI publication set does not include frontend/ sources, so the
+      # frontend lint/build steps here only run when frontend/package.json is
+      # present in the checked-out revision. hashFiles() is valid in a
+      # step-level if, so the steps below each gate on frontend/package.json
+      # instead of placing the condition on the job (a job-level if cannot use
+      # hashFiles()). When frontend/ is absent the steps all skip.
+      - name: Verify frontend sources
+        if: hashFiles('frontend/package.json') != ''
+        run: |
+          test -f package.json
+          echo "frontend sources: present"
+
+      # Installs exactly what the committed lockfile pins. Runs from frontend/
+      # so npm ci installs the pinned lockfile versions.
+      - name: Install dependencies
+        if: hashFiles('frontend/package.json') != ''
+        working-directory: frontend
+        run: npm ci
+
+      # Expected: exit 0 with 0 errors and 9 react-hooks/exhaustive-deps
+      # warnings. The warnings stay visible on purpose — no --max-warnings, no --quiet.
+      - name: Lint
+        if: hashFiles('frontend/package.json') != ''
+        working-directory: frontend
+        run: npm run lint
+
+      # `tsc -b && vite build` — typecheck included, so a type error fails CI.
+      - name: Build
+        if: hashFiles('frontend/package.json') != ''
+        working-directory: frontend
+        run: npm run build
+
+      # The checked-out revision has no frontend/ sources, so the lint/build
+      # chain above is skipped. This step runs from the repository root even
+      # when frontend/ does not exist, and writes an explicit, human-readable
+      # skip to the job summary so the run is clearly reported as skipped and
+      # nothing is claimed as a completed frontend build.
+      - name: Report skipped frontend build
+        if: hashFiles('frontend/package.json') == ''
+        run: |
+          echo "frontend lint & build: SKIPPED" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The checked-out revision does not contain frontend/, so the CI publication" >> "$GITHUB_STEP_SUMMARY"
+          echo "set's frontend lint/build steps were not executed and no frontend build is" >> "$GITHUB_STEP_SUMMARY"
+          echo "claimed." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "##[notice] frontend lint & build skipped: no frontend/package.json in the checked-out revision"
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          # The version the project is developed on. The scanner imports only the
+          # standard library, so there is no install step and no cache to keep.
+          python-version: '3.14'
+
+      # Tracked and untracked files in the checked-out tree. Exit 1 fails the job.
+      # The output names the file, line, column and rule and never the matched
+      # value — only how many characters were withheld — so the log is safe to
+      # share. See documentation/tools/README.md.
+      - name: Scan for secrets
+        run: python documentation/tools/check_secrets.py
+
+      # The scanner's own fixture-based suite (offline, about a second). It keeps
+      # the guard honest: if the rules ever stop matching, this fails instead of
+      # the scan quietly reporting "clean".
+      - name: Test the scanner
+        run: python3 -m unittest discover -s documentation/tools -p "test_check_secrets.py"
+
+  # The two self-tests for the deployment gate and the PostgreSQL test-target
+  # guard. Both are outside PHPUnit's collection on purpose: the project's test
+  # counts are measured from PHPUnit's own listing, and a PHPUnit case here would
+  # change that number without testing anything PHPUnit can run.
+  self-tests:
+    name: Guard & gate self-tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # Neither test imports framework code: the gate is exercised through a
+      # stubbed PHP_BIN, and the guard's logic runs with an injected probe. So
+      # this job needs no composer install, no database and no secret, and it
+      # cannot reach a database even by accident.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # The version the project is developed on.
+          php-version: '8.5'
+          coverage: none
+
+      # The gate's contract: pass, fail closed, and refuse a target it must not
+      # touch. No database is involved.
+      - name: Preflight gate self-test
+        run: bash tests/shell/preflight-gate.test.sh
+
+      # The guard's refusals: the source database, the rehearsal database,
+      # unapproved names, the wrong driver, an unverified identity, and a
+      # destructive selection without DDL rights. The connection is injected.
+      - name: Database target guard self-test
+        run: php tests/shell/database-target-guard.test.php
