@@ -145,6 +145,24 @@ else
 fi
 
 # ---------------------------------------------------------------------
+# Case: preflight itself returns 2 or 3 — same numeric codes as gate refusals,
+# but the output must identify this as a preflight failure, not a gate refusal.
+# ---------------------------------------------------------------------
+printf '\npreflight failure code 2\n'
+run_gate 2 scheduling_system_testing
+check 'preflight exit status 2 is preserved' '2' "$gate_status"
+check_contains 'identifies this as a preflight failure' 'DEPLOYMENT BLOCKED: departments:preflight exited 2' "$gate_out"
+check_absent 'does not label it a gate refusal' 'REFUSING TO RUN THE GATE' "$gate_out"
+check 'php was invoked for the preflight' '1' "$(invocations)"
+
+printf '\npreflight failure code 3\n'
+run_gate 3 scheduling_system_testing
+check 'preflight exit status 3 is preserved' '3' "$gate_status"
+check_contains 'identifies this as a preflight failure' 'DEPLOYMENT BLOCKED: departments:preflight exited 3' "$gate_out"
+check_absent 'does not label it a gate refusal' 'REFUSING TO RUN THE GATE' "$gate_out"
+check 'php was invoked for the preflight' '1' "$(invocations)"
+
+# ---------------------------------------------------------------------
 # Case: missing database name — refuse before php is invoked at all
 # ---------------------------------------------------------------------
 printf '\nmissing database name\n'
