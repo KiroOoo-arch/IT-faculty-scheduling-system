@@ -38,6 +38,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 app_dir="$(cd -- "$script_dir/.." && pwd)"
 
 php_bin="${PHP_BIN:-php}"
+artisan_bin="${ARTISAN_BIN:-$app_dir/artisan}"
 source_database="${SOURCE_DATABASE:-scheduling_system}"
 
 refuse() {
@@ -50,7 +51,7 @@ block() {
     exit "${2:-1}"
 }
 
-[ -f "$app_dir/artisan" ] || refuse "no artisan entry point at $app_dir/artisan"
+[ -f "$artisan_bin" ] || refuse "no artisan entry point at $artisan_bin"
 
 database="${DB_DATABASE:-}"
 [ -n "$database" ] || refuse 'DB_DATABASE is not set, so the database this release targets is unknown. Set it explicitly.'
@@ -62,7 +63,7 @@ fi
 printf 'Preflight gate: driver=%s database=%s\n' "${DB_CONNECTION:-<unset>}" "$database"
 
 status=0
-"$php_bin" "$app_dir/artisan" departments:preflight --no-interaction || status=$?
+"$php_bin" "$artisan_bin" departments:preflight --no-interaction || status=$?
 
 [ "$status" -eq 0 ] || block "departments:preflight exited $status. The deployment stops here: no migration, activation or release step may run against a database that fails preflight." "$status"
 

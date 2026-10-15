@@ -104,9 +104,11 @@ run_gate() {
 
     # This suite deliberately runs without `set -e`: a nonzero status here is the
     # measurement, not a failure. run_gate leaves the caller's mode alone.
-    gate_out="$(env -u DB_DATABASE -u PREFLIGHT_ALLOW_SOURCE -u DB_PASSWORD -u APP_KEY \
-        ARGLOG="$arglog" EXITS="$exits" PHP_BIN="$stub" DB_CONNECTION=pgsql \
-        ${db_binding[@]+"${db_binding[@]}"} "$@" bash "$gate" 2>&1)"
+    local gate_env=(env -u DB_DATABASE -u PREFLIGHT_ALLOW_SOURCE -u DB_PASSWORD -u APP_KEY \
+        ARGLOG="$arglog" EXITS="$exits" PHP_BIN="$stub" ARTISAN_BIN="$stub" DB_CONNECTION=pgsql)
+    gate_out="$(
+        "${gate_env[@]}" ${db_binding[@]+"${db_binding[@]}"} "$@" bash "$gate" 2>&1
+    )"
     gate_status=$?
 }
 
@@ -121,7 +123,7 @@ check 'exit status is 0' '0' "$gate_status"
 check_contains 'says the release may continue' 'may continue' "$gate_out"
 check 'invokes exactly one command' '1' "$(invocations)"
 check_contains 'invokes departments:preflight with the non-interactive flag' \
-    'artisan departments:preflight --no-interaction' "$(cat "$arglog")"
+    'departments:preflight --no-interaction' "$(cat "$arglog")"
 
 # ---------------------------------------------------------------------
 # Case: failure — the preflight's own status is reproduced, nothing runs after
