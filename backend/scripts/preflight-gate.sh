@@ -26,11 +26,18 @@
 #   - it prints no credentials. The connection driver and the database *name* are
 #     printed; DB_PASSWORD and APP_KEY are never read, printed or exported.
 #
-# Exit codes: 0 = preflight passed, the release may continue;
-#             1 = preflight failed, the deployment stops here;
-#             2 = the environment is unusable (no artisan entry point, no
-#                 DB_DATABASE);
-#             3 = the target database is the source database.
+# Exit status:
+#   0 = preflight passed; the release may continue.
+#   Nonzero status from departments:preflight = reproduced unchanged, so the
+#       caller can see the original failure code. This may overlap with the
+#       gate's own refusal codes below.
+#   2 = gate refused before running preflight because the environment is
+#       unusable (no artisan entry point or DB_DATABASE).
+#   3 = gate refused before running preflight because the target is the source
+#       database.
+#
+# A preflight failure may itself return 2 or 3; the output message distinguishes
+# a preflight result from a gate refusal.
 
 set -euo pipefail
 
