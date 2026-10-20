@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useAuth, API_BASE_URL } from '../context/AuthContext'
+import { useAuth, API_BASE_URL } from '../context/auth'
 import { formatTime12h, formatTimeRange } from '../utils/time'
 import PrintLetterhead from '../components/PrintLetterhead'
 
@@ -49,16 +49,16 @@ export default function PrintableFacultySchedule() {
   const [data, setData] = useState<FacultySchedule | null>(null)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    // ?faculty=ID — query param keeps this page linkable from the Reports tab.
-    const params = new URLSearchParams(window.location.search)
-    const id = params.get('faculty')
-    if (!id) {
-      setError('No faculty member specified.')
-      return
-    }
+  // ?faculty=ID — query param keeps this page linkable from the Reports tab.
+  // Read during render: an address that names no faculty member is a property
+  // of the request, not an external system to synchronize with, so the message
+  // is derived below rather than written into state by an effect.
+  const facultyId = new URLSearchParams(window.location.search).get('faculty')
 
-    fetch(`${API_BASE_URL}/reports/faculty/${id}/schedule`, {
+  useEffect(() => {
+    if (!facultyId) return
+
+    fetch(`${API_BASE_URL}/reports/faculty/${facultyId}/schedule`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     })
       .then((r) => {
@@ -67,7 +67,16 @@ export default function PrintableFacultySchedule() {
       })
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load the faculty schedule'))
-  }, [token])
+  }, [facultyId, token])
+
+  if (!facultyId) {
+    return (
+      <div className="p-8 text-red-600">
+        No faculty member specified.
+        <a href="/admin/reports" className="text-blue-600 underline ml-2">Back to Reports</a>
+      </div>
+    )
+  }
 
   if (error) {
     return (

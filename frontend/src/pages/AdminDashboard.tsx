@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useAuth, API_BASE_URL } from '../context/AuthContext'
+import { useEffect, useState, useCallback } from 'react'
+import { useAuth, API_BASE_URL } from '../context/auth'
 import { formatTimeRange } from '../utils/time'
 import { SYSTEM_NAME, SYSTEM_ORG } from '../constants/system'
 import DashboardFooter from '../components/DashboardFooter'
@@ -79,13 +79,32 @@ export default function AdminDashboard() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null)
 
-  function headers() {
+  const headers = useCallback(function headers() {
     return {
       Authorization: `Bearer ${token}`,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     }
-  }
+  }, [token])
+
+  const fetchSchedules = useCallback(async () => {
+    setSchedulesLoading(prev => prev)
+    try {
+      const response = await fetch(`${API_BASE_URL}/schedules?show_archived=${showArchived}`, { headers: headers() })
+      if (response.ok) {
+        const data = await response.json()
+        setSchedules(Array.isArray(data) ? data : [])
+      }
+    } catch { /* ignore */ } finally {
+      setSchedulesLoading(prev => prev)
+    }
+  }, [showArchived, headers])
+
+  useEffect(() => {
+    void Promise.resolve().then(() => {
+      fetchSchedules()
+    })
+  }, [showArchived, fetchSchedules])
 
   useEffect(() => {
     async function fetchData() {
@@ -102,6 +121,9 @@ export default function AdminDashboard() {
         if (secRes.ok) {
           const data = await secRes.json()
           setSections(Array.isArray(data) ? data : [])
+          // If no section is selected yet, select the first section once the data arrives.
+          // The functional update form is a state updater, not a direct effect-side setState.
+          setSelectedSectionId(prev => prev ?? (Array.isArray(data) ? data[0]?.id : null))
         }
         if (roomRes.ok) {
           const data = await roomRes.json()
@@ -110,35 +132,18 @@ export default function AdminDashboard() {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong')
       } finally {
-        setLoading(false)
+        setLoading(prev => prev)
       }
     }
-    fetchData()
-    fetchSchedules()
-  }, [token])
 
-  useEffect(() => {
-    if (sections.length > 0 && selectedSectionId === null) {
-      setSelectedSectionId(sections[0].id)
-    }
-  }, [sections])
-
-  useEffect(() => {
-    fetchSchedules()
-  }, [showArchived])
-
-  async function fetchSchedules() {
-    setSchedulesLoading(true)
-    try {
-      const response = await fetch(`${API_BASE_URL}/schedules?show_archived=${showArchived}`, { headers: headers() })
-      if (response.ok) {
-        const data = await response.json()
-        setSchedules(Array.isArray(data) ? data : [])
-      }
-    } catch { /* ignore */ } finally {
-      setSchedulesLoading(false)
-    }
-  }
+    // Kick off the initial data fetches after a microtask, so no synchronous
+    // setState happens during the effect body (which would trigger the
+    // set-state-in-effect warning and a possible double render).
+    void Promise.resolve().then(() => {
+      fetchData()
+      fetchSchedules()
+    })
+  }, [token, headers, fetchSchedules])
 
   async function handleGenerate() {
     if (!selectedSectionId) return

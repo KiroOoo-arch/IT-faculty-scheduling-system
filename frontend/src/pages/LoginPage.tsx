@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { SYSTEM_NAME, SYSTEM_ORG } from '../constants/system'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/auth'
 
 /*
  * The sign-in page, built around the college's own colours.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useAuth, API_BASE_URL } from '../context/AuthContext'
+import { useAuth, API_BASE_URL } from '../context/auth'
 import { formatTime12h, formatTimeRange } from '../utils/time'
 import PrintLetterhead from '../components/PrintLetterhead'
 import ScheduleListTable from '../components/ScheduleListTable'
@@ -66,19 +66,26 @@ export default function PrintableSchedule() {
     window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
   }
 
-  useEffect(() => {
-    // ?schedule=ID  (query param keeps this page linkable from the dashboard)
-    const params = new URLSearchParams(window.location.search)
-    const id = params.get('schedule')
-    if (!id) { setError('No schedule specified.'); return }
+  // ?schedule=ID  (query param keeps this page linkable from the dashboard).
+  // Read during render: an address that names no schedule is a property of the
+  // request, not an external system to synchronize with, so the message is
+  // derived below rather than written into state by an effect.
+  const scheduleId = new URLSearchParams(window.location.search).get('schedule')
 
-    fetch(`${API_BASE_URL}/schedules/${id}`, {
+  useEffect(() => {
+    if (!scheduleId) return
+
+    fetch(`${API_BASE_URL}/schedules/${scheduleId}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     })
       .then((r) => { if (!r.ok) throw new Error('Failed to load schedule'); return r.json() })
       .then(setSchedule)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load schedule'))
-  }, [token])
+  }, [scheduleId, token])
+
+  if (!scheduleId) {
+    return <div className="p-8 text-red-600">No schedule specified. <a href="/dashboard" className="text-blue-600 underline ml-2">Back to Dashboard</a></div>
+  }
 
   if (error) {
     return <div className="p-8 text-red-600">{error} <a href="/dashboard" className="text-blue-600 underline ml-2">Back to Dashboard</a></div>
