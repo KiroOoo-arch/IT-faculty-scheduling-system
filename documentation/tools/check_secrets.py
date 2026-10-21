@@ -521,14 +521,6 @@ def collect_paths(root: Path, raw_paths: list[str]) -> list[str]:
     rels: list[str] = []
     for raw in raw_paths:
         path = Path(raw)
-        if path.is_symlink():
-            # Symlinked files are skipped entirely: they can point anywhere on
-            # the machine, and the scanner must not follow them out of the
-            # repository it was told to scan. This check runs before
-            # path.is_dir(), because is_dir() follows symlinks and would
-            # otherwise classify a symlink-to-directory as an ordinary
-            # directory and scan its contents.
-            continue
         if path.is_dir():
             for child in sorted(path.rglob("*")):
                 if child.is_symlink() or not child.is_file():

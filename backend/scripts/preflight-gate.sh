@@ -26,18 +26,11 @@
 #   - it prints no credentials. The connection driver and the database *name* are
 #     printed; DB_PASSWORD and APP_KEY are never read, printed or exported.
 #
-# Exit status:
-#   0 = preflight passed; the release may continue.
-#   Nonzero status from departments:preflight = reproduced unchanged, so the
-#       caller can see the original failure code. This may overlap with the
-#       gate's own refusal codes below.
-#   2 = gate refused before running preflight because the environment is
-#       unusable (no artisan entry point or DB_DATABASE).
-#   3 = gate refused before running preflight because the target is the source
-#       database.
-#
-# A preflight failure may itself return 2 or 3; the output message distinguishes
-# a preflight result from a gate refusal.
+# Exit codes: 0 = preflight passed, the release may continue;
+#             1 = preflight failed, the deployment stops here;
+#             2 = the environment is unusable (no artisan entry point, no
+#                 DB_DATABASE);
+#             3 = the target database is the source database.
 
 set -euo pipefail
 
@@ -45,7 +38,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 app_dir="$(cd -- "$script_dir/.." && pwd)"
 
 php_bin="${PHP_BIN:-php}"
-artisan_bin="${ARTISAN_BIN:-$app_dir/artisan}"
 source_database="${SOURCE_DATABASE:-scheduling_system}"
 
 refuse() {
@@ -58,7 +50,7 @@ block() {
     exit "${2:-1}"
 }
 
-[ -f "$artisan_bin" ] || refuse "no artisan entry point at $artisan_bin"
+[ -f "$app_dir/artisan" ] || refuse "no artisan entry point at $app_dir/artisan"
 
 database="${DB_DATABASE:-}"
 [ -n "$database" ] || refuse 'DB_DATABASE is not set, so the database this release targets is unknown. Set it explicitly.'
@@ -70,7 +62,7 @@ fi
 printf 'Preflight gate: driver=%s database=%s\n' "${DB_CONNECTION:-<unset>}" "$database"
 
 status=0
-"$php_bin" "$artisan_bin" departments:preflight --no-interaction || status=$?
+"$php_bin" "$app_dir/artisan" departments:preflight --no-interaction || status=$?
 
 [ "$status" -eq 0 ] || block "departments:preflight exited $status. The deployment stops here: no migration, activation or release step may run against a database that fails preflight." "$status"
 

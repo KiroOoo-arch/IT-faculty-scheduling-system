@@ -1,0 +1,870 @@
+# IT Faculty Scheduling System — Design Defense Guide
+
+## System Overview
+
+### Project Title
+**AI-Assisted Student-Centered Constraint-Based Faculty, Classroom, and Laboratory Scheduling System**
+
+### Purpose
+This system automates faculty, classroom, and laboratory scheduling for the IT Department using constraint-based optimization techniques. It eliminates manual scheduling errors, detects conflicts, and generates optimized schedules while respecting faculty availability, room limitations, and teaching loads.
+
+### Technology Stack
+
+| Layer | Technology | Port |
+|-------|------------|------|
+| Frontend | React, TypeScript, Tailwind CSS, Vite | 5173 |
+| Backend | Laravel 13, PHP 8.5, Laravel Sanctum | 8000 |
+| Database | PostgreSQL | 5432 |
+| AI Engine | Python, FastAPI, Google OR-Tools CP-SAT | 8001 |
+
+---
+
+## System Architecture
+
+### Architecture Diagram
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FRONTEND (React)                         │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ Admin        │ │ Faculty      │ │ CRUD Pages   │        │
+│  │ Dashboard    │ │ Dashboard    │ │ (Users,      │        │
+│  │ (Generate,   │ │ (My Schedule)│ │  Faculty,    │        │
+│  │  Review,     │ │              │ │  Subjects,   │        │
+│  │  Approve,    │ │              │ │  Rooms)      │        │
+│  │  Publish)    │ │              │ │              │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ HTTP/JSON + Bearer token
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    BACKEND (Laravel)                         │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ Auth + RBAC  │ │ Schedule     │ │ Schedule     │        │
+│  │ (Sanctum)    │ │ Controller   │ │ Approval     │        │
+│  │              │ │ (Generate)   │ │ Controller   │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ Schedule     │ │ Schedule     │ │ User         │        │
+│  │ Session      │ │ Approval     │ │ Controller   │        │
+│  │ Controller   │ │ Controller   │ │ (Admin-only) │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+│             (Admin/Department Head is the only login;        │
+│              faculty are records, not users)                 │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ HTTP POST /generate-schedule/id
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    AI ENGINE (FastAPI)                        │
+│  ┌──────────────┐ ┌──────────────┐                          │
+│  │ app.py       │ │ OR-Tools     │                          │
+│  │ /generate-   │ │ CP-SAT       │                          │
+│  │ schedule/{id}│ │ Solver       │                          │
+│  └──────────────┘ └──────────────┘                          │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ Direct psycopg2 read
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    DATABASE (PostgreSQL)                      │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ users        │ │ faculties    │ │ faculty_     │        │
+│  │              │ │              │ │ availabilities│       │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ subjects     │ │ sections     │ │ rooms        │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+│  ┌──────────────┐ ┌──────────────┐                          │
+│  │ schedules    │ │ schedule_    │                          │
+│  │              │ │ sessions     │                          │
+│  └──────────────┘ └──────────────┘                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## System Flows
+
+### Flow 1: Schedule Generation
+
+```mermaid
+    A["AdminDashboard: click Generate Schedule"] --> B["POST /api/schedules/generate/{section} — Bearer token"]
+    B --> G3{"Gate 3 — every assigned subject matches the section's<br/>year level and semester?"}
+    G3 -- "no" --> G3E["422 naming the subjects<br/>the AI engine is never called and no log row is written"]
+    G3 -- "yes" --> LOCK["Acquire this term's generation lock<br/>schedule-generation:academic_year:semester<br/>ttl 180 s · wait 30 s"]
+    LOCK -- "not acquired in time" --> L409["409 — another generation is already running for this term"]
+    LOCK -- "held" --> ENG["POST http://127.0.0.1:8001/generate-schedule/{id}<br/>30 s HTTP timeout"]
+    ENG --> READ["FastAPI reads the section, its subjects, qualified active faculty,<br/>availability windows, existing load, available rooms,<br/>and this term's sessions (draft / approved / published)"]
+    READ --> SOLVE["CP-SAT model, 15 s budget<br/>maximise the number of sessions placed"]
+    SOLVE --> RES{"Engine answered?"}
+    RES -- "unreachable or 5xx" --> E502["failure log row · 502<br/>no draft created, the existing draft is untouched"]
+    RES -- "4xx (data problem)" --> E422A["failure log row · 422 with the engine's own reason"]
+    RES -- "anything else (INFEASIBLE / ERROR)" --> E422B["failure log row · 422 with the engine message"]
+    RES -- "OPTIMAL / FEASIBLE / PARTIAL" --> XCHK{"findGeneratedConflicts — does the plan clash with another<br/>section's draft/approved/published session in this term?"}
+    XCHK -- "clash" --> E422C["failure log row · 422 with the conflict list<br/>nothing is written, the existing draft survives"]
+    XCHK -- "clean" --> TX["BEGIN transaction: archive the section's previous drafts,<br/>create the draft, insert one row per placed session"]
+    TX --> TXOK["COMMIT — any failure rolls the whole replacement back"]
+    TXOK --> LOG["Write the generation log (optimal / feasible / partial)<br/>with a per-session reason for anything unplaced"]
+    LOG --> OK["200 {schedule_id, sessions, unscheduled}"]
+    OK --> UI["AdminDashboard: 'Status: OPTIMAL — N sessions created'"]
+    OK --> REL["Lock released in a finally — on success and on every handled failure"]
+```
+
+### Flow 2: Approval Workflow
+
+```mermaid
+sequenceDiagram
+    participant U as Admin
+    participant L as Laravel (ScheduleApprovalController)
+    participant DB as PostgreSQL
+
+    U->>L: PATCH /api/schedules/{id}/approve
+    L->>DB: status draft → approved
+    L-->>U: approved
+
+    U->>L: PATCH /api/schedules/{id}/publish
+    L->>L: findPublishConflicts(schedule)
+    alt conflicts found
+        L-->>U: 422 "Cannot publish: conflicts..."
+    else no conflicts
+        L->>DB: archive older published/approved (same section)
+        L->>DB: status → published
+        L-->>U: published
+    end
+
+    Note over U: Admin prints/downloads the published schedule
+    Note over U: for hard-copy distribution (faculty do not log in)
+```
+
+### Flow 3: Manual Session Editing with Conflict Detection
+
+```mermaid
+sequenceDiagram
+    participant U as Admin
+    participant L as Laravel (ScheduleSessionController)
+    participant DB as PostgreSQL
+
+    U->>L: PUT /api/schedules/sessions/{id}
+    L->>DB: Re-validate the whole merged session against every other section's draft/approved/published sessions in the same academic year and semester
+    alt conflicts found
+        L-->>U: 422 {conflicts: [...]}
+    else no conflicts
+        L->>DB: Update session
+        L-->>U: updated session
+    end
+```
+
+---
+
+## Database Design (ER Diagram)
+
+```mermaid
+erDiagram
+    USERS ||--o{ FACULTY : has
+    USERS ||--o{ SCHEDULES : approves
+    FACULTY ||--o{ FACULTY_SUBJECTS : qualified
+    FACULTY ||--o{ FACULTY_AVAILABILITIES : available
+    FACULTY ||--o{ SCHEDULE_SESSIONS : teaches
+    SUBJECTS ||--o{ FACULTY_SUBJECTS : taught-by
+    SUBJECTS ||--o{ SECTION_SUBJECTS : assigned-to
+    SUBJECTS ||--o{ SCHEDULE_SESSIONS : included-in
+    SECTIONS ||--o{ SECTION_SUBJECTS : includes
+    SECTIONS ||--o{ SCHEDULES : generates
+    SECTIONS ||--o{ SCHEDULE_GENERATION_LOGS : logged
+    ROOMS ||--o{ SCHEDULE_SESSIONS : hosts
+    SCHEDULES ||--o{ SCHEDULE_SESSIONS : contains
+    USERS ||--o{ SCHEDULE_GENERATION_LOGS : requested
+
+    USERS {
+        int id PK
+        string name
+        string email
+        string password
+        string role "admin"
+    }
+
+    FACULTY {
+        int id PK
+        string name "stored directly; no user account"
+        string employee_no
+        string faculty_type "full_time | part_time"
+        int max_teaching_load
+        boolean is_active
+    }
+
+    SUBJECTS {
+        int id PK
+        string code
+        string title
+        int year_level
+        string semester_name
+        int lecture_hours
+        int lab_hours
+        string lab_room_type "computer_lab | null"
+        boolean is_active
+    }
+
+    SECTIONS {
+        int id PK
+        string name
+        int year_level
+        string semester_name
+        int student_count
+        json preferred_days
+        time preferred_start_time
+        time preferred_end_time
+    }
+
+    ROOMS {
+        int id PK
+        string name
+        string type "lecture | computer_lab | science_lab | electronics_lab"
+        int capacity
+        string status "available | under_maintenance | inactive"
+    }
+
+    SCHEDULES {
+        int id PK
+        int section_id FK
+        string status "draft | approved | published | rejected | archived"
+        int approved_by FK
+        timestamp approved_at
+        timestamp created_at
+    }
+
+    SCHEDULE_SESSIONS {
+        int id PK
+        int schedule_id FK
+        int subject_id FK
+        int faculty_id FK
+        int room_id FK
+        string session_type "lecture | laboratory"
+        int day_of_week "1-6"
+        time start_time
+        time end_time
+    }
+
+    FACULTY_AVAILABILITIES {
+        int id PK
+        int faculty_id FK
+        int day_of_week
+        time start_time
+        time end_time
+    }
+
+    FACULTY_SUBJECTS {
+        int faculty_id FK
+        int subject_id FK
+    }
+
+    SECTION_SUBJECTS {
+        int section_id FK
+        int subject_id FK
+    }
+
+    SCHEDULE_GENERATION_LOGS {
+        int id PK
+        int section_id FK
+        int requested_by FK
+        string status "optimal | feasible | partial | failure"
+        string message
+        json unscheduled_sessions
+        timestamp created_at
+    }
+```
+
+---
+
+## Scheduling Constraints
+
+### Hard Constraints (Mathematically Guaranteed by CP-SAT)
+
+| # | Constraint | What It Prevents | Implementation |
+|---|------------|------------------|----------------|
+| 1 | Faculty qualification | Unqualified faculty assigned to subjects | faculty_subjects pivot table |
+| 2 | Faculty availability | Scheduling on unavailable days or outside declared time windows | faculty_availabilities table (day + time window) |
+| 3 | Room type matching | Labs in lecture halls | rooms.type = session_type |
+| 4 | Room capacity | Overcrowded rooms (students > capacity) | sections.student_count ≤ rooms.capacity |
+| 5 | Faculty no double-booking | Same teacher in two places at once | No overlapping time slots |
+| 6 | Room no double-booking | Same room hosting two classes | No overlapping time slots |
+| 7 | Max teaching load | Faculty exceeding max hours | Sum of hours ≤ max_teaching_load |
+| 8 | Cross-section conflicts | Clashes with another section's live timetable in the same academic year and semester — **draft**, approved and published sessions all count | Pre-write gate in `ScheduleController::findGeneratedConflicts`; the engine is also given this term's live sessions as constraints |
+
+### Soft Constraints (Not Yet Implemented)
+
+| Constraint | Description |
+|------------|-------------|
+| Senior faculty priority | Preference weighting for senior faculty |
+| Faculty preferences | Soft preferences vs hard availability |
+
+---
+
+## System Users and Roles
+
+| Role | Responsibilities | Access Level |
+|------|------------------|--------------|
+| **Administrator / Department Head** | The only login: manage users, faculty records (availability/qualifications entered by the Admin), subjects, rooms, laboratories, sections; generate, review/edit, approve, publish, unpublish, print/download schedules; reports | Full access |
+| **Faculty** | *(No system access)* — scheduling records maintained by the Admin; receive schedules as printed/PDF copies | None — not system users |
+
+---
+
+## API Endpoints
+
+### Laravel Backend (Port 8000)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/login` | User authentication |
+| POST | `/api/logout` | User logout |
+| GET | `/api/me` | Get current user |
+| GET | `/api/faculties` | List all faculty |
+| GET | `/api/faculties/{id}` | Get faculty by ID |
+| POST | `/api/faculties` | Create faculty |
+| PUT | `/api/faculties/{id}` | Update faculty |
+| DELETE | `/api/faculties/{id}` | Delete faculty |
+| GET | `/api/subjects` | List all subjects |
+| GET | `/api/subjects/{id}` | Get subject by ID |
+| POST | `/api/subjects` | Create subject |
+| PUT | `/api/subjects/{id}` | Update subject |
+| DELETE | `/api/subjects/{id}` | Delete subject |
+| GET | `/api/rooms` | List all rooms |
+| GET | `/api/rooms/{id}` | Get room by ID |
+| POST | `/api/rooms` | Create room |
+| PUT | `/api/rooms/{id}` | Update room |
+| DELETE | `/api/rooms/{id}` | Delete room |
+| GET | `/api/sections` | List all sections |
+| GET | `/api/sections/{id}` | Get section by ID |
+| POST | `/api/sections` | Create section |
+| PUT | `/api/sections/{id}` | Update section |
+| DELETE | `/api/sections/{id}` | Delete section |
+| POST | `/api/schedules/generate/{section}` | Generate schedule for section |
+| GET | `/api/schedules` | List all schedules |
+| GET | `/api/schedules/{id}` | Get schedule by ID |
+| PATCH | `/api/schedules/{id}/approve` | Approve schedule |
+| PATCH | `/api/schedules/{id}/publish` | Publish schedule |
+| GET | `/api/reports/faculty-workload` | Faculty workload report |
+| GET | `/api/reports/room-utilization` | Room utilization report |
+| GET | `/api/reports/conflicts` | Cross-section conflict scan |
+| GET | `/api/reports/schedule-status` | Schedule status overview |
+| GET | `/api/reports/section-summary` | Sessions/hours/faculty per section |
+
+### AI Engine (Port 8001)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check + DB connectivity |
+| POST | `/generate-schedule/{section_id}` | Generate schedule for section |
+
+---
+
+## Implementation Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Authentication & RBAC | ✅ Complete | Laravel Sanctum |
+| CRUD Operations | ✅ Complete | Faculty, Subjects, Rooms, Sections, Users |
+| AI Schedule Generation | ✅ Complete | OR-Tools CP-SAT with 8 constraints |
+| Manual Edit Conflict Check | ✅ Complete | Real-time validation |
+| Schedule Approval Workflow | ✅ Complete | Draft → Approved → Published |
+| Reports | ✅ Complete | Faculty workload, room utilization |
+| Print/Download (PDF) | ✅ Complete | Print view for published schedules → hard-copy distribution |
+| Frontend | ✅ Complete | React + TypeScript |
+| Testing | ✅ Complete | Backend: 289 feature tests (1402 assertions) across 26 files · AI engine: 171 unit tests across 8 modules (118 of them the five-module solver suite) · cross-section conflict suite: 25 tests (101 assertions) · frontend typecheck + production build |
+| Published-reference delete guard | ✅ Complete | 409 with the exact scope before deleting master data a published schedule depends on; explicit `?force=1` to proceed |
+
+---
+
+## Technical Achievements
+
+1. **Mathematical proof, not ML** — The AI uses Google OR-Tools CP-SAT constraint programming to mathematically guarantee valid schedules
+2. **Best-effort scheduling** — If all sessions can't fit, the system places what it can and explains why each remaining session failed
+3. **Room capacity enforcement** — Sections are never assigned to overcrowded rooms
+4. **Cascade data integrity, without silent loss** — Deleting a faculty/room/subject record removes the sessions that reference it, but if a *published* schedule still depends on it the delete is refused with the exact scope first
+5. **Real-time conflict detection** — Prevents issues during manual edits
+6. **Publish conflict gate** — Prevents cross-section double-booking
+7. **Published-reference guard** — the outermost of a five-layer protection model (solver constraints → term lock + pre-write conflict gate → manual-edit validation → publish gate → delete guard), where the last layer protects the timetable that has already been distributed rather than one still being built
+
+---
+
+## Potential Defense Questions and Answers
+
+### Architecture Questions
+
+**Q1: Why did you choose a three-tier architecture (React → Laravel → FastAPI)?**
+
+**A:** We chose this architecture to separate concerns:
+- **Frontend (React)**: Handles user interface and user experience
+- **Backend (Laravel)**: Manages business logic, authentication, and API routing
+- **AI Engine (FastAPI)**: Specialized for constraint-based optimization using Python's OR-Tools library
+
+This separation allows:
+- Independent development and scaling of each component
+- Specialized technology for each layer (PHP for web, Python for AI)
+- Clear API boundaries between components
+- Easier testing and maintenance
+
+---
+
+**Q2: Why use FastAPI for the AI engine instead of integrating it directly into Laravel?**
+
+**A:** 
+1. **Language Specialization**: Python has superior libraries for constraint programming (OR-Tools)
+2. **Performance**: FastAPI is async and high-performance for compute-heavy tasks
+3. **Separation of Concerns**: AI logic is isolated from web business logic
+4. **Scalability**: AI engine can be scaled independently based on workload
+5. **Maintainability**: Each service can be updated without affecting the other
+
+---
+
+**Q3: How does the system handle communication between Laravel and FastAPI?**
+
+**A:** Laravel calls FastAPI via HTTP POST request:
+```
+POST http://127.0.0.1:8001/generate-schedule/{section_id}
+```
+- Laravel sends the section ID
+- FastAPI queries the database directly for required data
+- FastAPI runs the CP-SAT solver
+- FastAPI returns the result (OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE)
+- Laravel persists the result to the database
+
+This is a synchronous request-response pattern, appropriate for this use case.
+
+---
+
+### Constraint Questions
+
+**Q4: What is constraint programming and why did you choose it over other AI approaches?**
+
+**A:** Constraint programming (CP) is a paradigm where you define:
+- **Variables**: What can be assigned (e.g., which faculty teaches which session)
+- **Domains**: Possible values for each variable
+- **Constraints**: Rules that must be satisfied
+
+We chose CP over:
+- **Machine Learning**: ML requires training data and doesn't guarantee validity
+- **Heuristic algorithms**: No mathematical proof of solution quality
+- **OR-Tools CP-SAT**: Specifically designed for scheduling, proven in production
+
+CP-SAT (Constraint Programming - SAT solver) is Google's industrial-grade solver that:
+- Guarantees mathematical proof of solution validity
+- Handles complex constraint combinations efficiently
+- Provides OPTIMAL/FEASIBLE/PARTIAL/INFEASIBLE status with explanations
+
+---
+
+**Q5: What happens when the system cannot generate a complete schedule (INFEASIBLE)?**
+
+**A:** The system uses "best-effort scheduling":
+1. **Place what it can**: The solver places as many sessions as possible
+2. **Report failures**: Each unscheduled session is explained (e.g., "No faculty qualified for Subject X")
+3. **Partial status**: Returns PARTIAL status with list of unscheduled sessions
+4. **Admin decision**: Administrator can:
+   - Adjust faculty availability
+   - Add more qualified faculty
+   - Modify section preferences
+   - Accept partial schedule
+
+This is better than failing completely—users get maximum utility from the system.
+
+---
+
+**Q6: How does the system prevent double-booking of faculty or rooms?**
+
+**A:** Three mechanisms:
+1. **CP-SAT Solver (Proactive)**: During generation, the solver enforces constraints that prevent any overlaps:
+   - No faculty in two places at same time
+   - No room hosting two classes at same time
+   - No section attending two sessions at same time
+
+2. **Real-time Conflict Detection (Reactive)**: When manually editing sessions:
+   - System checks for time overlaps with existing sessions
+   - Returns 422 error with specific conflict details
+   - Prevents saving invalid data
+
+3. **Generation-time conflict gate (Laravel, before the write)**: generation for a term runs one section at a time behind a cache lock, and the engine's plan is cross-checked against every other section's `draft`/`approved`/`published` session in the same academic year and semester — a clash answers **422** with the specific conflicts and the section's existing draft is left untouched.
+
+These layers ensure both generated and manually edited schedules remain conflict-free.
+
+---
+
+**Q7: How does the cross-section conflict constraint work?**
+
+**A:** When generating a schedule for a section:
+1. System queries the same academic year and semester's existing schedules for other sections — **draft, approved and published** all count as active bookings
+2. Checks if any proposed session would create a conflict:
+   - Same faculty teaching two sections at same time
+   - Same room used by two sections at same time
+3. If conflict detected, that combination is excluded from solver options
+4. Laravel re-checks the finished plan against the same set before writing anything — a clash answers 422 and nothing is persisted
+
+This prevents "overbooking" faculty/rooms across different sections, including two drafts planned in one sitting.
+
+---
+
+### Database Questions
+
+**Q8: Why use PostgreSQL instead of MySQL or SQLite?**
+
+**A:** 
+1. **JSON Support**: PostgreSQL has excellent JSON/JSONB support for flexible data (preferred_days, unscheduled_sessions)
+2. **Advanced Features**: Supports complex queries, CTEs, window functions
+3. **ACID Compliance**: Critical for scheduling data integrity
+4. **Scalability**: Better for production workloads
+5. **Reliability**: Proven in enterprise applications
+6. **Laravel Support**: First-class support via pdo_pgsql driver
+
+---
+
+**Q9: How does the system handle data integrity when deleting resources?**
+
+**A:** Cascade delete rules:
+- Deleting a **Faculty** → Deletes their availabilities, subject assignments, and removes them from sessions
+- Deleting a **Room** → Removes all sessions scheduled in that room
+- Deleting a **Schedule** → Deletes all its sessions
+- Deleting a **Section** → Deletes their schedules and generation logs
+
+This prevents orphaned data and maintains referential integrity automatically.
+
+**One deliberate exception, and it is the interesting part of this answer:** if the record is still referenced by a **published** schedule, the delete is refused with **409** and the exact scope of the loss before anything changes. Only an explicit `?force=1` proceeds, and on that path the affected published schedule keeps its `published` status while losing sessions — a known, bounded gap. See Q26 for the full behaviour. The cascade handles integrity; the guard handles *intent*.
+
+---
+
+**Q10: Why use pivot tables (faculty_subjects, section_subjects)?**
+
+**A:** Pivot tables implement **many-to-many relationships**:
+- One faculty can teach multiple subjects
+- One subject can be taught by multiple faculty
+- One section takes multiple subjects
+- One subject is taken by multiple sections
+
+Without pivot tables, we'd need to duplicate data or use denormalized structures that create update anomalies. Pivot tables:
+- Normalize the data
+- Make queries efficient
+- Maintain referential integrity
+- Allow flexible assignment changes
+
+---
+
+### Security Questions
+
+**Q11: How does the system authenticate users?**
+
+**A:** Laravel Sanctum, in **API-token mode** (the `HasApiTokens` trait on the `User` model), not its cookie/CSRF mode:
+1. **Token-based authentication**: login returns a bearer token; Sanctum stores only a **SHA-256 hash** of it in `personal_access_tokens`, so the plaintext is shown once and can never be recovered — only compared
+2. **Middleware protection**: `auth:sanctum` resolves the bearer token; missing or invalid → **401**, and the controller is never constructed
+3. **Admin-only access control**: login rejects non-admin roles outright, *and* every management route sits behind the `EnsureUserIsAdmin` middleware → **403**
+4. **Session management**: logout deletes only the token used for that request
+
+Example flow:
+```
+POST /api/login {email, password}
+→ 200 {token, user}          one token per account: login first deletes all previous tokens
+→ 401 for wrong credentials or an unknown email, and 403 for a valid non-admin account
+→ not a 422: only a malformed body is a validation error
+
+GET /api/faculties (Header: Authorization: Bearer {token})
+→ 200 faculty list            no token → 401; valid token but role != admin → 403
+```
+
+**Three details worth volunteering:** login is the **only public route** — everything else is inside `auth:sanctum`; signing in on a second browser invalidates the first (deliberate for a single-admin system); and tokens do **not** expire on their own, because `config/sanctum.php` leaves `expiration` unset — a token lives until logout or until the user is deleted.
+
+---
+
+**Q12: How do you prevent unauthorized access to sensitive operations?**
+
+**A:** Multiple layers:
+1. **Authentication**: Must login to access any API
+2. **Authorization**: Role-based middleware checks permissions
+3. **Input Validation**: Laravel validates all inputs
+4. **SQL Injection Prevention**: Eloquent ORM parameterizes queries
+5. **XSS Prevention**: React escapes output by default
+6. **CSRF Protection**: Laravel includes CSRF tokens
+
+Admin-only operations (generate, approve, publish) check user role before execution.
+
+---
+
+### Performance Questions
+
+**Q13: How long does schedule generation take?**
+
+**A:** Depends on complexity:
+- **Typical section** (a Year 1 demo section, 5 subjects / 7 blocks): **~0.3 s**
+- **Complex section** (a Year 3 demo section, 9 subjects / 14 blocks): **~0.5 s**
+- **Whole-department sweep** (15 sections solved back to back, 23 faculty, 30 subjects): ~7 s total, every section OPTIMAL
+
+The solver has a `max_time_in_seconds = 15.0` limit. If no optimal solution found within timeout, it returns the best partial solution found so far.
+
+Performance is acceptable for administrative tasks (not real-time user interactions).
+
+---
+
+**Q14: Can the system scale to handle an entire university?**
+
+**A:** Current design considerations:
+- **Horizontal scaling**: Each service (Laravel, FastAPI) can be scaled independently
+- **Database optimization**: Indexes on frequently queried columns
+- **Connection pooling**: Can be added for high-concurrency scenarios
+
+**Limitations for university scale:**
+- Would need queue-based async processing for very large generations
+- Could partition by department/college
+- May need caching layer for frequent queries
+- Current implementation is for department-level scheduling
+
+For university scale, architectural changes would be needed, but the core constraint-based approach remains valid.
+
+---
+
+### Testing Questions
+
+**Q15: How did you test the system?**
+
+**A:** Testing approach:
+1. **Ad-hoc testing**: Throughout development
+2. **AI engine unit tests**: 171 automated tests across eight modules (Python standard-library `unittest`); 118 of them are the five-module solver suite that directly exercises the solver's `generate_schedule()` with controlled fixtures — covering faculty qualification, day + time-window availability, room type matching, room capacity, faculty/room no-double-booking, maximum teaching load, cross-section conflicts, preferred scheduling window, and partial/infeasible handling. Its last recorded run (the five-module solver suite): 118 tests OK, 0 failed, 0 skipped, 0 warnings/errors. The tests respect all supported solver statuses (OPTIMAL, FEASIBLE, PARTIAL, INFEASIBLE) — not every scenario is OPTIMAL by design
+3. **End-to-end testing**: Full workflow verification (generate → review → approve → publish → print → unpublish)
+4. **Automated backend suite**: 289 Laravel feature tests (1402 assertions) across 26 files — authentication, subject/section validation rules, generation attribution, the publish gate, the published-reference delete guard (409 and the force path), solver-status acceptance (a fully-placed `FEASIBLE` result is accepted, `INFEASIBLE` rejected), the unreachable-engine 502 path, and detailed session-edit conflict payloads — plus frontend typecheck and production build
+
+> Run them with `cd backend && php artisan test` (289 tests — 1402 assertions, re-run 2026-10-13, all passing) and `cd ai-engine && ./.venv/Scripts/python.exe -m unittest discover -s tests` (171 tests across 8 modules, re-run 2026-10-13, OK). Note it is `unittest`, not pytest — pytest is not installed in the engine's virtual environment.
+
+Test coverage:
+- Authentication & RBAC ✅
+- CRUD Operations ✅
+- AI Schedule Generation ✅
+- Manual Edit Conflict Check ✅
+- Schedule Approval Workflow ✅
+- Reports ✅
+- Print/Download (PDF) ✅
+
+---
+
+**Q16: What testing frameworks did you use?**
+
+**A:**
+- **Backend (Laravel)**: PHPUnit (built-in)
+- **Frontend (React)**: TypeScript typecheck + production build
+- **AI Engine**: Python standard-library `unittest` — 171 tests across eight modules; 118 of them run the CP-SAT solver directly with controlled fixtures (no database needed). On Windows run `./.venv/Scripts/python.exe -m unittest discover -s tests`; `pytest` is not installed
+- **Frontend**: no automated test suite — TypeScript typecheck and production build only, which is an honest gap to state if asked
+- **Integration**: Postman/curl for API testing
+
+We focused on practical testing that verifies real functionality rather than achieving 100% code coverage.
+
+---
+
+### Design Decisions Questions
+
+**Q17: Why use Laravel instead of other PHP frameworks (CodeIgniter, Symfony)?**
+
+**A:** 
+1. **Modern PHP**: Built for PHP 8+ with type hints, attributes
+2. **Eloquent ORM**: Excellent database abstraction
+3. **Built-in features**: Authentication, routing, validation, migrations
+4. **Laravel Sanctum**: First-party API authentication
+5. **Community**: Large ecosystem, extensive documentation
+6. **Rapid development**: Conventions over configuration
+
+Laravel is the most mature and feature-rich PHP framework for this type of application.
+
+---
+
+**Q18: Why React instead of Vue, Angular, or plain HTML?**
+
+**A:**
+1. **Component-based**: Reusable UI components
+2. **TypeScript support**: Better developer experience and type safety
+3. **Virtual DOM**: Efficient updates
+4. **Ecosystem**: Large library ecosystem (Tailwind CSS, etc.)
+5. **Industry standard**: Most popular frontend framework
+6. **Team familiarity**: Team has React experience
+
+React provides the best balance of productivity, performance, and maintainability.
+
+---
+
+**Q19: How did you decide on the constraint priorities?**
+
+**A:** Constraints were prioritized based on:
+1. **Legal/Policy requirements**: Faculty cannot teach two classes at once
+2. **Physical limitations**: Room capacity, room type matching
+3. **Business rules**: Faculty availability, qualifications
+4. **Optimization goals**: Cross-section conflicts, teaching load
+
+Hard constraints (must be satisfied) vs soft constraints (nice to have):
+- **Hard**: Double-booking, availability, room type, capacity, midday break
+- **Soft**: Seniority preference (not yet implemented)
+
+---
+
+### Future Improvements Questions
+
+**Q20: What would you improve if you had more time?**
+
+**A:** Priority improvements:
+1. **Soft constraints**: Add preference weighting for faculty
+2. **Lunch break**: Mandatory break in daily schedules
+3. **UI enhancements**: Drag-and-drop schedule editing
+4. **Excel/CSV export**: Export schedules and reports to spreadsheets
+5. **Notifications**: Email/SMS for schedule changes
+6. **Analytics dashboard**: Advanced reporting and insights
+7. **Multi-semester planning**: Semester-to-semester carryover
+8. **API documentation**: OpenAPI/Swagger for API docs
+
+---
+
+**Q21: How would you handle schedule changes after publishing?**
+
+**A:** Current workflow:
+1. Admin manually edits sessions (with conflict detection)
+2. Creates new schedule version
+3. Goes through approval workflow again
+
+**Improvements:**
+1. **Change request system**: Faculty request changes
+2. **Approval workflow**: Department head approves changes
+3. **Automatic re-notification**: Alert affected faculty
+4. **Version history**: Track all changes
+5. **Rollback capability**: Revert to previous schedule
+
+---
+
+### Specific Implementation Questions
+
+**Q22: How does the system handle part-time faculty with limited availability?**
+
+**A:** Example: a part-time faculty member declares limited availability
+1. **Availability stored**: `faculty_availabilities` table has Mon/Wed/Fri entries
+2. **Solver respects**: Constraint #2 prevents scheduling on unavailable days and outside the declared time window (day + time window; the section's preferred start/end window also applies)
+3. **Tested and verified**: System correctly schedules part-time faculty only within their declared days and time windows
+
+If availability is empty, system falls back to section's preferred days (best-effort approach).
+
+---
+
+**Q23: What happens if two sections need the same room at the same time?**
+
+**A:** The solver prevents this:
+1. **Constraint #6**: Room cannot host two sessions simultaneously
+2. **During generation**: Solver assigns unique time-slot combinations to each session
+3. **During manual edit**: Real-time conflict detection blocks invalid assignments
+4. **Cross-section check**: Constraint #8 is enforced against every other section's **draft, approved and published** sessions in the same academic year and semester — twice: once by the engine (as input constraints) and once by Laravel's pre-write gate before anything is stored
+
+Result: No double-booking of rooms across all sections.
+
+---
+
+**Q24: How does the system determine if a schedule is OPTIMAL vs PARTIAL?**
+
+**A:** Based on CP-SAT solver output:
+- **OPTIMAL**: All sessions placed, no constraints violated, best possible solution found
+- **PARTIAL**: Some sessions placed, others unscheduled (with explanation why)
+- **INFEASIBLE**: No valid solution exists given constraints
+
+Status returned to user with:
+- List of scheduled sessions (times, rooms, faculty)
+- List of unscheduled sessions (with failure reasons)
+- Recommendations for resolution
+
+---
+
+**Q25: How do you ensure data consistency across the three services?**
+
+**A:** Single source of truth: PostgreSQL database
+- Laravel: Uses Eloquent ORM (consistent data access)
+- FastAPI: Uses psycopg2 with parameterized queries (prevents SQL injection)
+- Both connect to same database instance
+- Laravel migrations are schema source of truth
+
+**Consistency mechanisms:**
+1. Foreign key constraints at database level
+2. Explicit `deleting` model hooks that clear referencing sessions (chosen over RESTRICT, so a legitimate delete does not surface as a 500)
+3. Laravel validation before writes
+4. FastAPI reads only (doesn't write schedule data directly)
+5. The published-reference guard, which intercepts a delete *before* those hooks run
+
+---
+
+**Q26: What happens if an admin deletes a room that's used in a published schedule?**
+
+**A:** They get a **409**, the record is not touched, and the admin has to decide twice.
+
+1. `RoomController::destroy()` counts every session referencing the room and how many of those sit in a **published** schedule.
+2. If any published schedule depends on it (and no force flag is present), `GuardsPublishedReferences` returns 409 with a message that states the exact scope — *"still used by published schedules #69, #102. Deleting it would remove 31 sessions in total, 3 of them from the published timetable."* — plus `requires_confirmation`, `published_schedule_ids`, `sessions_at_risk` and `published_sessions_at_risk`. **Nothing is mutated**; the record is still readable immediately afterwards.
+3. The client shows a **second** confirmation quoting that message verbatim. If the admin declines, no request is sent at all. If they accept, it retries with `?force=1` and the delete proceeds.
+
+The counts are deliberately split because they differ by an order of magnitude — 31 sessions total, only 3 of them published — and reporting the published subset alone would understate the loss.
+
+**Be precise about what confirming costs.** On `?force=1` the room and *every* session referencing it are removed, drafts, archives and published alike, and three things do **not** happen: the affected published schedule **keeps its `published` status** (nothing downgrades or flags it), **no audit row is written**, and there is no automatic repair. Recovery is manual — unpublish, correct the master data, regenerate. This is the one place where the system can leave a published schedule incomplete, so present it as a bounded, known gap rather than a solved problem.
+
+**Q27: Why does the system allow the delete at all instead of forbidding it?**
+
+**A:** Because master data genuinely changes — a laboratory gets decommissioned, a subject is retired, a faculty member leaves. Forbidding the delete would make the system unusable exactly when it needs to be maintained.
+
+So the guard is an **intention checkpoint, not a veto**. Its purpose is that destroying a live timetable must be a *deliberate act* rather than a side effect of tidying up records: the admin sees the exact scope, confirms a second time, and has to say `force` explicitly. Note also that `?force=1` is a plain request parameter rather than a server-issued acknowledgement token, so the server has no memory that this particular warning was shown — which is consistent with the intent (enforcing deliberateness, not reversibility), but is worth stating honestly if asked to tighten it.
+
+---
+
+## Summary for Defense
+
+### Key Strengths
+1. **Mathematical rigor** — CP-SAT provides provably valid schedules
+2. **Complete workflow** — Generate → Approve → Publish → print/PDF distribution to faculty and students (faculty hold no accounts)
+3. **Constraint coverage** — 8 hard constraints cover real-world requirements
+4. **Best-effort approach** — Maximizes utility when perfect solution impossible
+5. **Conflict prevention** — Dual mechanism (solver + real-time detection)
+6. **Five protection layers** — Solver constraints, the term-scoped generation lock with its pre-write conflict gate, manual-edit validation, the publish conflict gate, and the published-reference delete guard
+7. **Production-ready** — Authentication, RBAC, error handling, testing
+
+### Technical Contributions
+1. Integration of constraint programming with web application
+2. Real-time conflict detection for manual edits
+3. Best-effort scheduling with failure explanations
+4. Cross-section conflict prevention
+5. Complete CRUD + scheduling workflow
+
+### Business Value
+- Eliminates manual scheduling errors
+- Reduces scheduling time from hours to minutes
+- Ensures fair and consistent scheduling
+- Provides transparency and audit trail
+- Supports data-driven decision making
+
+---
+
+## Appendix: File Structure
+
+```
+it-faculty-scheduling-system/
+├── ai-engine/                      # Python FastAPI (port 8001)
+│   ├── api/app.py                  # OR-Tools CP-SAT solver + endpoints
+│   ├── solver/scheduler.py         # Core scheduling logic
+│   ├── requirements.txt
+│   └── .env
+│
+├── backend/                        # Laravel 13 + Sanctum (port 8000)
+│   ├── app/
+│   │   ├── Http/Controllers/       # All API controllers
+│   │   ├── Http/Middleware/        # EnsureUserIsAdmin — the admin gate
+│   │   └── Models/                 # Eloquent models
+│   ├── database/migrations/        # 11 domain tables + 3 framework tables
+│   ├── routes/api.php             # API routes
+│   └── .env
+│
+├── frontend/                       # React + TypeScript + Vite (port 5173)
+│   └── src/
+│       ├── App.tsx
+│       ├── context/AuthContext.tsx
+│       └── pages/                  # All page components
+│
+├── documentation/                  # All documentation
+├── database/                       # Database files
+├── diagrams/                       # System diagrams
+└── README.md
+```
+
+---
+
+*Document prepared for Design Defense Hearing*
+*Date: August 2026*

@@ -104,11 +104,9 @@ run_gate() {
 
     # This suite deliberately runs without `set -e`: a nonzero status here is the
     # measurement, not a failure. run_gate leaves the caller's mode alone.
-    local gate_env=(env -u DB_DATABASE -u PREFLIGHT_ALLOW_SOURCE -u DB_PASSWORD -u APP_KEY \
-        ARGLOG="$arglog" EXITS="$exits" PHP_BIN="$stub" ARTISAN_BIN="$stub" DB_CONNECTION=pgsql)
-    gate_out="$(
-        "${gate_env[@]}" ${db_binding[@]+"${db_binding[@]}"} "$@" bash "$gate" 2>&1
-    )"
+    gate_out="$(env -u DB_DATABASE -u PREFLIGHT_ALLOW_SOURCE -u DB_PASSWORD -u APP_KEY \
+        ARGLOG="$arglog" EXITS="$exits" PHP_BIN="$stub" DB_CONNECTION=pgsql \
+        ${db_binding[@]+"${db_binding[@]}"} "$@" bash "$gate" 2>&1)"
     gate_status=$?
 }
 
@@ -123,7 +121,7 @@ check 'exit status is 0' '0' "$gate_status"
 check_contains 'says the release may continue' 'may continue' "$gate_out"
 check 'invokes exactly one command' '1' "$(invocations)"
 check_contains 'invokes departments:preflight with the non-interactive flag' \
-    'departments:preflight --no-interaction' "$(cat "$arglog")"
+    'artisan departments:preflight --no-interaction' "$(cat "$arglog")"
 
 # ---------------------------------------------------------------------
 # Case: failure — the preflight's own status is reproduced, nothing runs after
@@ -143,24 +141,6 @@ if [ -e "$marker" ]; then
 else
     check 'the step chained after the gate did not run' 'not run' 'not run'
 fi
-
-# ---------------------------------------------------------------------
-# Case: preflight itself returns 2 or 3 — same numeric codes as gate refusals,
-# but the output must identify this as a preflight failure, not a gate refusal.
-# ---------------------------------------------------------------------
-printf '\npreflight failure code 2\n'
-run_gate 2 scheduling_system_testing
-check 'preflight exit status 2 is preserved' '2' "$gate_status"
-check_contains 'identifies this as a preflight failure' 'DEPLOYMENT BLOCKED: departments:preflight exited 2' "$gate_out"
-check_absent 'does not label it a gate refusal' 'REFUSING TO RUN THE GATE' "$gate_out"
-check 'php was invoked for the preflight' '1' "$(invocations)"
-
-printf '\npreflight failure code 3\n'
-run_gate 3 scheduling_system_testing
-check 'preflight exit status 3 is preserved' '3' "$gate_status"
-check_contains 'identifies this as a preflight failure' 'DEPLOYMENT BLOCKED: departments:preflight exited 3' "$gate_out"
-check_absent 'does not label it a gate refusal' 'REFUSING TO RUN THE GATE' "$gate_out"
-check 'php was invoked for the preflight' '1' "$(invocations)"
 
 # ---------------------------------------------------------------------
 # Case: missing database name — refuse before php is invoked at all

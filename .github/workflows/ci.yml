@@ -36,67 +36,38 @@ permissions:
   contents: read
 
 jobs:
-  # The `frontend` job is conditional: the CI publication set does not include
-  # frontend sources, so this job only runs when the frontend source tree is
-  # present in the checked-out repository. When frontend/ is absent the job is
-  # simply skipped (it never runs, and nothing is claimed as built).
   frontend:
     name: Lint & build
     runs-on: ubuntu-latest
-    # No job-wide defaults.run.working-directory: this job has steps that run
-    # from the repository root (the skip report) and steps that run from
-    # frontend/. Explicit working-directories are set per step instead.
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
 
-      # The CI publication set does not include frontend/ sources, so the
-      # frontend lint/build steps here only run when frontend/package.json is
-      # present in the checked-out revision. hashFiles() is valid in a
-      # step-level if, so the steps below each gate on frontend/package.json
-      # instead of placing the condition on the job (a job-level if cannot use
-      # hashFiles()). When frontend/ is absent the steps all skip.
-      - name: Verify frontend sources
-        if: hashFiles('frontend/package.json') != ''
-        run: |
-          test -f package.json
-          echo "frontend sources: present"
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          # eslint 10 requires ^20.19.0 || ^22.13.0 || >=24 and vite 8 requires
+          # >=22.12.0; 24 is the version the project is developed on.
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      # Installs exactly what the committed lockfile pins. Runs from frontend/
-      # so npm ci installs the pinned lockfile versions.
+      # Installs exactly what the committed lockfile pins.
       - name: Install dependencies
-        if: hashFiles('frontend/package.json') != ''
-        working-directory: frontend
         run: npm ci
 
       # Expected: exit 0 with 0 errors and 9 react-hooks/exhaustive-deps
       # warnings. The warnings stay visible on purpose — no --max-warnings, no --quiet.
       - name: Lint
-        if: hashFiles('frontend/package.json') != ''
-        working-directory: frontend
         run: npm run lint
 
       # `tsc -b && vite build` — typecheck included, so a type error fails CI.
       - name: Build
-        if: hashFiles('frontend/package.json') != ''
-        working-directory: frontend
         run: npm run build
 
-      # The checked-out revision has no frontend/ sources, so the lint/build
-      # chain above is skipped. This step runs from the repository root even
-      # when frontend/ does not exist, and writes an explicit, human-readable
-      # skip to the job summary so the run is clearly reported as skipped and
-      # nothing is claimed as a completed frontend build.
-      - name: Report skipped frontend build
-        if: hashFiles('frontend/package.json') == ''
-        run: |
-          echo "frontend lint & build: SKIPPED" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "The checked-out revision does not contain frontend/, so the CI publication" >> "$GITHUB_STEP_SUMMARY"
-          echo "set's frontend lint/build steps were not executed and no frontend build is" >> "$GITHUB_STEP_SUMMARY"
-          echo "claimed." >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "##[notice] frontend lint & build skipped: no frontend/package.json in the checked-out revision"
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
@@ -122,7 +93,7 @@ jobs:
       # the guard honest: if the rules ever stop matching, this fails instead of
       # the scan quietly reporting "clean".
       - name: Test the scanner
-        run: python3 -m unittest discover -s documentation/tools -p "test_check_secrets.py"
+        run: python -m unittest discover -s documentation/tools -p "test_check_secrets.py"
 
   # The two self-tests for the deployment gate and the PostgreSQL test-target
   # guard. Both are outside PHPUnit's collection on purpose: the project's test
