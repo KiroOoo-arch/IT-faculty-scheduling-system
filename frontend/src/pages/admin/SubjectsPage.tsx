@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useAuth, API_BASE_URL } from '../../context/AuthContext'
+import { useEffect, useMemo, useRef, useCallback, useState } from 'react'
+import { useAuth, API_BASE_URL } from '../../context/auth'
 import { LAB_ROOM_TYPES } from '../../constants/roomTypes'
 import {
   CLASSIFICATION_LABELS,
@@ -123,6 +123,12 @@ export default function SubjectsPage() {
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
   /**
+   * A failed subject load. Kept apart from the form's `errors` so the table can
+   * report the failure instead of presenting an error response as an empty
+   * database.
+   */
+  const [subjectsError, setSubjectsError] = useState('')
+  /**
    * The result of a review-list action, shown beside the queue it belongs to.
    * A bulk run reports one line per subject, so `ok` is true only when every
    * subject in the run was classified.
@@ -145,35 +151,57 @@ export default function SubjectsPage() {
   /** The create / edit card, so a review action can bring it into view. */
   const formRef = useRef<HTMLDivElement | null>(null)
 
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  }
+  const headers = useMemo(
+    () => ({
+      Authorization: `Bearer ${token}`,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    }),
+    [token],
+  )
 
-  async function fetchSubjects() {
+  const fetchSubjects = useCallback(async () => {
     setLoading(true)
+    setSubjectsError('')
     try {
       const res = await fetch(`${API_BASE_URL}/subjects`, { headers })
+
+      // A failed request still answers with JSON, so without this check the
+      // error body would be read as "no subjects" and the table would claim the
+      // database is empty. Same guard the Sections page applies.
+      if (!res.ok) {
+        throw new Error(`The subjects could not be loaded (HTTP ${res.status}).`)
+      }
+
       const data = await res.json()
       setSubjects(Array.isArray(data) ? data : [])
-    } catch {
-      setErrors(['Failed to load subjects'])
+    } catch (err) {
+      setSubjects([])
+      setSubjectsError(err instanceof Error ? err.message : 'The subjects could not be loaded.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [headers])
 
   /** The owning / authorizing vocabulary. Read-only: departments are data, not a screen. */
-  async function fetchDepartments() {
+  const fetchDepartments = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/departments`, { headers })
       const data = await res.json()
       setDepartments(Array.isArray(data) ? data : [])
     } catch { /* ignore */ }
-  }
+  }, [headers])
 
-  useEffect(() => { fetchSubjects(); fetchDepartments() }, [])
+  // Kick off the subject and department fetches on mount without synchronous
+  // setState inside the effect body. `fetchSubjects` and `fetchDepartments`
+  // are stable across renders (useCallback keyed on headers/token), so they
+  // are safe to include here.
+  useEffect(() => {
+    void Promise.resolve().then(() => {
+      void fetchSubjects()
+      void fetchDepartments()
+    })
+  }, [fetchSubjects, fetchDepartments])
 
   const isMajor = form.classification === 'major'
 
@@ -1120,7 +1148,9 @@ export default function SubjectsPage() {
             <div>
               <h2 className="text-lg font-semibold text-gray-800">All Subjects</h2>
               <p className="text-xs text-gray-500 mt-1">
-                {counts.major} major · {counts.minor} minor / shared · {counts.unclassified} unclassified
+                {subjectsError
+                  ? 'subject list unavailable'
+                  : `${counts.major} major · ${counts.minor} minor / shared · ${counts.unclassified} unclassified`}
               </p>
             </div>
             <input
@@ -1133,6 +1163,12 @@ export default function SubjectsPage() {
           </div>
 
           {loading && <p className="text-gray-500 p-4">Loading...</p>}
+
+          {!loading && subjectsError && (
+            <p role="alert" className="border-t border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {subjectsError} Reload the page to try again.
+            </p>
+          )}
 
           {!loading && (
             <table className="w-full text-left">
@@ -1187,7 +1223,11 @@ export default function SubjectsPage() {
                 {visibleSubjects.length === 0 && (
                   <tr className="border-t border-gray-200">
                     <td className="p-3 text-sm text-gray-500" colSpan={8}>
-                      {subjects.length === 0 ? 'No subjects yet.' : `No subject matches “${query}”.`}
+                      {subjectsError
+                        ? 'The subject list could not be loaded.'
+                        : subjects.length === 0
+                          ? 'No subjects yet.'
+                          : `No subject matches “${query}”.`}
                     </td>
                   </tr>
                 )}

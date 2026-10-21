@@ -88,7 +88,7 @@ export default function AdminDashboard() {
   }, [token])
 
   const fetchSchedules = useCallback(async () => {
-    setSchedulesLoading(prev => prev)
+    setSchedulesLoading(true)
     try {
       const response = await fetch(`${API_BASE_URL}/schedules?show_archived=${showArchived}`, { headers: headers() })
       if (response.ok) {
@@ -96,7 +96,7 @@ export default function AdminDashboard() {
         setSchedules(Array.isArray(data) ? data : [])
       }
     } catch { /* ignore */ } finally {
-      setSchedulesLoading(prev => prev)
+      setSchedulesLoading(false)
     }
   }, [showArchived, headers])
 
@@ -132,7 +132,10 @@ export default function AdminDashboard() {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong')
       } finally {
-        setLoading(prev => prev)
+        // The roster and the section/room pickers are populated above; the
+        // panel must leave its loading state whether the batch succeeded or
+        // failed, otherwise it reads "Loading..." for the rest of the session.
+        setLoading(false)
       }
     }
 

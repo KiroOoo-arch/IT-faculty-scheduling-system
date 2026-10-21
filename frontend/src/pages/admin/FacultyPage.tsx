@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useAuth, API_BASE_URL } from '../../context/AuthContext'
+import { useEffect, useState, useCallback } from 'react'
+import { useAuth, API_BASE_URL } from '../../context/auth'
 
 type Subject = {
   id: number
@@ -33,6 +33,8 @@ export default function FacultyPage() {
   const [allSubjects, setAllSubjects] = useState<Subject[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  /** A failed subject load, shown beside the qualification checkboxes. */
+  const [subjectsError, setSubjectsError] = useState('')
 
   const [form, setForm] = useState({
     name: '',
@@ -49,15 +51,15 @@ export default function FacultyPage() {
   const [availStartTime, setAvailStartTime] = useState('07:00')
   const [availEndTime, setAvailEndTime] = useState('17:00')
 
-  function headers() {
+  const headers = useCallback(function headers() {
     return {
       Authorization: `Bearer ${token}`,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     }
-  }
+  }, [token])
 
-  async function fetchFaculties() {
+  const fetchFaculties = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE_URL}/faculties`, { headers: headers() })
@@ -68,20 +70,37 @@ export default function FacultyPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [headers])
 
-  async function fetchSubjects() {
+  const fetchSubjects = useCallback(async () => {
+    setSubjectsError('')
     try {
       const res = await fetch(`${API_BASE_URL}/subjects`, { headers: headers() })
+
+      // The endpoint answers a failure with a JSON error object; without this
+      // check it would be read as "no subjects" and the picker would look
+      // empty rather than broken.
+      if (!res.ok) {
+        throw new Error(`The subjects could not be loaded (HTTP ${res.status}).`)
+      }
+
       const data = await res.json()
       setAllSubjects(Array.isArray(data) ? data : [])
-    } catch { /* ignore */ }
-  }
+    } catch (err) {
+      setAllSubjects([])
+      setSubjectsError(err instanceof Error ? err.message : 'The subjects could not be loaded.')
+    }
+  }, [headers])
 
+  // fetchFaculties sets its loading flag synchronously, which an effect body must
+  // not do during the commit (it would paint an empty roster, then the real one).
+  // The kickoff waits for a microtask, which still runs before the paint.
   useEffect(() => {
-    fetchFaculties()
-    fetchSubjects()
-  }, [])
+    void Promise.resolve().then(() => {
+      void fetchFaculties()
+      void fetchSubjects()
+    })
+  }, [fetchFaculties, fetchSubjects])
 
   async function fetchAvailability(facultyId: number) {
     try {
@@ -306,7 +325,12 @@ export default function FacultyPage() {
               <div className="border-t border-yellow-200 pt-4 mb-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Subjects (qualifications)</h3>
                 <p className="text-xs text-gray-500 mb-3">Check the subjects this faculty member is qualified to teach.</p>
-                {allSubjects.length === 0 && <p className="text-xs text-gray-400">No subjects available.</p>}
+                {subjectsError && (
+                  <p role="alert" className="mb-2 text-xs text-red-600">{subjectsError}</p>
+                )}
+                {!subjectsError && allSubjects.length === 0 && (
+                  <p className="text-xs text-gray-400">No subjects available.</p>
+                )}
                 <div className="flex flex-wrap gap-3">
                   {allSubjects.map((subject) => (
                     <label key={subject.id} className="flex items-center gap-2 bg-white border border-gray-300 rounded-md px-3 py-2 cursor-pointer hover:bg-gray-50 transition">
