@@ -10,6 +10,7 @@ use App\Models\ScheduleSession;
 use App\Models\Section;
 use App\Models\Setting;
 use App\Models\Subject;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -172,6 +173,11 @@ class ScheduleSessionController extends Controller
         // in for its own stored row: `hourExcessDetails()` compares the excess
         // before the change against the excess after it, so only a request that
         // creates or worsens one is refused.
+        //
+        // Faculty teaching load check: prevent new overloads while preserving
+        // the existing policy that does not worsen an existing over-budget state.
+        $this->checkFacultyLoadForSessionEdit($schedule, $proposed, [$session->id]);
+
         $hours = $this->hourExcessDetails(
             $schedule,
             [array_merge($proposed, [
@@ -255,6 +261,16 @@ class ScheduleSessionController extends Controller
         $rejection = $this->reviewBatch($schedule, $validated['sessions']);
         if ($rejection !== null) {
             return $rejection;
+        }
+
+        // Faculty teaching load: prevent new overloads in the batch-created schedule.
+        $facultyRejection = $this->checkFacultyLoadForBatch(
+            $schedule,
+            $validated['sessions'],
+            []
+        );
+        if ($facultyRejection !== null) {
+            return $facultyRejection;
         }
 
         $created = DB::transaction(function () use ($schedule, $validated) {
@@ -341,6 +357,16 @@ class ScheduleSessionController extends Controller
         $rejection = $this->reviewBatch($schedule, $targets, array_column($targets, 'id'));
         if ($rejection !== null) {
             return $rejection;
+        }
+
+        // Faculty teaching load: prevent new overloads in the batch-updated schedule.
+        $facultyRejection = $this->checkFacultyLoadForBatch(
+            $schedule,
+            $targets,
+            array_column($targets, 'id')
+        );
+        if ($facultyRejection !== null) {
+            return $facultyRejection;
         }
 
         DB::transaction(function () use ($targets) {
@@ -881,6 +907,324 @@ class ScheduleSessionController extends Controller
         }
 
         return 'This change would put one or more subjects over the hours they require.';
+    }
+
+    /**
+     * Check faculty teaching load for a single-session edit.
+     *
+     * Prevents introducing new faculty overloads while preserving the existing
+     * policy that does not worsen an existing over-budget state.
+     *
+     * - Measures the schedule being edited together with the other live
+     *   schedules of the same term, so meetings on this schedule are not missed
+     *   and the edited one is not counted twice.
+     * - Excludes the sessions this request replaces.
+     * - Uses the faculty's configured max_teaching_load (hours) against a
+     *   workload kept in minutes.
+     * - Only rejects if the change would create a new overload (not if an
+     *   existing overload already exists, per established policy).
+     * - Does NOT merge intervals across different weekdays.
+     * - Preserves existing conflict checks.
+     */
+    private function checkFacultyLoadForSessionEdit(Schedule $schedule, array $proposed, array $replacedIds): void
+    {
+        // The caller merges the request onto the stored session, so this key
+        // carries the faculty the meeting would end up assigned to.
+        $proposedFacultyId = $proposed['faculty_id'] ?? null;
+
+        // Only check if a faculty member is involved
+        if (empty($proposedFacultyId)) {
+            return;
+        }
+
+        $faculty = Faculty::find($proposedFacultyId);
+        if (! $faculty) {
+            return;
+        }
+
+        $maxLoad = (int) $faculty->max_teaching_load;
+
+        if ($maxLoad <= 0) {
+            // No limit configured; skip faculty load check
+            return;
+        }
+
+        // `minutes()` speaks minutes past midnight, so the duration never stays
+        // in `strtotime()`'s seconds.
+        $proposedStart = $this->minutes((string) $proposed['start_time']);
+        $proposedEnd = $this->minutes((string) $proposed['end_time']);
+        $proposedMinutes = $proposedEnd - $proposedStart;
+
+        // A zero or negative duration is invalid rather than an overload; the
+        // slot check has already refused it before this point.
+        if ($proposedMinutes <= 0) {
+            return;
+        }
+
+        // Workload already assigned this term, with the meeting being edited
+        // left out so it is not counted twice.
+        $existingMinutes = $this->calculateExistingWorkloadMinutesForSession(
+            $faculty,
+            $schedule,
+            (int) $proposedFacultyId,
+            $replacedIds
+        );
+
+        $totalMinutes = $existingMinutes + $proposedMinutes;
+        $totalHours = $totalMinutes / 60;
+
+        // The workload before the change, measured the same way.
+        $currentMinutes = $this->calculateCurrentWorkloadMinutes(
+            $faculty,
+            $schedule,
+            $replacedIds
+        );
+        $currentHours = $currentMinutes / 60;
+
+        // Only reject if this change would create a NEW overload
+        // (i.e., current is within limit, but total would exceed it)
+        if ($currentHours <= $maxLoad && $totalHours > $maxLoad) {
+            throw new HttpResponseException(response()->json([
+                'message' => "This change would cause faculty '{$faculty->name}' to exceed teaching load. "
+                    .'Current workload: '.round($currentHours, 1).'h, '
+                    .'Proposed: '.round($totalHours, 1).'h, '
+                    ."Maximum: {$maxLoad}h.",
+            ], 422));
+        }
+    }
+
+    /**
+     * Minutes one faculty member already carries this term, leaving out the
+     * stored sessions a request replaces.
+     *
+     * Minutes, not seconds: every time goes through `minutes()` and the
+     * interval merges are done on those figures, so the caller can convert to
+     * hours once when comparing against `max_teaching_load`.
+     *
+     * @param  list<int>  $replacedIds
+     */
+    private function calculateExistingWorkloadMinutesForSession(?Faculty $faculty, Schedule $schedule, $facultyId, array $replacedIds): int
+    {
+        if ($faculty === null) {
+            return 0;
+        }
+
+        return $this->workloadMinutes($faculty, $schedule, [], $replacedIds);
+    }
+
+    /**
+     * The same measure for the state before a change, excluding the sessions
+     * being replaced so the edited meeting is never counted twice.
+     *
+     * @param  list<int>  $replacedIds
+     */
+    private function calculateCurrentWorkloadMinutes(Faculty $faculty, Schedule $schedule, array $replacedIds): int
+    {
+        return $this->workloadMinutes($faculty, $schedule, [], $replacedIds);
+    }
+
+    /**
+     * Unique occupied minutes per weekday for one faculty member this term.
+     *
+     * The schedule being edited counts as well as the other live schedules of
+     * the same academic term; stored meetings named in `$excludeIds` are left
+     * out so a replaced row is never counted twice, and the meetings in
+     * `$extra` are counted as if they were stored.
+     *
+     * @param  array<int,array<string,mixed>>  $extra
+     * @param  list<int>  $excludeIds
+     */
+    private function workloadMinutes(Faculty $faculty, Schedule $schedule, array $extra, array $excludeIds): int
+    {
+        $section = $schedule->section;
+
+        if ($section === null) {
+            return 0;
+        }
+
+        $excludeIds = array_map('intval', $excludeIds);
+
+        $sessions = ScheduleSession::where('faculty_id', $faculty->id)
+            ->where(function ($q) use ($schedule, $section) {
+                // The schedule under edit is always in scope — its surviving
+                // meetings are assignments too. Other schedules count only when
+                // they are live in the same term.
+                $q->where('schedule_id', $schedule->id)
+                    ->orWhereHas('schedule', function ($inner) use ($schedule, $section) {
+                        $inner->where('id', '!=', $schedule->id)
+                            ->whereIn('status', ['approved', 'published'])
+                            ->whereHas('section', function ($s) use ($section) {
+                                $s->where('academic_year', $section->academic_year)
+                                    ->where('semester_name', $section->semester_name);
+                            });
+                    });
+            })
+            ->get();
+
+        $intervalsByDay = [];
+
+        foreach ($sessions as $session) {
+            if (in_array((int) $session->id, $excludeIds, true)) {
+                continue;
+            }
+
+            $this->addInterval($intervalsByDay, (int) $session->day_of_week, $session->start_time, $session->end_time);
+        }
+
+        foreach ($extra as $data) {
+            $this->addInterval(
+                $intervalsByDay,
+                (int) ($data['day_of_week'] ?? 0),
+                $data['start_time'] ?? null,
+                $data['end_time'] ?? null,
+            );
+        }
+
+        return $this->mergedMinutes($intervalsByDay);
+    }
+
+    /**
+     * Record one meeting as a minutes-past-midnight interval on its weekday.
+     *
+     * A weekday outside 1–7 or a pair that does not move forward is skipped:
+     * it occupies no measurable time, and the reviewers report it separately.
+     *
+     * @param  array<int,list<array{0:int,1:int}>>  $intervalsByDay
+     */
+    private function addInterval(array &$intervalsByDay, int $day, ?string $start, ?string $end): void
+    {
+        if ($day < 1 || $day > 7) {
+            return;
+        }
+
+        $startMinutes = $this->minutes($start);
+        $endMinutes = $this->minutes($end);
+
+        if ($endMinutes <= $startMinutes) {
+            return;
+        }
+
+        $intervalsByDay[$day][] = [$startMinutes, $endMinutes];
+    }
+
+    /**
+     * Total minutes covered once overlapping intervals on the same weekday are
+     * merged. Weekdays stay separate: a Monday meeting does not shorten Tuesday.
+     *
+     * @param  array<int,list<array{0:int,1:int}>>  $intervalsByDay
+     */
+    private function mergedMinutes(array $intervalsByDay): int
+    {
+        $totalMinutes = 0;
+
+        foreach ($intervalsByDay as $intervals) {
+            usort($intervals, fn ($a, $b) => $a[0] <=> $b[0]);
+
+            $merged = [];
+
+            foreach ($intervals as [$start, $end]) {
+                if (empty($merged)) {
+                    $merged[] = [$start, $end];
+                    continue;
+                }
+
+                $last = count($merged) - 1;
+
+                if ($start <= $merged[$last][1]) {
+                    $merged[$last][1] = max($merged[$last][1], $end);
+                } else {
+                    $merged[] = [$start, $end];
+                }
+            }
+
+            foreach ($merged as [$start, $end]) {
+                $totalMinutes += $end - $start;
+            }
+        }
+
+        return $totalMinutes;
+    }
+
+    /** -----------------------------------------------------------------------
+     * Check faculty teaching load for a batch create/update operation.
+     *
+     * Prevents introducing new faculty teaching-load overloads in a batch of
+     * sessions. Uses the same workload definition as the single-session check:
+     * unique occupied minutes per weekday, merging overlapping intervals, with
+     * no merging across weekdays.
+     * - Counts the schedule's surviving meetings and the other approved or
+     *   published assignments of the same term exactly once.
+     * - Leaves out the sessions the request replaces.
+     * - Compares the resulting minutes against max_teaching_load in hours.
+     * - Only rejects a batch that creates a new overload, so an over-budget
+     *   state that already exists is not made uneditable.
+     * - Is order-preserving: a row is judged with every earlier row of the same
+     *   batch already counted, so a batch cannot slip past row by row.
+     * ----------------------------------------------------------------------- */
+    private function checkFacultyLoadForBatch(Schedule $schedule, array $proposedSessions, array $replacedIds): ?JsonResponse
+    {
+        if ($schedule->section === null) {
+            return null; // no section, cannot check; caller will proceed
+        }
+
+        // Group the batch by faculty, keeping the order the rows arrived in.
+        $byFaculty = [];
+
+        foreach ($proposedSessions as $data) {
+            $facultyId = $data['faculty_id'] ?? null;
+
+            if (empty($facultyId)) {
+                continue;
+            }
+
+            $byFaculty[(int) $facultyId][] = $data;
+        }
+
+        foreach ($byFaculty as $facultyId => $rows) {
+            $faculty = Faculty::find($facultyId);
+
+            if ($faculty === null) {
+                // A missing record has no limit to enforce; the request's own
+                // `exists` rule reports the bad id.
+                continue;
+            }
+
+            $maxLoad = (int) $faculty->max_teaching_load;
+
+            if ($maxLoad <= 0) {
+                continue; // no limit configured
+            }
+
+            $maxMinutes = $maxLoad * 60;
+            $accumulated = $this->calculateExistingWorkloadMinutesForSession(
+                $faculty,
+                $schedule,
+                $facultyId,
+                $replacedIds
+            );
+
+            foreach ($rows as $data) {
+                $start = $this->minutes((string) $data['start_time']);
+                $end = $this->minutes((string) $data['end_time']);
+                $sessionMinutes = max($end - $start, 0);
+
+                $beforeMinutes = $accumulated;
+                $accumulated += $sessionMinutes;
+
+                // Only reject if this row creates a NEW overload.
+                if ($beforeMinutes <= $maxMinutes && $accumulated > $maxMinutes) {
+                    $totalHours = $accumulated / 60;
+
+                    return response()->json([
+                        'message' => "This change would cause faculty to exceed teaching load. "
+                            ."Proposed: ".round($totalHours, 1)."h, "
+                            ."Maximum: {$maxLoad}h.",
+                    ], 422);
+                }
+            }
+        }
+
+        return null;
     }
 
     /** -----------------------------------------------------------------------
