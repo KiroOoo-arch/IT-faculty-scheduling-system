@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { API_BASE_URL, useAuth } from '../../context/AuthContext'
-import { formatTimeRange } from '../../utils/time'
+import { API_BASE_URL, useAuth } from '../../context/auth'
 
-/**
- * The multi-session editor: a subject's meetings, one row each.
- *
+/** The multi-session editor: a subject's meetings, one row each.
+ * 
  * The generator places a subject as a single block — one `lecture_hours`-long
  * lecture and one `lab_hours`-long laboratory (ai-engine/solver/scheduler.py) —
  * and this page is how that block is split across days by hand. Everything it
@@ -13,6 +11,7 @@ import { formatTimeRange } from '../../utils/time'
  * laboratory kept apart, because that is what the solver schedules from and what
  * the API enforces.
  */
+
 
 type HoursRow = {
   subject_id: number
@@ -78,7 +77,7 @@ const TYPE_LABELS: Record<MeetingType, string> = {
   laboratory: 'Laboratory',
 }
 
-/** Meeting lengths the API accepts: the solver's 30-minute slot grid. */
+/* Meeting lengths the API accepts: the solver's 30-minute slot grid. */
 const HALF_HOUR = 1800
 
 /** `09:00`, `10:30` → 90. Returns 0 for anything that is not yet a full pair. */
@@ -92,7 +91,7 @@ function minutesBetween(start: string, end: string): number {
   return eh * 60 + em - (sh * 60 + sm)
 }
 
-/** `90` → `1.5`, `120` → `2`. */
+/* `90` → `1.5`, `120` → `2`. */
 function hoursLabel(minutes: number): string {
   return String(Math.round((minutes / 60) * 100) / 100)
 }
@@ -101,7 +100,7 @@ function budgetKey(subjectId: number, type: MeetingType): string {
   return `${subjectId}|${type}`
 }
 
-/** The fields the API stores, and what change detection compares. */
+/* The fields the API stores, and what change detection compares. */
 function serialise(meeting: Meeting) {
   return {
     subject_id: meeting.subject_id,
@@ -114,8 +113,7 @@ function serialise(meeting: Meeting) {
   }
 }
 
-/**
- * The API reports a rejected batch three ways: a summary `message`, per-entry
+/* The API reports a rejected batch three ways: a summary `message`, per-entry
  * `errors` keyed by the entry's position, and the same reasons flattened into
  * `conflicts`. The specific reasons are the actionable part, so they are
  * preferred over the summary.
@@ -167,13 +165,7 @@ export default function ScheduleSessionEditor() {
     [token],
   )
 
-  /**
-   * Everything the page reads, in one request batch.
-   *
-   * Deliberately free of React state: the mount effect awaits this and only
-   * then sets state, so mounting does not cascade a synchronous re-render, and
-   * the button-driven reloads below can reuse it unchanged.
-   */
+  /** Everything the page reads, in one request batch. */
   const fetchAll = useCallback(async () => {
     if (!scheduleId) throw new Error('No schedule was selected.')
 
@@ -260,11 +252,7 @@ export default function ScheduleSessionEditor() {
 
   const editable = schedule?.status === 'draft'
 
-  /**
-   * The subject/type pairs this section can be scheduled for: one per budget the
-   * subjects table declares. The composer picks from here, so a lecture hour can
-   * never be filed against a laboratory requirement, or the other way round.
-   */
+  /** The subject/type pairs this section can be scheduled for. */
   const subjects = useMemo(() => {
     const seen = new Map<number, { id: number; code: string; title: string }>()
     for (const row of hours) {
@@ -450,9 +438,7 @@ export default function ScheduleSessionEditor() {
       await reload()
 
       setNotice(
-        created.length + updated.length + deleted.length === 0
-          ? 'Nothing had changed.'
-          : 'Schedule saved.',
+        created.length + updated.length + deleted.length === 0 ? 'Nothing had changed.' : 'Schedule saved.',
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The schedule could not be saved.')
@@ -478,30 +464,34 @@ export default function ScheduleSessionEditor() {
   return (
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-[#0a2f9c]">
-              Schedule Sessions
-            </p>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {schedule?.section
-                ? `${schedule.section.name} — Year ${schedule.section.year_level} (${schedule.section.semester_name})`
-                : `Schedule #${scheduleId}`}
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Split a subject across as many meetings as it needs. Lecture and laboratory hours are counted
-              separately, against what the subject requires.
-            </p>
+        {/* Page header with LLCC branding */}
+        <header className="mb-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-800">
+                Schedule Sessions
+              </p>
+              <h1 className="text-2xl font-bold text-gray-800">
+                {schedule?.section
+                  ? `${schedule.section.name} — Year ${schedule.section.year_level} (${schedule.section.semester_name})`
+                  : `Schedule #${scheduleId}`}
+              </h1>
+              <p className="mt-1 text-sm text-gray-500">
+                Split a subject across as many meetings as it needs. Lecture and laboratory hours are counted separately, against what the subject requires.
+              </p>
+            </div>
+            <nav className="inline-flex gap-2">
+              <Link to="/dashboard" className="btn-navy-outline whitespace-nowrap">
+                ← Back to Dashboard
+              </Link>
+            </nav>
           </div>
-          <Link to="/dashboard" className="btn-navy-outline whitespace-nowrap">
-            ← Back to Dashboard
-          </Link>
-        </div>
+        </header>
 
+        {/* Status badge */}
         {schedule && !editable && (
           <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            This schedule is <strong>{schedule.status}</strong>. Only a draft can be edited — unpublish or
-            return it to draft first. The meetings below are shown read-only.
+            This schedule is <strong>{schedule.status}</strong>. Only a draft can be edited — unpublish or return it to draft first. The meetings below are shown read-only.
           </div>
         )}
 
@@ -517,7 +507,7 @@ export default function ScheduleSessionEditor() {
           </div>
         )}
 
-        {/* Hours: required, scheduled and remaining, per subject and type. */}
+        {/* Hours summary */}
         <div className="mb-6 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
           <div className="border-b-4 border-[#ffc000] bg-[#0a2f9c] px-6 py-4">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-white">Required Hours</h2>
@@ -554,11 +544,7 @@ export default function ScheduleSessionEditor() {
                       <td className="px-2 py-1 text-center">{row.scheduled}h</td>
                       <td
                         className={`px-2 py-1 text-center font-medium ${
-                          row.remaining < 0
-                            ? 'text-red-600'
-                            : row.remaining === 0
-                              ? 'text-green-600'
-                              : 'text-amber-600'
+                          row.remaining < 0 ? 'text-red-600' : row.remaining === 0 ? 'text-green-600' : 'text-amber-600'
                         }`}
                       >
                         {row.remaining < 0 ? `${Math.abs(row.remaining)}h over` : `${row.remaining}h`}
@@ -571,16 +557,13 @@ export default function ScheduleSessionEditor() {
 
             {overs.length > 0 && (
               <p className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {overs.map((row) => `${row.code} ${row.session_type}`).join(', ')} exceed the hours the subject
-                requires. Saving will be refused until that is reduced.
+                {overs.map((row) => `${row.code} ${row.session_type}`).join(', ')} exceed the hours the subject requires. Saving will be refused until that is reduced.
               </p>
             )}
 
             {shortfalls.length > 0 && (
               <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Still to place:{' '}
-                {shortfalls.map((row) => `${row.code} ${row.session_type} ${row.remaining}h`).join(', ')}. A
-                partly-scheduled draft is allowed and can be finished later.
+                Still to place: {shortfalls.map((row) => `${row.code} ${row.session_type} ${row.remaining}h`).join(', ')}. A partly-scheduled draft is allowed and can be finished later.
               </p>
             )}
 
@@ -594,14 +577,14 @@ export default function ScheduleSessionEditor() {
           </div>
         </div>
 
-        {/* The meetings themselves. */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-md">
-          <div className="mb-4 flex items-center justify-between">
+        {/* The meetings area with redesigned session cards */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-800">Meetings</h2>
             {editable && (
               <button
                 onClick={addMeeting}
-                className="rounded-md bg-[#0a2f9c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#08227a]"
+                className={`rounded-md bg-[#0a2f9c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#08227a]`}
               >
                 + Add Meeting
               </button>
@@ -613,7 +596,7 @@ export default function ScheduleSessionEditor() {
               No meetings yet. {editable ? 'Add one to start building the timetable.' : ''}
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {meetings.map((meeting) => {
                 const row = hours.find(
                   (candidate) =>
@@ -622,18 +605,64 @@ export default function ScheduleSessionEditor() {
                 )
                 const minutes = minutesBetween(meeting.start_time, meeting.end_time)
 
+                /* Build the schedule summary from actual form values */
+                const dayLabel = meeting.day_of_week >= 1 && meeting.day_of_week <= 7 ? DAYS[meeting.day_of_week - 1].label : '—'
+                const start = meeting.start_time ? meeting.start_time.replace(':00', '') : '—'
+                const end = meeting.end_time ? meeting.end_time.replace(':00', '') : '—'
+                const timeSummary =
+                  start !== '—' && end !== '—'
+                    ? `${start} PM–${end} PM`
+                    : '—'
+
                 return (
-                  <div key={meeting.key} className="rounded-md border border-gray-200 p-3">
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-                      <label className="col-span-2 md:col-span-1">
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                          Subject
+                  <div
+                    key={meeting.key}
+                    className="LLCC-session-card rounded-md border-border bg-white p-4 shadow-sm border border-gray-200 overflow-hidden"
+                  >
+                    {/* Session header: label, subject, type badge, summary */}
+                    <div className="flex flex-col gap-2 mb-3">
+                      {/* Session header row */}
+                      <div className="flex items-start justify-between">
+                        {/* Subject name and type badge */}
+                        <div className="flex-1">
+                          <span className="font-medium text-gray-800">{row?.code || meeting.subject_id}</span>
+                          <span className="text-sm text-gray-500">{row?.title || ''}</span>
+                        </div>
+
+                        {/* Session type badge */}
+                        <span
+                          className={
+                            meeting.session_type === 'lecture'
+                              ? `inline-flex items-center rounded-md bg-[#ffc000] px-2 py-0.5 text-xs font-medium text-blue-800`
+                              : `inline-flex items-center rounded-md bg-[#0a2f9c] px-2 py-0.5 text-xs font-medium text-yellow-500`
+                          }
+                        >
+                          {TYPE_LABELS[meeting.session_type]}
                         </span>
+                      </div>
+
+                      {/* Day and time summary */}
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <span>{dayLabel}</span>
+                        <span>·</span>
+                        <span>{timeSummary}</span>
+                      </div>
+                    </div>
+
+                    {/* Session details grid */}
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      {/* Subject */}
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                          Subject
+                        </label>
                         <select
                           value={meeting.subject_id}
                           disabled={!editable}
-                          onChange={(e) => updateMeeting(meeting.key, { subject_id: Number(e.target.value) })}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                          onChange={(e) =>
+                            updateMeeting(meeting.key, { subject_id: Number(e.target.value) })
+                          }
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm disabled:bg-gray-100"
                         >
                           {subjects.map((subject) => (
                             <option key={subject.id} value={subject.id}>
@@ -641,19 +670,22 @@ export default function ScheduleSessionEditor() {
                             </option>
                           ))}
                         </select>
-                      </label>
+                      </div>
 
-                      <label>
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      {/* Session type */}
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
                           Type
-                        </span>
+                        </label>
                         <select
                           value={meeting.session_type}
                           disabled={!editable}
                           onChange={(e) =>
-                            updateMeeting(meeting.key, { session_type: e.target.value as MeetingType })
+                            updateMeeting(meeting.key, {
+                              session_type: e.target.value as MeetingType,
+                            })
                           }
-                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm disabled:bg-gray-100"
                         >
                           {typesForSubject(meeting.subject_id).map((type) => (
                             <option key={type} value={type}>
@@ -661,17 +693,18 @@ export default function ScheduleSessionEditor() {
                             </option>
                           ))}
                         </select>
-                      </label>
+                      </div>
 
-                      <label>
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      {/* Day */}
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
                           Day
-                        </span>
+                        </label>
                         <select
                           value={meeting.day_of_week}
                           disabled={!editable}
                           onChange={(e) => updateMeeting(meeting.key, { day_of_week: Number(e.target.value) })}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm disabled:bg-gray-100"
                         >
                           {DAYS.map((day) => (
                             <option key={day.value} value={day.value}>
@@ -679,95 +712,43 @@ export default function ScheduleSessionEditor() {
                             </option>
                           ))}
                         </select>
-                      </label>
+                      </div>
 
-                      <label>
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      {/* Start time */}
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
                           Start
-                        </span>
+                        </label>
                         <input
                           type="time"
                           step={HALF_HOUR}
                           value={meeting.start_time}
                           disabled={!editable}
                           onChange={(e) => updateMeeting(meeting.key, { start_time: e.target.value })}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm disabled:bg-gray-100"
                         />
-                      </label>
+                      </div>
 
-                      <label>
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      {/* End time */}
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
                           End
-                        </span>
+                        </label>
                         <input
                           type="time"
                           step={HALF_HOUR}
                           value={meeting.end_time}
                           disabled={!editable}
                           onChange={(e) => updateMeeting(meeting.key, { end_time: e.target.value })}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm disabled:bg-gray-100"
                         />
-                      </label>
+                      </div>
 
-                      <div className="flex items-end">
+                      {/* Duration */}
+                      <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-500">
                           {minutes > 0 ? `${hoursLabel(minutes)}h` : '—'}
                         </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                      <label>
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                          Room
-                        </span>
-                        <select
-                          value={meeting.room_id ?? ''}
-                          disabled={!editable}
-                          onChange={(e) =>
-                            updateMeeting(meeting.key, {
-                              room_id: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                        >
-                          <option value="">— choose a room —</option>
-                          {rooms.map((room) => (
-                            <option key={room.id} value={room.id}>
-                              {room.name} ({room.type})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label>
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                          Faculty
-                        </span>
-                        <select
-                          value={meeting.faculty_id ?? ''}
-                          disabled={!editable}
-                          onChange={(e) =>
-                            updateMeeting(meeting.key, {
-                              faculty_id: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                          className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                        >
-                          <option value="">— choose a faculty member —</option>
-                          {faculties.map((faculty) => (
-                            <option key={faculty.id} value={faculty.id}>
-                              {faculty.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <div className="flex items-end justify-between gap-2">
-                        <p className="text-xs text-gray-500">
-                          {formatTimeRange(meeting.start_time, meeting.end_time)}
-                          {row ? ` · ${TYPE_LABELS[row.session_type]}` : ''}
-                        </p>
                         {editable && (
                           <button
                             onClick={() => removeMeeting(meeting.key)}
@@ -778,38 +759,87 @@ export default function ScheduleSessionEditor() {
                         )}
                       </div>
                     </div>
+
+                    {/* Room and Faculty */}
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 mt-3">
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                          Room
+                        </label>
+                        <select
+                          value={meeting.room_id ?? ''}
+                          disabled={!editable}
+                          onChange={(e) =>
+                            updateMeeting(meeting.key, {
+                              room_id: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm disabled:bg-gray-100"
+                        >
+                          <option value="">— choose a room —</option>
+                          {rooms.map((room) => (
+                            <option key={room.id} value={room.id}>
+                              {room.name} ({room.type})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                          Faculty
+                        </label>
+                        <select
+                          value={meeting.faculty_id ?? ''}
+                          disabled={!editable}
+                          onChange={(e) =>
+                            updateMeeting(meeting.key, {
+                              faculty_id: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm disabled:bg-gray-100"
+                        >
+                          <option value="">— choose a faculty member —</option>
+                          {faculties.map((faculty) => (
+                            <option key={faculty.id} value={faculty.id}>
+                              {faculty.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 )
               })}
             </div>
           )}
+        </section>
 
-          {editable && (
-            <>
-              <div className="mt-6 flex justify-end gap-2">
-                <button
-                  onClick={() => reload()}
-                  disabled={saving}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm transition hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Discard changes
-                </button>
-                <button
-                  onClick={() => save()}
-                  disabled={saving}
-                  className="rounded-md bg-[#0a2f9c] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#08227a] disabled:opacity-50"
-                >
-                  {saving ? 'Saving…' : 'Save Schedule'}
-                </button>
-              </div>
+        {/* Save/discard actions */}
+        {editable && (
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => reload()}
+                disabled={saving}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm transition hover:bg-gray-50 disabled:opacity-50"
+              >
+                Discard changes
+              </button>
+              <button
+                onClick={() => save()}
+                disabled={saving}
+                className="rounded-md bg-[#0a2f9c] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#08227a] disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save Schedule'}
+              </button>
+            </div>
 
-              <p className="mt-3 text-right text-xs text-gray-400">
-                Removals are saved first, then edits, then new meetings — so splitting a generated block into
-                shorter meetings is never refused for holding too many hours.
-              </p>
-            </>
-          )}
-        </div>
+            <p className="mt-2 text-right text-xs text-gray-400">
+              Removals are saved first, then edits, then new meetings — so splitting a generated block into shorter meetings is never refused for holding too many hours.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

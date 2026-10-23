@@ -7,9 +7,9 @@ use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use Illuminate\Http\Request;
 
-/**
+/** 
  * ScheduleApprovalController
- *
+ * 
  * Manages schedule review and approval flow:
  * - index(): list schedules for review
  * - show(): view a single schedule
@@ -25,14 +25,39 @@ class ScheduleApprovalController extends Controller
 {
     use FormatsTimes;
 
-    /**
+    /** 
      * List all schedules with their sessions, for review.
      * GET /api/schedules
+     * 
+     * Query parameters:
+     * - academic_year: filter by academic year (e.g., 2026-2027)
+     * - semester_name: filter by semester (e.g., 1st Semester, 2nd Semester)
+     * - status: filter by schedule status (draft, approved, published)
+     * - show_archived: include archived schedules when 'true'
      */
     public function index(Request $request)
     {
         $query = Schedule::with(['section', 'sessions.subject', 'sessions.faculty', 'sessions.room'])
             ->orderByDesc('created_at');
+
+        // Academic year filter
+        if ($request->has('academic_year')) {
+            $query->whereHas('section', function ($q) use ($request) {
+                $q->where('academic_year', $request->query('academic_year'));
+            });
+        }
+
+        // Semester name filter
+        if ($request->has('semester_name')) {
+            $query->whereHas('section', function ($q) use ($request) {
+                $q->where('semester_name', $request->query('semester_name'));
+            });
+        }
+
+        // Status filter
+        if ($request->has('status')) {
+            $query->where('status', $request->query('status'));
+        }
 
         if ($request->query('show_archived') !== 'true') {
             $query->where('status', '!=', 'archived');
@@ -41,7 +66,7 @@ class ScheduleApprovalController extends Controller
         return response()->json($query->get());
     }
 
-    /**
+    /** 
      * View a single schedule in detail.
      * GET /api/schedules/{schedule}
      */
@@ -51,7 +76,7 @@ class ScheduleApprovalController extends Controller
         return response()->json($schedule);
     }
 
-    /**
+    /** 
      * Approve a draft schedule. Admin only.
      * PATCH /api/schedules/{schedule}/approve
      */
@@ -74,7 +99,7 @@ class ScheduleApprovalController extends Controller
         return response()->json($schedule->load(['section', 'sessions']));
     }
 
-    /**
+    /** 
      * Publish an approved schedule, making it visible to faculty. Admin only.
      * PATCH /api/schedules/{schedule}/publish
      */
@@ -106,7 +131,7 @@ class ScheduleApprovalController extends Controller
         return response()->json($schedule->load(['section', 'sessions']));
     }
 
-    /**
+    /** 
      * Unpublish a schedule — revert to draft for editing.
      * Only allowed for admin role.
      * PATCH /api/schedules/{schedule}/unpublish
@@ -133,7 +158,7 @@ class ScheduleApprovalController extends Controller
         ]);
     }
 
-    /**
+    /** 
      * Reject a draft schedule. Admin only.
      * PATCH /api/schedules/{schedule}/reject
      */
@@ -152,14 +177,14 @@ class ScheduleApprovalController extends Controller
         return response()->json($schedule);
     }
 
-    /**
+    /** 
      * Delete a schedule. Admin only.
      * DELETE /api/schedules/{schedule}
-     *
+     * 
      * The one protected state is `published` — the schedule being distributed —
      * so it must be unpublished first, which keeps taking a live timetable off
      * the screen an explicit two-step act.
-     *
+     * 
      * Every other state (draft, approved, rejected, archived) is a record
      * nothing is relying on yet, so it is deletable. `approved` matters most in
      * practice: an approved schedule is visible to publish-time conflict checks
@@ -183,7 +208,7 @@ class ScheduleApprovalController extends Controller
         return response()->json(['message' => 'Schedule deleted successfully']);
     }
 
-    /**
+    /** 
      * Check if this schedule's sessions collide with other approved/published
      * schedules from DIFFERENT sections.
      */
@@ -195,7 +220,11 @@ class ScheduleApprovalController extends Controller
             ->where('schedule_id', '!=', $schedule->id)
             ->whereHas('schedule', function ($q) use ($schedule) {
                 $q->where('section_id', '!=', $schedule->section_id)
-                  ->whereIn('status', ['approved', 'published']);
+                  ->whereIn('status', ['approved', 'published'])
+                  ->whereHas('section', function ($s) use ($schedule) {
+                      $s->where('academic_year', $schedule->academic_year)
+                        ->where('semester_name', $schedule->semester_name);
+                  });
             })
             ->get();
 
@@ -227,18 +256,3 @@ class ScheduleApprovalController extends Controller
         }
     }
 }
-
-
-/**
- * ScheduleApprovalController
- *
- * Manages schedule review and approval flow:
- * - index(): list schedules for review
- * - show(): view a single schedule
- * - approve(): approve a draft schedule
- * - publish(): publish an approved schedule
- * - reject(): reject a draft schedule
- * - destroy(): delete any unpublished schedule (published must be unpublished first)
- *
- * Also checks for conflicts before publishing and restricts actions to admins.
- */

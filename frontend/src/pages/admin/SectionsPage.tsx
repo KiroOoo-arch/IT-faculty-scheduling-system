@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useAuth, API_BASE_URL } from '../../context/AuthContext'
+import { useEffect, useState, useCallback } from 'react'
+import { useAuth, API_BASE_URL } from '../../context/auth'
 import { formatTimeRange } from '../../utils/time'
 import { classificationOf } from '../../constants/subjectClassification'
 
@@ -77,15 +77,15 @@ export default function SectionsPage() {
   const [error, setError] = useState('')
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([])
 
-  function headers() {
+  const headers = useCallback(function headers() {
     return {
       Authorization: `Bearer ${token}`,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     }
-  }
+  }, [token])
 
-  async function fetchSections() {
+  const fetchSections = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE_URL}/sections`, { headers: headers() })
@@ -96,7 +96,7 @@ export default function SectionsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [headers])
 
   /**
    * The subject choices for the department currently selected, asked of the server
@@ -109,7 +109,7 @@ export default function SectionsPage() {
    * in the response. A section with no department asks with an empty value and is
    * offered minors only.
    */
-  async function fetchSubjectOptions(departmentValue: string) {
+  const fetchSubjectOptions = useCallback(async (departmentValue: string) => {
     setSubjectsLoading(true)
     setSubjectsError('')
 
@@ -130,35 +130,34 @@ export default function SectionsPage() {
     } finally {
       setSubjectsLoading(false)
     }
-  }
+  }, [headers])
 
   function reloadSubjectOptions() {
     void fetchSubjectOptions(form.department_id === '' ? '' : String(form.department_id))
   }
 
   /** The owning-department vocabulary. Read-only: departments are data, not a screen. */
-  async function fetchDepartments() {
+  const fetchDepartments = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/departments`, { headers: headers() })
       const data = await res.json()
       setDepartments(Array.isArray(data) ? data : [])
     } catch { /* ignore */ }
-  }
+  }, [headers])
 
+  // fetchSections sets its loading flag synchronously, which an effect body
+  // must not do during the commit (it would paint an empty table, then the
+  // real one). The kickoff waits for a microtask, which still runs before the
+  // paint. Both fetchSections and fetchDepartments are stable across renders
+  // (useCallback keyed on headers/token), so they can be included here.
   useEffect(() => {
-    fetchSections()
-    fetchDepartments()
-  }, [])
+    void Promise.resolve().then(() => {
+      void fetchSections()
+      void fetchDepartments()
+    })
+  }, [fetchSections, fetchDepartments])
 
-  /**
-   * Re-read the choices whenever the department changes: the server's answer is the
-   * authority on what that department may schedule, and it changes with the
-   * selection (a section with no department may take minor subjects only).
-   *
-   * The call is deferred by a microtask for two reasons: the effect body must not
-   * set state synchronously (it would paint an empty list, then the real one), and
-   * a superseded response is dropped rather than overwriting the newer list.
-   */
+  /** Re-read the subject choices whenever the department changes. */
   useEffect(() => {
     const departmentValue = form.department_id === '' ? '' : String(form.department_id)
     let current = true
@@ -170,7 +169,7 @@ export default function SectionsPage() {
     return () => {
       current = false
     }
-  }, [form.department_id])
+  }, [form.department_id, fetchSubjectOptions])
 
   function toggleDay(day: number) {
     setForm((prev) => {

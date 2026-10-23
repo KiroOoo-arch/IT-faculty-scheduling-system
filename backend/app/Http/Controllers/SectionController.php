@@ -141,18 +141,27 @@ class SectionController extends Controller
             // for every session's day, so an empty list or a value outside
             // 1–7 (Sunday) produces a section that either cannot be scheduled
             // at all or is scheduled on a day no screen can render.
-            'preferred_days' => 'required|array|min:1',
-            'preferred_days.*' => 'integer|between:1,7|distinct',
-            'preferred_start_time' => 'required|date_format:H:i',
-            'preferred_end_time' => 'required|date_format:H:i|after:preferred_start_time',
-            'student_count' => 'sometimes|integer|min:1|max:1000',
-            // The owning department decides which major subjects this section may
-            // take. Absent or null means no department, and then only shared /
-            // minor subjects are allowed.
+            //
+            // If department_id is not supplied, it is auto-computed from the
+            // section name prefix: BIT-* → BIT department, ELEC-* → ELEC department.
+            // The client may explicitly override this by providing a department_id.
             'department_id' => 'sometimes|nullable|integer|exists:departments,id',
             'subject_ids' => 'sometimes|array',
             'subject_ids.*' => 'exists:subjects,id',
         ]);
+
+        // Auto-compute department from name prefix if not explicitly provided
+        $computedDepartmentId = null;
+        if (!array_key_exists('department_id', $validated)) {
+            $nameLower = strtolower($validated['name']);
+            if (str_starts_with($nameLower, 'bit-')) {
+                $computedDepartmentId = 1; // BIT
+            } elseif (str_starts_with($nameLower, 'elec-')) {
+                $computedDepartmentId = 2; // ELEC
+            }
+        }
+
+        $effectiveDepartmentId = $validated['department_id'] ?? $computedDepartmentId;
 
         if (!empty($validated['subject_ids'])) {
             $mismatches = $this->subjectMismatches(
@@ -170,9 +179,7 @@ class SectionController extends Controller
 
             $conflicts = $this->subjectDepartmentConflicts(
                 $validated['name'],
-                array_key_exists('department_id', $validated) && $validated['department_id'] !== null
-                    ? (int) $validated['department_id']
-                    : null,
+                $effectiveDepartmentId,
                 $validated['subject_ids']
             );
             if (!empty($conflicts)) {
@@ -202,9 +209,12 @@ class SectionController extends Controller
 
         // Set when supplied, including an explicit null (no department), so a
         // client can clear the owner as well as change it.
-        if (array_key_exists('department_id', $validated)) {
-            $attributes['department_id'] = $validated['department_id'];
-        }
+        // Fall back to computed prefix-based department if none supplied.
+        $finalDepartmentId = array_key_exists('department_id', $validated)
+            ? $validated['department_id']
+            : $computedDepartmentId;
+
+        $attributes['department_id'] = $finalDepartmentId;
 
         $section = Section::create($attributes);
 

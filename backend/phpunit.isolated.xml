@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         colors="true">
+    <php>
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
+        <env name="BCRYPT_ROUNDS" value="4" force="true"/>
+        <env name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
+        <env name="DB_CONNECTION" value="pgsql" force="true"/>
+        <env name="DB_DATABASE" value="scheduling_system_testing_isolated" force="true"/>
+        <env name="DB_USERNAME" value="its_test_runner" force="true"/>
+        <!-- DB_PASSWORD is not forced here; it must be set from the environment
+             by run_isolated_e2e_test.sh (e.g., exported from the project's .env) -->
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="SESSION_DRIVER" value="array" force="true"/>
+        <env name="PULSE_ENABLED" value="false" force="true"/>
+        <env name="TELESCOPE_ENABLED" value="false" force="true"/>
+    </php>
+
+    <testsuites>
+    <testsuite name="Isolated End-to-End">
+        <file>tests/Feature/IsolatedE2ETest.php</file>
+    </testsuite>
+    </testsuites>
+</phpunit>

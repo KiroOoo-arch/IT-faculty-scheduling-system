@@ -63,6 +63,9 @@ export default function AdminDashboard() {
   const [generateResult, setGenerateResult] = useState('')
   const [selectedSectionId, setSelectedSectionId] = useState<number | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState('')
+  const [selectedSemester, setSelectedSemester] = useState('')
+  const [selectedStatus, setSelectedStatus] = useState('')
 
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(false)
@@ -90,7 +93,17 @@ export default function AdminDashboard() {
   const fetchSchedules = useCallback(async () => {
     setSchedulesLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/schedules?show_archived=${showArchived}`, { headers: headers() })
+      let url = `${API_BASE_URL}/schedules?show_archived=${showArchived}`
+      if (selectedAcademicYear) {
+        url += `&academic_year=${selectedAcademicYear}`
+      }
+      if (selectedSemester) {
+        url += `&semester_name=${selectedSemester}`
+      }
+      if (selectedStatus) {
+        url += `&status=${selectedStatus}`
+      }
+      const response = await fetch(url, { headers: headers() })
       if (response.ok) {
         const data = await response.json()
         setSchedules(Array.isArray(data) ? data : [])
@@ -98,13 +111,13 @@ export default function AdminDashboard() {
     } catch { /* ignore */ } finally {
       setSchedulesLoading(false)
     }
-  }, [showArchived, headers])
+  }, [showArchived, selectedAcademicYear, selectedSemester, selectedStatus, headers])
 
   useEffect(() => {
     void Promise.resolve().then(() => {
       fetchSchedules()
     })
-  }, [showArchived, fetchSchedules])
+  }, [showArchived, selectedAcademicYear, selectedSemester, selectedStatus, fetchSchedules])
 
   useEffect(() => {
     async function fetchData() {
@@ -402,6 +415,49 @@ export default function AdminDashboard() {
               className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 transition">
               {showArchived ? '🙈 Hide Archived' : '📂 Show Archived'}
             </button>
+          </div>
+
+          {/* Academic year / semester / status filter bar */}
+          <div className="flex gap-3 mb-4" role="filter" aria-label="Schedule filters">
+            <div className="relative">
+              <select
+                value={selectedAcademicYear}
+                onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                className="pl-2.5 pr-7 border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 bg-white transition focus:outline-none focus:border-[#0a2f9c] focus:ring-2 focus:ring-[#0a2f9c]/20"
+                aria-label="Academic year"
+              >
+                <option value="">All years</option>
+                <option value="2026-2027">2026-2027</option>
+              </select>
+              <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div className="relative">
+              <select
+                value={selectedSemester}
+                onChange={(e) => setSelectedSemester(e.target.value)}
+                className="pl-2.5 pr-7 border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 bg-white transition focus:outline-none focus:border-[#0a2f9c] focus:ring-2 focus:ring-[#0a2f9c]/20"
+                aria-label="Semester"
+              >
+                <option value="">All semesters</option>
+                <option value="1st Semester">1st Semester</option>
+                <option value="2nd Semester">2nd Semester</option>
+              </select>
+              <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div className="relative">
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="pl-2.5 pr-7 border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 bg-white transition focus:outline-none focus:border-[#0a2f9c] focus:ring-2 focus:ring-[#0a2f9c]/20"
+                aria-label="Status"
+              >
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="approved">Approved</option>
+                <option value="published">Published</option>
+              </select>
+              <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
           </div>
 
           {schedulesLoading && <p className="text-gray-500">Loading schedules...</p>}

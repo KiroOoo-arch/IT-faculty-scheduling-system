@@ -47,6 +47,8 @@ final class DatabaseTargetGuard
     public const ALLOWED_DATABASES = [
         'scheduling_system_testing',
         'scheduling_system_phase2_test_20261011',
+        'scheduling_system_testing_isolated',
+        'scheduling_system_test_disposable_20261017',
     ];
 
     /**
