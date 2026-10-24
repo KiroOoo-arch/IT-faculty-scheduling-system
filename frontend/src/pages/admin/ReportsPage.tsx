@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useAuth, API_BASE_URL } from '../../context/AuthContext'
+import { useEffect, useState, useCallback } from 'react'
+import { useAuth, API_BASE_URL } from '../../context/auth'
 
 type FacultyWorkload = {
   faculty_id: number
@@ -19,12 +19,30 @@ type RoomUtil = {
   booked_hours_per_week: number
 }
 
+/**
+ * One entry in a generation log's unscheduled list.
+ *
+ * The engine reports every session it could not place; the API enriches each
+ * with its subject's code and title, and the reason explains the refusal. Logs
+ * written before that enrichment hold a bare string instead of an object, so
+ * both shapes are accepted here.
+ */
+type UnscheduledSession =
+  | string
+  | {
+      subject_id?: number | null
+      subject_code?: string | null
+      subject_title?: string | null
+      session_type?: string | null
+      reason?: string | null
+    }
+
 type ConflictLog = {
   id: number
   section: string
   status: string
   message: string
-  unscheduled_sessions: any | null
+  unscheduled_sessions: UnscheduledSession[] | null
   requested_by: string
   created_at: string
 }
@@ -65,53 +83,85 @@ export default function ReportsPage() {
   // by default, so the log reads as prose until someone wants the exact payload.
   const [rawOpen, setRawOpen] = useState<Record<number, boolean>>({})
 
-  function headers() {
+  const headers = useCallback(function headers() {
     return {
       Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
     }
-  }
+  }, [token])
+
+  const fetchAll = useCallback(async () => {
+    // A retry must be able to clear a stale error from the previous attempt;
+    // if this attempt fails again the branches below set a fresh message.
+    setError('')
+    try {
+      const [statusRes, facRes, roomRes, secRes, conRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/reports/schedule-status`, { headers: headers() }),
+        fetch(`${API_BASE_URL}/reports/faculty-workload`, { headers: headers() }),
+        fetch(`${API_BASE_URL}/reports/room-utilization`, { headers: headers() }),
+        fetch(`${API_BASE_URL}/reports/section-summary`, { headers: headers() }),
+        fetch(`${API_BASE_URL}/reports/conflicts`, { headers: headers() }),
+      ])
+
+      // A non-OK response is a failure, not an empty dataset. Collect every
+      // failed endpoint so one bad response is never silently presented as a
+      // complete report.
+      const failures: string[] = []
+
+      if (statusRes.ok) {
+        const data = await statusRes.json()
+        setScheduleStatus(data.statuses || [])
+        setTotalSchedules(data.total || 0)
+      } else {
+        failures.push(`schedule status (HTTP ${statusRes.status})`)
+      }
+
+      if (facRes.ok) {
+        const data = await facRes.json()
+        setFacultyWorkload(Array.isArray(data) ? data : [])
+      } else {
+        // An empty roster and a failed request would look identical in the
+        // table; name the failure so the two are never confused.
+        failures.push(`faculty workload (HTTP ${facRes.status})`)
+      }
+
+      if (roomRes.ok) {
+        const data = await roomRes.json()
+        setRooms(Array.isArray(data) ? data : [])
+      } else {
+        failures.push(`room utilization (HTTP ${roomRes.status})`)
+      }
+
+      if (secRes.ok) {
+        const data = await secRes.json()
+        setSectionSummary(Array.isArray(data) ? data : [])
+      } else {
+        failures.push(`section summary (HTTP ${secRes.status})`)
+      }
+
+      if (conRes.ok) {
+        const data = await conRes.json()
+        setConflicts(Array.isArray(data) ? data : [])
+      } else {
+        failures.push(`generation logs (HTTP ${conRes.status})`)
+      }
+
+      if (failures.length > 0) {
+        setError(`Failed to load: ${failures.join(', ')}.`)
+      }
+    } catch (err) {
+      // Thrown by fetch (network) or by a .json() body (malformed payload).
+      const detail = err instanceof Error ? err.message : String(err)
+      setError(`Failed to load reports: ${detail}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [headers])
 
   useEffect(() => {
-    async function fetchAll() {
-      try {
-        const [statusRes, facRes, roomRes, secRes, conRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/reports/schedule-status`, { headers: headers() }),
-          fetch(`${API_BASE_URL}/reports/faculty-workload`, { headers: headers() }),
-          fetch(`${API_BASE_URL}/reports/room-utilization`, { headers: headers() }),
-          fetch(`${API_BASE_URL}/reports/section-summary`, { headers: headers() }),
-          fetch(`${API_BASE_URL}/reports/conflicts`, { headers: headers() }),
-        ])
-
-        if (statusRes.ok) {
-          const data = await statusRes.json()
-          setScheduleStatus(data.statuses || [])
-          setTotalSchedules(data.total || 0)
-        }
-        if (facRes.ok) {
-          const data = await facRes.json()
-          setFacultyWorkload(Array.isArray(data) ? data : [])
-        }
-        if (roomRes.ok) {
-          const data = await roomRes.json()
-          setRooms(Array.isArray(data) ? data : [])
-        }
-        if (secRes.ok) {
-          const data = await secRes.json()
-          setSectionSummary(Array.isArray(data) ? data : [])
-        }
-        if (conRes.ok) {
-          const data = await conRes.json()
-          setConflicts(Array.isArray(data) ? data : [])
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load reports')
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchAll()
-  }, [token])
+    void fetchAll()
+  }, [fetchAll])
 
   async function clearGenerationLogs() {
     if (!confirm('Delete the entire schedule generation history? This cannot be undone.')) return
@@ -194,6 +244,12 @@ export default function ReportsPage() {
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
             ❌ {error}
+            <button
+              onClick={() => void fetchAll()}
+              className="mt-2 inline-block bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition whitespace-nowrap"
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -273,6 +329,14 @@ export default function ReportsPage() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-lg font-semibold text-gray-800 mb-4">Faculty Teaching Load</h2>
                 <p className="text-sm text-gray-500 mb-4">Assigned hours vs. maximum load per faculty (published schedules only)</p>
+                {/* A roster whose every figure is zero means nothing has been
+                    published yet — say so instead of leaving the reader to
+                    interpret sixteen "No load" badges. */}
+                {facultyWorkload.length > 0 && facultyWorkload.every((f) => f.assigned_hours === 0) && (
+                  <p className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    No published schedules yet — assigned hours appear here once a schedule is published.
+                  </p>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -463,7 +527,7 @@ export default function ReportsPage() {
                             Unscheduled sessions ({log.unscheduled_sessions.length})
                           </p>
                           <ul className="space-y-2">
-                            {log.unscheduled_sessions.map((u: any, i: number) => {
+                            {log.unscheduled_sessions.map((u, i) => {
                               if (typeof u === 'string') {
                                 return <li key={i} className="text-xs text-yellow-800">{u}</li>
                               }

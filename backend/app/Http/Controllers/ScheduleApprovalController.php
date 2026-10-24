@@ -3,9 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\FormatsTimes;
+use App\Models\Faculty;
 use App\Models\Schedule;
 use App\Models\ScheduleSession;
 use Illuminate\Http\Request;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Support\Facades\DB;
+use App\Http\Controllers\Concerns\WorkloadMerging;
 
 /** 
  * ScheduleApprovalController
@@ -113,6 +117,23 @@ class ScheduleApprovalController extends Controller
             ], 422);
         }
 
+        // The sections table stores academic_year and semester_name as
+        // non-nullable strings and SectionController validates both as
+        // required, so a schedule without a fully-termed section cannot be
+        // published. Rejecting here prevents the term filters below from being
+        // skipped (which would silently count schedules from unrelated terms).
+        $section = $schedule->section;
+        if (! $section
+            || $section->academic_year === null || $section->academic_year === ''
+            || $section->semester_name === null || $section->semester_name === '') {
+            return response()->json([
+                'message' => "Cannot publish: the schedule's section is missing required "
+                    . 'academic-year or semester data.',
+            ], 422);
+        }
+
+        $this->checkFacultyTeachingLoad($schedule);
+
         $conflicts = $this->findPublishConflicts($schedule);
         if (!empty($conflicts)) {
             return response()->json([
@@ -121,12 +142,17 @@ class ScheduleApprovalController extends Controller
             ], 422);
         }
 
-        Schedule::where('section_id', $schedule->section_id)
-            ->where('id', '!=', $schedule->id)
-            ->whereIn('status', ['published', 'approved'])
-            ->update(['status' => 'archived']);
+        // Archive the section's superseded schedules and publish the new one
+        // atomically so a failure mid-way cannot leave the section with two
+        // live schedules or none.
+        DB::transaction(function () use ($schedule) {
+            Schedule::where('section_id', $schedule->section_id)
+                ->where('id', '!=', $schedule->id)
+                ->whereIn('status', ['published', 'approved'])
+                ->update(['status' => 'archived']);
 
-        $schedule->update(['status' => 'published']);
+            $schedule->update(['status' => 'published']);
+        });
 
         return response()->json($schedule->load(['section', 'sessions']));
     }
@@ -216,15 +242,26 @@ class ScheduleApprovalController extends Controller
     {
         $conflicts = [];
 
+        // The term lives on the section, not on the schedule: reading it off the
+        // schedule yielded null, and `where('academic_year', null)` compiled to
+        // `whereNull`, so every other section was filtered out and no conflict
+        // could ever be reported.
+        $section = $schedule->section;
+        $academicYear = $section?->academic_year;
+        $semester = $section?->semester_name;
+
         $others = ScheduleSession::with('schedule.section', 'room')
             ->where('schedule_id', '!=', $schedule->id)
-            ->whereHas('schedule', function ($q) use ($schedule) {
+            ->whereHas('schedule', function ($q) use ($schedule, $academicYear, $semester) {
                 $q->where('section_id', '!=', $schedule->section_id)
-                  ->whereIn('status', ['approved', 'published'])
-                  ->whereHas('section', function ($s) use ($schedule) {
-                      $s->where('academic_year', $schedule->academic_year)
-                        ->where('semester_name', $schedule->semester_name);
-                  });
+                  ->whereIn('status', ['approved', 'published']);
+
+                if ($academicYear !== null && $semester !== null) {
+                    $q->whereHas('section', function ($s) use ($academicYear, $semester) {
+                        $s->where('academic_year', $academicYear)
+                          ->where('semester_name', $semester);
+                    });
+                }
             })
             ->get();
 
@@ -255,4 +292,100 @@ class ScheduleApprovalController extends Controller
             abort(403, 'Only the Department Head can approve, publish, or reject schedules.');
         }
     }
+
+    /**
+     * Refuse publication when the schedule would push one of its faculty past
+     * their configured `max_teaching_load`.
+     *
+     * Both sides of the comparison use the same unit: the existing workload is
+     * merged minutes per weekday across the term's other approved/published
+     * schedules, the proposed load is this schedule's minutes for the same
+     * faculty, and only the total is converted to hours because
+     * `max_teaching_load` is stored in hours.
+     */
+    private function checkFacultyTeachingLoad(Schedule $schedule): void
+    {
+        $targetFaculties = $schedule->sessions->pluck('faculty_id')->filter()->unique();
+
+        foreach ($targetFaculties as $facultyId) {
+            $faculty = Faculty::find($facultyId);
+            if (! $faculty) {
+                continue;
+            }
+
+            // `max_teaching_load` is stored in hours; everything calculated here
+            // is minutes, so the conversion happens only for this comparison.
+            $maxLoad = (float) $faculty->max_teaching_load;
+            if ($maxLoad <= 0) {
+                continue;
+            }
+
+            // Workload from OTHER approved/published schedules in the same term.
+            $existingMinutes = $this->calculateExistingWorkloadMinutes($faculty, $schedule);
+
+            // Minutes this schedule adds for the same faculty member, merged
+            // with the same per-weekday rules as the existing workload and the
+            // report so overlapping or adjacent sessions are not double-counted.
+            $proposedSessions = $schedule->sessions->filter(
+                fn ($session) => (int) $session->faculty_id === (int) $facultyId
+            );
+            $proposedMinutes = $this->mergedMinutesByDay($proposedSessions);
+
+            $totalHours = ($existingMinutes + $proposedMinutes) / 60;
+
+            if ($totalHours > $maxLoad) {
+                throw new HttpResponseException(response()->json([
+                    'message' => "Cannot publish: Faculty '{$faculty->display_name}' would exceed teaching load. "
+                        . 'Existing: '.round($existingMinutes / 60, 1).'h, '
+                        . 'Proposed: '.round($proposedMinutes / 60, 1).'h, '
+                        . 'Total: '.round($totalHours, 1).'h, '
+                        . "Maximum: {$maxLoad}h.",
+                    ], 422));
+            }
+        }
+    }
+
+    /**
+     * Calculate total unique occupied minutes from OTHER approved/published schedules
+     * for a faculty member in the same academic year and semester, excluding the
+     * target schedule's sessions.
+     * Does NOT merge intervals across different weekdays.
+     */
+    private function calculateExistingWorkloadMinutes(Faculty $faculty, Schedule $excludeSchedule): int
+    {
+        $section = $excludeSchedule->section;
+        $academicYear = $section?->academic_year;
+        $semester = $section?->semester_name;
+
+        // publish() archives every other published/approved schedule in the
+        // target's own section before marking the new one published, so those
+        // schedules' sessions will not exist in the post-publish state and must
+        // not count against the load. Excluding them here lets a timetable be
+        // replaced without its own superseded load blocking the replacement.
+        $archivedScheduleIds = $section
+            ? Schedule::where('section_id', $section->id)
+                ->whereIn('status', ['published', 'approved'])
+                ->where('id', '!=', $excludeSchedule->id)
+                ->pluck('id')
+            : collect();
+
+        $sessions = ScheduleSession::where('faculty_id', $faculty->id)
+            ->whereNotIn('schedule_id', $archivedScheduleIds)
+            ->whereHas('schedule', function ($q) use ($excludeSchedule, $academicYear, $semester) {
+                // `schedules` is keyed by `id`; the table has no `schedule_id`.
+                $q->where('id', '!=', $excludeSchedule->id)
+                  ->whereIn('status', ['approved', 'published']);
+
+                if ($academicYear !== null && $semester !== null) {
+                    $q->whereHas('section', function ($s) use ($academicYear, $semester) {
+                        $s->where('academic_year', $academicYear)
+                          ->where('semester_name', $semester);
+                    });
+                }
+            })
+            ->get();
+
+        return $this->mergedMinutesByDay($sessions);
+    }
+
 }

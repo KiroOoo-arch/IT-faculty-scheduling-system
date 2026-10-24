@@ -10,6 +10,7 @@ use App\Models\ScheduleGenerationLog;
 use App\Models\Section;
 use App\Models\Subject;
 use Illuminate\Http\Request;
+use App\Http\Controllers\Concerns\WorkloadMerging;
 
 class ReportController extends Controller
 {
@@ -18,21 +19,22 @@ class ReportController extends Controller
         // Eager-load subjects: without this, reading them per row would fire one
         // query per faculty member.
         $faculties = Faculty::with('subjects')->get()->map(function ($faculty) {
-            $hours = ScheduleSession::where('faculty_id', $faculty->id)
+            // Gather all published sessions for this faculty member.
+            $sessions = ScheduleSession::where('faculty_id', $faculty->id)
                 ->whereHas('schedule', fn ($q) => $q->where('status', 'published'))
-                ->get()
-                ->sum(fn ($session) => (
-                    strtotime($session->end_time) - strtotime($session->start_time)
-                ) / 3600);
+                ->get();
+
+            $uniqueTotalMinutes = $this->mergedMinutesByDay($sessions);
+            $uniqueTotalHours = $uniqueTotalMinutes / 60;
 
             return [
                 'faculty_id' => $faculty->id,
                 'name' => $faculty->name ?? ($faculty->user->name ?? 'Unknown Faculty'),
                 'faculty_type' => $faculty->faculty_type,
-                'assigned_hours' => round($hours, 1),
+                'assigned_hours' => round($uniqueTotalHours, 1),
                 'max_teaching_load' => $faculty->max_teaching_load,
                 'utilization_percent' => $faculty->max_teaching_load > 0
-                    ? round(($hours / $faculty->max_teaching_load) * 100, 1)
+                    ? round(($uniqueTotalHours / $faculty->max_teaching_load) * 100, 1)
                     : null,
                 'subjects' => $faculty->subjects->pluck('code')->values(),
             ];
@@ -240,15 +242,12 @@ class ReportController extends Controller
 
         return response()->json($sections);
     }
+
+    /**
+     * Provides reporting endpoints:
+     * - facultyWorkload(): calculate published workload per faculty
+     * - facultySchedule(): one faculty member's published sessions, for printing
+     * - roomUtilization(): calculate weekly booked hours per room
+     * - conflicts(): list schedule generation logs and unscheduled session reasons
+     */
 }
-
-
-/**
- * ReportController
- *
- * Provides reporting endpoints:
- * - facultyWorkload(): calculate published workload per faculty
- * - facultySchedule(): one faculty member's published sessions, for printing
- * - roomUtilization(): calculate weekly booked hours per room
- * - conflicts(): list schedule generation logs and unscheduled session reasons
- */
