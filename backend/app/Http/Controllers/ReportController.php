@@ -14,6 +14,8 @@ use App\Http\Controllers\Concerns\WorkloadMerging;
 
 class ReportController extends Controller
 {
+    use WorkloadMerging;
+
     public function facultyWorkload()
     {
         // Eager-load subjects: without this, reading them per row would fire one
@@ -24,6 +26,8 @@ class ReportController extends Controller
                 ->whereHas('schedule', fn ($q) => $q->where('status', 'published'))
                 ->get();
 
+            // Merge overlapping/adjacent intervals for each day so that
+            // simultaneous sessions are not double-counted.
             $uniqueTotalMinutes = $this->mergedMinutesByDay($sessions);
             $uniqueTotalHours = $uniqueTotalMinutes / 60;
 

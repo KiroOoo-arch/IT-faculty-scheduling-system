@@ -28,6 +28,7 @@ use App\Http\Controllers\Concerns\WorkloadMerging;
 class ScheduleApprovalController extends Controller
 {
     use FormatsTimes;
+    use WorkloadMerging;
 
     /** 
      * List all schedules with their sessions, for review.
