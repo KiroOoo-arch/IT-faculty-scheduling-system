@@ -1,7 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The PostgreSQL suite, behind the database target guard.
+
+    This file names scheduling_system_testing, but an <env> element without
+    force="true" does not win over a value already exported in the shell, and a
+    cached configuration can redirect the connection too. The bootstrap below is
+    the guard: it resolves the target from every environment source, refuses
+    disagreement, refuses any database that is not on its allowlist of disposable
+    test databases, refuses the source database scheduling_system and the
+    migration rehearsal database by name, and verifies the identity the server
+    itself reports.
+
+    It also reads the selection the way PHPUnit does. A run that would execute a
+    destructive test (RefreshDatabase's migrate:fresh, or a body that drops
+    tables) additionally needs a target whose role holds DDL rights, and is
+    refused without one; a run whose selection contains no such test is verified
+    for identity only, so the ordinary suite still runs on a database whose role
+    has no DDL rights. See tests/support/DatabaseTargetGuard.php.
+-->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.pgsql-guard.php"
          colors="true"
 >
     <testsuites>
@@ -24,7 +43,7 @@
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="pgsql"/>
-        <env name="DB_DATABASE" value="scheduling_system_testing"/>
+        <env name="DB_DATABASE" value="scheduling_system_testing" force="true"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

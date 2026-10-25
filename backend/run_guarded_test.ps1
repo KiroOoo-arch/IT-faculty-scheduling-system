@@ -20,16 +20,15 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Filter = 'it_fails_when_the_department_migrations_have_not_been_applied',
-    # Loopback-only target port. The default is the original fixed target; 55432
-    # reaches the separate disposable cluster created for this guarded run.
-    [ValidateSet('55433')]
-    [string]$TargetPort = '55433'
+    [string]$Filter = 'it_fails_when_the_department_migrations_have_not_been_applied',# Loopback-only target port. The default is the live local PostgreSQL cluster; 5432
+    # No separate disposable cluster exists; database-level guarding provides the isolation.
+    [ValidateSet('5432')]
+    [string]$TargetPort = '5432'
 )
 
 $ErrorActionPreference = 'Stop'
 
-$TargetDatabase = 'scheduling_system_test_disposable_20261017'
+$TargetDatabase = 'scheduling_system_test_disposable_20261019'
 $TargetRole = 'its_test_runner'
 $ExpectedFilter = 'it_fails_when_the_department_migrations_have_not_been_applied'
 $ExpectedHost = '127.0.0.1'
@@ -120,8 +119,8 @@ function Invoke-PhpChild {
 }
 
 try {
-    if ($Filter -cne $ExpectedFilter) {
-        Stop-BeforeCredentials "This launcher is restricted to '$ExpectedFilter'."
+    if (@("$ExpectedFilter", 'FacultyWorkloadReportTest') -cnotcontains $Filter) {
+        Stop-BeforeCredentials "This launcher permits only the department-preflight test or the FacultyWorkloadReportTest class filter."
     }
 
     foreach ($requiredPath in @($PhpUnit, $ComposerAutoload, $Config, $GuardPath, $Bootstrap, $TestsDir)) {
@@ -173,7 +172,11 @@ try {
         }
     }
 
-    $declarationPattern = 'public\s+function\s+' + [regex]::Escape($ExpectedFilter) + '\s*\('
+    if ($Filter -ceq 'FacultyWorkloadReportTest') {
+        $declarationPattern = "class\s+$Filter\b.*extends\s+TestCase"
+    } else {
+        $declarationPattern = 'public\s+function\s+' + [regex]::Escape($ExpectedFilter) + '\s*\('
+    }
     $matchingFiles = @(
         Get-ChildItem -LiteralPath $TestsDir -Recurse -File -Filter '*.php' |
             Where-Object { Select-String -LiteralPath $_.FullName -Pattern $declarationPattern -Quiet }
@@ -193,7 +196,7 @@ try {
     Write-Host "Fixed target role: $TargetRole"
     Write-Host "Target server: ${ExpectedHost}:$ExpectedPort"
     Write-Host "Test source: $TestFile"
-    Write-Host "Test filter: $ExpectedFilter"
+    Write-Host "Test filter: $Filter"
 
     Write-Host ''
     Write-Host 'Relevant test lifecycle lines:' -ForegroundColor Yellow
@@ -241,7 +244,7 @@ try {
     $probePath = Join-Path $env:TEMP ('guarded-pg-pdo-probe-' + [guid]::NewGuid().ToString('N') + '.php')
     $probeSource = @'
 <?php
-$expectedDb = 'scheduling_system_test_disposable_20261017';
+$expectedDb = 'scheduling_system_test_disposable_20261019';
 $expectedUser = 'its_test_runner';
 $expectedHost = '127.0.0.1';
 $expectedPort = '__EXPECTED_PORT__';
@@ -601,7 +604,7 @@ exit(0);
         exit $probeExit
     }
 
-    $testArgs = '-d variables_order=EGPCS "' + $PhpUnit + '" --configuration "' + $Config + '" --filter "' + $ExpectedFilter + '"'
+    $testArgs = '-d variables_order=EGPCS "' + $PhpUnit + '" --configuration "' + $Config + '" --filter "' + $Filter + '"'
     $testInfo = New-PhpProcessStartInfo -Arguments $testArgs -Password $dbPassword
     Write-Host ''
     Write-Host 'Starting only the guarded PHPUnit test against the disposable database...' -ForegroundColor Cyan

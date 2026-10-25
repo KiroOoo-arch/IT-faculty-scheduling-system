@@ -49,6 +49,8 @@ final class DatabaseTargetGuard
         'scheduling_system_phase2_test_20261011',
         'scheduling_system_testing_isolated',
         'scheduling_system_test_disposable_20261017',
+        'scheduling_system_test_disposable_20261018',
+        'scheduling_system_test_disposable_20261019',
     ];
 
     /**
@@ -69,6 +71,22 @@ final class DatabaseTargetGuard
      */
     public const DESTRUCTIVE_TESTS = [
         'Tests\\Feature\\DepartmentPreflightTest::it_fails_when_the_department_migrations_have_not_been_applied',
+        'Tests\\Feature\\FacultyWorkloadReportTest::faculty_workload_reports_published_hours_maximum_load_and_utilization',
+        'Tests\\Feature\\FacultyWorkloadReportTest::faculty_workload_ignores_draft_and_approved_schedules',
+        'Tests\\Feature\\FacultyWorkloadReportTest::faculty_workload_counts_overlapping_sessions_on_the_same_day_once',
+        'Tests\\Feature\\FacultyWorkloadReportTest::faculty_workload_keeps_different_weekdays_separate',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_does_not_raise_a_missing_faculty_class_error',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_is_refused_when_the_schedule_would_exceed_the_faculty_maximum_load',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_is_allowed_when_the_faculty_member_is_within_their_maximum_load',
+        'Tests\\Feature\\FacultyWorkloadReportTest::faculty_without_published_work_is_reported_with_zero_hours',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_replaces_existing_approved_schedule_without_violating_load',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_merges_overlapping_proposed_sessions_so_hours_are_not_double_counted',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_merges_adjacent_proposed_sessions_on_the_same_weekday',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_refuses_proposed_sessions_that_exceed_the_limit_after_merging',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_keeps_proposed_sessions_on_different_weekdays_separate',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_is_refused_when_the_section_has_no_academic_year',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_is_refused_when_the_section_has_no_semester',
+        'Tests\\Feature\\FacultyWorkloadReportTest::publish_failure_leaves_the_superseded_schedule_untouched',
     ];
 
     /** PHPUnit's options that narrow a selection, as the runner spells them. */
