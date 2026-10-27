@@ -1,11 +1,23 @@
-<#
+﻿<#
     Isolated E2E test runner with secure credential prompting.
     Fixed version: corrects XML path, Stop-BeforeCredentials scope,
     UseShellSession property, terminating errors, and config validation.
     Targets: scheduling_system_testing_isolated with its_test_runner.
     Uses backend/phpunit.isolated.xml.
     Does NOT repurpose the guarded test runner's disposable-database target.
+
+    Optional -TestName selects ONE test from the approved list; the default
+    (no -TestName) runs the whole approved ten-test selection. The selection
+    is validated against that fixed list before any credential is requested.
+    An explicit disposable-database confirmation is required first.
 #>
+[CmdletBinding()]
+param(
+    # Optional single-test selection. The value is checked against the fixed
+    # $approvedTests list below and is never used as a free-form pattern, so a
+    # caller can only name an approved test.
+    [string]$TestName = ''
+)
 
 # -- 0. Terminating errors from the start --
 $ErrorActionPreference = 'Stop'
@@ -68,9 +80,64 @@ if ($passwordNodes.Count -gt 0) {
 
 Write-Host "PHPUnit configuration validated successfully." -ForegroundColor Green
 
+# -- 2b. Validate the optional test selection --
+# The filter PHPUnit receives is assembled from this fixed list, never from the
+# caller's text, so a selection can only name an approved test and can never
+# become an unrestricted expression. An empty selection preserves the
+# launcher's original ten-test run.
+$approvedTests = @(
+    'test_laravel_connection_isolation'
+    'test_admin_can_generate_schedule'
+    'test_schedule_retrieval_and_status'
+    'test_schedule_approval'
+    'test_schedule_publication'
+    'test_schedule_unpublish'
+    'test_schedule_rejection'
+    'test_conflict_validation'
+    'test_session_management'
+    'test_workflow_final_retrieval'
+)
+
+$requestedTest = "$TestName".Trim()
+
+# -cnotcontains: exact, case-sensitive match. A case variant would be accepted
+# by -contains but would then match no test, which reads as a passing run.
+if ($requestedTest -ne '' -and $approvedTests -cnotcontains $requestedTest) {
+    Write-Error ("Unknown test selection '" + $requestedTest + "'. Approved test names: " + ($approvedTests -join ', '))
+    exit 1
+}
+
+if ($requestedTest -eq '') {
+    $selectedTests = $approvedTests
+} else {
+    $selectedTests = @($requestedTest)
+}
+
+# Assembled only from the list above; no caller-supplied text reaches it.
+$filterExpression = $selectedTests -join '|'
+
+Write-Host ("Test selection (" + $selectedTests.Count + "): " + ($selectedTests -join ', ')) -ForegroundColor Green
+
+# -- 2c. Require explicit disposable-target confirmation --
+# The E2E test needs the target's existing schema, so a zero-object inventory
+# cannot prove the target is disposable. The operator therefore attests to the
+# exact target by name, exactly as the guarded runner does before it touches
+# PostgreSQL. Anything but the exact phrase exits before a credential is asked
+# for, so a refusal never opens a connection or starts PHPUnit.
+Write-Host '' -ForegroundColor Cyan
+Write-Host 'DISPOSABLE TARGET CONFIRMATION' -ForegroundColor Cyan
+Write-Host '=============================' -ForegroundColor Cyan
+Write-Host "Only continue if 'scheduling_system_testing_isolated' is the database created for this test suite and holds no data you need preserved."
+Write-Host 'The test writes only inside a rolled-back transaction, but it does write to whatever schema this database holds.'
+$targetConfirmation = Read-Host 'To authorize ONLY the isolated test database scheduling_system_testing_isolated, type DISPOSABLE:scheduling_system_testing_isolated; otherwise type NO'
+if ($targetConfirmation -cne 'DISPOSABLE:scheduling_system_testing_isolated') {
+    Write-Host 'Cancelled. No password requested; no database probe or PHPUnit test started.' -ForegroundColor Yellow
+    exit 2
+}
+
 # -- 3. Securely prompt for the its_test_runner password --
 Write-Host '' -ForegroundColor Cyan
-Write-Host 'ISOLATED E2E LAUNCHER — SECURE CREDENTIAL PROMPT' -ForegroundColor Cyan
+Write-Host 'ISOLATED E2E LAUNCHER - SECURE CREDENTIAL PROMPT' -ForegroundColor Cyan
 Write-Host '==================================================' -ForegroundColor Cyan
 Write-Host "Target database: scheduling_system_testing_isolated"
 Write-Host "Target username: its_test_runner"
@@ -104,7 +171,7 @@ if (-not $dbPassword -or $dbPassword.Trim() -eq '') {
     exit 1
 }
 
-Write-Host 'Password obtained successfully — not displayed.' -ForegroundColor Green
+Write-Host 'Password obtained successfully - not displayed.' -ForegroundColor Green
 
 # -- 4. Run the read-only PDO identity probe (no credentials persisted) --
 $probePath = Join-Path $env:TEMP ("guarded-pg-pdo-probe-e2e-" + [guid]::NewGuid().ToString('N') + '.php')
@@ -144,6 +211,41 @@ try {
     }
 
     echo "PASS: Laravel-level identity guard verified - effective database is $identity\n";
+
+    // The probe must not be able to write even by mistake.
+    $pdo->exec('SET default_transaction_read_only = on');
+
+    $role = $pdo->query('SELECT current_user')->fetchColumn();
+    if ($role !== $expectedUser) {
+        probe_fail(5, "Connected role is not the fixed target role.\n  Effective role: $role\n  Expected role: $expectedUser\n  Aborting test suite.");
+    }
+
+    // This test needs the target's existing schema, so an empty inventory is
+    // not evidence of a disposable database. What is provable read-only is the
+    // reach of the credential: the role must own no database outside this
+    // project's test databases, so its DDL cannot reach the source or the
+    // migration rehearsal database. The public-schema table count is reported
+    // as context for the operator, never asserted.
+    $ownedOutsideTests = $pdo->query(
+        "SELECT count(*) FROM pg_database d"
+        . " JOIN pg_roles r ON r.oid = d.datdba"
+        . " WHERE r.rolname = current_user"
+        . " AND d.datname NOT IN ("
+        . " 'scheduling_system_testing',"
+        . " 'scheduling_system_testing_isolated',"
+        . " 'scheduling_system_phase2_test_20261011',"
+        . " 'scheduling_system_test_disposable_20261017',"
+        . " 'scheduling_system_test_disposable_20261018',"
+        . " 'scheduling_system_test_disposable_20261019',"
+        . " 'postgres', 'template0', 'template1')"
+    )->fetchColumn();
+
+    if ((int) $ownedOutsideTests !== 0) {
+        probe_fail(6, "The target role owns a database outside the project's test databases.\n  An owner can drop or alter that database, so the target is not verifiably disposable.\n  Aborting before PHPUnit starts.");
+    }
+
+    $publicTables = $pdo->query("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")->fetchColumn();
+    echo "TARGET_INVENTORY: role=$role public_tables=$publicTables\n";
 } catch (Exception $e) {
     probe_fail(4, "Laravel-level identity guard could not connect to database.\n  Error: " . $e->getMessage() . "\n  This guard runs before PHPUnit boot, before migrations, before RefreshDatabase, before fixture creation, and before any write operation.");
 }
@@ -242,9 +344,9 @@ if ($probeExitCode -ne 0) {
 
 Write-Host 'PDO identity probe passed.' -ForegroundColor Green
 
-# -- 5. Run the nine-test isolated PHPUnit suite --
+# -- 5. Run the selected isolated PHPUnit tests --
 Write-Host '' -ForegroundColor Cyan
-Write-Host 'Starting isolated 9-test PHPUnit E2E suite...' -ForegroundColor Cyan
+Write-Host ("Starting isolated PHPUnit E2E selection (" + $selectedTests.Count + " test(s))...") -ForegroundColor Cyan
 Write-Host "  Config: $PhpunitConfig"
 Write-Host "  Target database: scheduling_system_testing_isolated"
 Write-Host "  Target username: its_test_runner"
@@ -258,7 +360,11 @@ Write-Host ""
 # the password is never placed on the command line or in the log.
 $junitLogPath = Join-Path $env:TEMP 'phpunit-isolated-e2e-junit.xml'
 if (Test-Path -LiteralPath $junitLogPath) { Remove-Item -LiteralPath $junitLogPath -Force }
-$testArgs = "-d variables_order=EGPCS $PhpunitExe -c $PhpunitConfig --log-junit `"$junitLogPath`" --filter 'test_laravel_connection_isolation|test_admin_can_generate_schedule|test_schedule_retrieval_and_status|test_schedule_approval|test_schedule_publication|test_schedule_unpublish|test_schedule_rejection|test_conflict_validation|test_session_management|test_workflow_final_retrieval'"
+# The pattern is unquoted on purpose: Windows does not treat single quotes as
+# quoting characters, so quotes here would reach PHPUnit as part of the pattern
+# and match no test. The value itself only ever holds approved names joined by
+# '|', so no shell metacharacter or space can appear in it.
+$testArgs = "-d variables_order=EGPCS $PhpunitExe -c $PhpunitConfig --log-junit `"$junitLogPath`" --filter $filterExpression"
 
 $testStartInfo = New-Object System.Diagnostics.ProcessStartInfo
 $testStartInfo.FileName = $PhpExe
@@ -266,6 +372,8 @@ $testStartInfo.Arguments = $testArgs
 $testStartInfo.WorkingDirectory = $ScriptRoot
 $testStartInfo.UseShellExecute = $false
 $testStartInfo.CreateNoWindow = $true
+$testStartInfo.RedirectStandardOutput = $true
+$testStartInfo.RedirectStandardError = $true
 
 # Set DB_PASSWORD and other DB env vars in the child process environment ONLY
 # These are NOT written to parent $env:, .env, or any persistent location
@@ -288,19 +396,87 @@ if (-not $testChild.Start()) {
     if ($childEnv.ContainsKey('DB_PASSWORD')) { $childEnv.Remove('DB_PASSWORD') }
     exit 1
 }
-$testChild.WaitForExit()
-$testExitCode = $testChild.ExitCode
+# --- Concurrent async drain of stdout/stderr to prevent pipe-buffer deadlock ---
+# Both reads start before WaitForExit so the child's pipes are drained in parallel
+# with its execution, preventing a blocked write on a full pipe buffer (a common
+# cause of exit code 255 with empty JUnit XML).
+# ReadToEndAsync() returns Task[string], so .Result yields the captured text.
+# Task.Factory.StartNew({ ... }) could not: it binds to the non-generic
+# StartNew(Action) overload, whose Task has no Result property, and a scriptblock
+# delegate cannot run on a thread-pool thread. StdoutBytes/StderrBytes were
+# therefore always 0 even when PHPUnit itself succeeded.
+$stdoutTask = $testChild.StandardOutput.ReadToEndAsync()
+$stderrTask = $testChild.StandardError.ReadToEndAsync()
+
+# --- Bounded wait for process exit (distinguish timeout from PHP/PHPUnit failure) ---
+$exitTimeoutMs = 120000  # 2-minute timeout
+$timedOut = -not $testChild.WaitForExit($exitTimeoutMs)
+if ($timedOut) {
+    # Process didn't exit in time - kill it safely and record a distinct exit code
+    Write-Host 'PHPUnit timed out after 2 minutes - killing process.' -ForegroundColor Yellow
+    $testChild.Kill()
+    $testChild.WaitForExit()
+    $testExitCode = 24  # 24 !== 255: never confuses a timeout with PHPUnit exit
+} else {
+    $testExitCode = $testChild.ExitCode
+}
+
+# --- Ensure read tasks complete (with individual timeouts and fault handling) ---
+# Track capture status before Wait/Result, so the launcher can report
+# faults even if the task itself faults with an AggregateException.
+$stdoutCaptureError = $false
+$stderrCaptureError = $false
+try {
+    $stdoutCompleted = $stdoutTask.Wait(5000)  # 5-second read timeout
+    $stderrCompleted = $stderrTask.Wait(5000)  # 5-second read timeout
+} catch {
+    $stdoutCompleted = $false
+    $stderrCompleted = $false
+}
+# Record capture status explicitly; do not silently discard output.
+# If Wait threw (AggregateException), we still know capture failed.
+if (-not $stdoutCompleted) { $stdoutCaptureError = $true }
+if (-not $stderrCompleted) { $stderrCaptureError = $true }
+if ($stdoutCompleted) { try { $stdout = $stdoutTask.Result } catch {
+        $stdout = ''
+        $stdoutCaptureError = $true
+    } }
+else { $stdout = '' }
+if ($stderrCompleted) { try { $stderr = $stderrTask.Result } catch {
+        $stderr = ''
+        $stderrCaptureError = $true
+    } }
+else { $stderr = '' }
 $testChild.Dispose()
+
+# --- Redact the exact entered DB password before persisting ---
+# Use a literal string Replace when $dbPassword is non-empty; never rely on regex.
+if ($dbPassword) {
+    $safeStdout = $stdout -replace [regex]::Escape($dbPassword), '***REDACTED***'
+    $safeStderr = $stderr -replace [regex]::Escape($dbPassword), '***REDACTED***'
+} else {
+    # Guarded literal fallback when password is not set
+    $safeStdout = $stdout.Replace($dbPassword, '***REDACTED***')
+    $safeStderr = $stderr.Replace($dbPassword, '***REDACTED***')
+}
+# End password redaction block
+
+# --- Write diagnostic log to LOCALAPPDATA\Temp (persistent, per-machine) ---
+# Creates the file if missing; path is $env:LOCALAPPDATA\Temp\phpunit-isolated-e2e-diagnostics.log
+$diagLogPath = Join-Path $env:LOCALAPPDATA 'Temp\phpunit-isolated-e2e-diagnostics.log'
+if (Test-Path -LiteralPath $diagLogPath) { Remove-Item -LiteralPath $diagLogPath -Force }
+# Build structured diagnostic payload as single-line key=value pairs for machine parsing
+$launcherStatus = if ($timedOut) { 'TimedOut' } else { 'Completed' }
+$diagContent = "LauncherStatus=$launcherStatus" + [System.Environment]::NewLine + "TimedOut=$timedOut" + [System.Environment]::NewLine + "ChildExitCode=$testExitCode" + [System.Environment]::NewLine + "StdoutBytes=$([int]($safeStdout.Length))" + [System.Environment]::NewLine + "StderrBytes=$([int]($safeStderr.Length))" + [System.Environment]::NewLine + "StdoutCaptureError=$stdoutCaptureError" + [System.Environment]::NewLine + "StderrCaptureError=$stderrCaptureError" + [System.Environment]::NewLine + "PhpunitExitCode=$testExitCode"
+# Append captured stdout/stderr on separate lines (password-redacted)
+$diagContent = $diagContent + [System.Environment]::NewLine + "=== PHPUnit STDOUT ===" + [System.Environment]::NewLine + $safeStdout + [System.Environment]::NewLine + "=== PHPUnit STDERR ===" + [System.Environment]::NewLine + $safeStderr
+[System.IO.File]::WriteAllText($diagLogPath, $diagContent, [System.Text.Encoding]::UTF8)
+
+Write-Host "Diagnostic log written to: $diagLogPath" -ForegroundColor Cyan
 
 if (Test-Path -LiteralPath $junitLogPath) {
     Write-Host "PHPUnit JUnit log: $junitLogPath" -ForegroundColor Cyan
 }
-
-# -- 6. Cleanup: clear DB_PASSWORD from environment in finally block --
-if ($childEnv.ContainsKey('DB_PASSWORD')) {
-    $childEnv.Remove('DB_PASSWORD')
-}
-$dbPassword = $null
 
 # Clear any residual environment variables that shouldn't persist.
 # Bare $env is $null in PowerShell: the environment drive is reachable only as
@@ -312,7 +488,7 @@ if (Test-Path -LiteralPath Env:\DB_PASSWORD) {
 }
 
 Write-Host '' -ForegroundColor Cyan
-Write-Host "Isolated 9-test PHPUnit exit code: $testExitCode" -ForegroundColor Cyan
+Write-Host "Isolated PHPUnit exit code: $testExitCode (selected tests: $($selectedTests.Count))" -ForegroundColor Cyan
 exit $testExitCode
 
 # -- Functions --

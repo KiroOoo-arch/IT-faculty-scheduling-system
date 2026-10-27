@@ -31,13 +31,18 @@ class IsolatedE2ETest extends TestCase
     {
         parent::setUp();
 
-        // Set up admin user for authentication
-        $this->admin = \App\Models\User::create([
-            'name' => 'Department Head',
-            'email' => 'admin@scheduling.test',
-            'password' => bcrypt('secret'),
-            'role' => 'admin',
-        ]);
+        // Set up admin user for authentication.
+        // firstOrCreate prevents duplicate-key errors on repeated test runs.
+        // DatabaseTransactions wraps each test in a transaction that rolls back after the test,
+        // so admin user changes are undone when the test method completes.
+        $this->admin = \App\Models\User::firstOrCreate(
+            ['email' => 'admin@scheduling.test'],
+        );
+
+        $this->admin->name = 'Department Head';
+        $this->admin->password = \Illuminate\Support\Facades\Hash::make('secret');
+        $this->admin->role = 'admin';
+        $this->admin->save();
 
         // Set up a section for testing
         $this->section = \App\Models\Section::create([
@@ -464,13 +469,19 @@ class IsolatedE2ETest extends TestCase
         $this->assertGreaterThan(0, count($sessions));
 
         // Update sessions batch — updateBatch() requires at least one entry and
-        // every entry needs an id belonging to this schedule.
+        // every entry needs an id belonging to this schedule, along with
+        // start_time and end_time fields that the validation and review logic expect.
         $updateResponse = $this->putJson("/api/schedules/{$scheduleId}/sessions", [
             'sessions' => [
-                ['id' => $sessions[0]['id']],
+                ['id' => $sessions[0]['id'], 'start_time' => '08:00', 'end_time' => '09:00'],
             ],
         ]);
-        $updateResponse->assertStatus(200);
+        fwrite(STDERR, "\nSession update status: " . $updateResponse->status() . "\n");
+        $this->assertSame(
+            200,
+            $updateResponse->status(),
+            'Update response status'
+        );
     }
 
     /** Test: Verifies the workflow ends with proper final retrieval */
